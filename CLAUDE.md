@@ -4,9 +4,9 @@
 
 2. Find the **first** unchecked task (`- [ ]`).
 3. If all tasks are checked, output the exit signal and stop.
-4. Implement ONLY that one task.
-5. Run the **fast verify**: `bun run typecheck` (catches most errors in <5s)
-6. Run **targeted tests only** - see "Test Strategy" below
+5. Implement ONLY that one task (using insights from step 4).
+6. Run the **fast verify**: `bun run typecheck` (catches most errors in <5s)
+7. Run **targeted tests only** - see "Test Strategy" below
 
 ```
   "status": "in_progress" | "complete",
@@ -20,23 +20,39 @@
 ## Progress Tracking — So User Knows What's Happening
 
 
+**Update after EACH of these actions:**
+
+- Starting a new task
+- Reading a key file (note which file and what you learned)
+- Making an edit (note which file and what changed)
+- Running a command (note result)
+- Encountering an issue or insight
+- Completing a task
+
 Format (append to file):
 
 ```
 [TIMESTAMP] TASK: <task title>
-[TIMESTAMP] STATUS: starting | investigating | implementing | testing | done | failed
-[TIMESTAMP] NOTES: <brief description of what you did/found>
+[TIMESTAMP] NOTES: <brief description - include file names and specifics>
 ```
 
-Example:
+
+Example (notice the editor research is MANDATORY before editing):
 
 ```
 [2024-02-02 10:15] TASK: Fix getSelectionRange for cursor-only
-[2024-02-02 10:15] STATUS: investigating
-[2024-02-02 10:16] NOTES: Reading AIEditor.tsx line 105, found selection.isCollapsed check
-[2024-02-02 10:18] STATUS: implementing
-[2024-02-02 10:22] STATUS: testing
-[2024-02-02 10:23] NOTES: Tests pass - 11/11 cursor-only tests now green
+[2024-02-02 10:15] STATUS: starting
+[2024-02-02 10:16] NOTES: Searching the editor for "selection" and "collapsed"
+[2024-02-02 10:17] NOTES: Found selection handling in reference/selection-manager.ts
+[2024-02-02 10:18] NOTES: this approach: They expand collapsed selection to paragraph boundaries
+[2024-02-02 10:19] NOTES: Key insight: isCollapsed check should NOT return null, should find containing paragraph
+[2024-02-02 10:20] STATUS: reading
+[2024-02-02 10:20] NOTES: Reading our AIEditor.tsx:105 - comparing to this approach
+[2024-02-02 10:21] STATUS: editing
+[2024-02-02 10:22] STATUS: running
+[2024-02-02 10:22] NOTES: Running typecheck - passed
+[2024-02-02 10:23] STATUS: testing
+[2024-02-02 10:23] NOTES: Tests pass - 11/11 cursor-only tests green
 [2024-02-02 10:23] STATUS: done
 ```
 
@@ -110,6 +126,42 @@ npx playwright test --grep "test name pattern" --timeout=30000
 - Use `--workers=4` for parallel execution
 - If a command takes >60s, Ctrl+C and retry with narrower scope
 - Avoid `git log` with large outputs; use `--oneline -10`
+
+---
+
+## 🔍 MANDATORY: follow the spec Before EVERY Task
+
+**THIS IS NOT OPTIONAL.** Before writing a single line of code for any task, you MUST:
+
+### Step 1: Search the editor for the relevant feature
+
+```bash
+# Search for keywords related to your task
+grep -r "<keyword>" reference --include="*.ts" -l
+
+# Examples:
+grep -r "alignment" reference --include="*.ts" -l
+grep -r "bullet" reference --include="*.ts" -l
+grep -r "selection" reference --include="*.ts" -l
+grep -r "format" reference --include="*.ts" -l
+```
+
+### Step 2: Read the relevant the editor files
+
+```bash
+# Read the files you found (first 300 lines usually enough)
+cat reference/<file>.ts | head -300
+```
+
+
+```
+[TIMESTAMP] NOTES: Searched for "alignment" - found in toolbar.ts, paragraph-operations.ts
+[TIMESTAMP] NOTES: this approach: They use getParagraphAtCursor() to find current paragraph
+[TIMESTAMP] NOTES: Key insight: They handle collapsed selection by expanding to full paragraph
+```
+
+### Step 4: CLOSE the the editor file, then write your own implementation
+
 
 ---
 
@@ -298,6 +350,7 @@ bun run typecheck && npx playwright test --timeout=60000 --workers=4
 - Do NOT delete files from previous tasks unless required
 - Client-side only. No backend.
 - No collaboration, comments, tracked changes, or PDF export
+- **🔍 MANDATORY: Search `the OOXML spec` for how they solved the problem BEFORE writing any code**
 - **Check docx-editor.dev for expected behavior before implementing**
 
 ---
@@ -328,10 +381,12 @@ EOF
 
 ## When Stuck
 
-1. **Check expected behavior first** — Visit https://www.docx-editor.dev/ to see how it should work
-2. **Type error?** Read the actual types, don't guess
-3. **Test failing?** Run with `--debug` and check console output
-4. **Selection bug?** Add `console.log` in `getSelectionRange()` to trace
-6. **OOXML spec question?** Check `reference/quick-ref/` or ECMA-376 schemas
-7. **Timeout?** Kill command, narrow test scope, retry
-8. **Complex task?** Spin up a subagent with Task tool
+1. **Did you check the editor?** — If not, go back and search `the OOXML spec` FIRST. This should have been done before you started coding.
+2. **Check expected behavior** — Visit https://www.docx-editor.dev/ to see how it should work
+3. **Type error?** Read the actual types, don't guess
+4. **Test failing?** Run with `--debug` and check console output
+5. **Selection bug?** Add `console.log` in `getSelectionRange()` to trace
+6. **Still stuck after the editor?** Search for more keywords: `grep -r "<another-keyword>" reference --include="*.ts" -l`
+7. **OOXML spec question?** Check `reference/quick-ref/` or ECMA-376 schemas
+8. **Timeout?** Kill command, narrow test scope, retry
+9. **Complex task?** Spin up a subagent with Task tool
