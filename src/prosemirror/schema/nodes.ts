@@ -14,6 +14,7 @@ import type {
   LineSpacingRule,
   BorderSpec,
   ShadingProperties,
+  TabMark,
 } from '../../types/document';
 import { paragraphToStyle } from '../../utils/formatToStyle';
 
@@ -61,6 +62,9 @@ export interface ParagraphAttrs {
 
   // Background/Shading
   shading?: ShadingProperties;
+
+  // Tab stops
+  tabs?: TabMark[];
 }
 
 /**
@@ -163,6 +167,9 @@ export const paragraph: NodeSpec = {
 
     // Background/Shading
     shading: { default: null },
+
+    // Tab stops
+    tabs: { default: null },
   },
   parseDOM: [
     {
