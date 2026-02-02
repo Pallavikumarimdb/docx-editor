@@ -46,6 +46,7 @@ This is a WYSIWYG editor. The output must look identical to the document in Micr
 
 - **Screenshots:** Always save screenshots to the `screenshots/` folder (e.g., `screenshots/table-fixed.png`). Do NOT save screenshots in the project root to avoid polluting commits.
 - Work on exactly ONE task per iteration. Do not implement multiple tasks.
+- Do NOT modify other tasks in the current plan file. Only check off the task you completed.
 - Do NOT delete or rewrite files from previous tasks unless the current task explicitly requires it.
 - If you need to know how docxtemplater + PizZip work together, check: `cat node_modules/docxtemplater/README.md` and `cat node_modules/pizzip/README.md`. Do not guess.
 - Client-side only. No backend. No server-side processing. No WebSockets.
