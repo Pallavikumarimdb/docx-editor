@@ -59,46 +59,99 @@ npx playwright test --grep "test name pattern" --timeout=30000
 
 ---
 
-## the editor Reference — CRITICAL: Do NOT Copy Code
+## the editor Reference — ⚠️ LEGAL: INDEPENDENT BUILD ONLY ⚠️
 
+### Primary Reference: the editor (`the OOXML spec`)
 
-- Constructor options and API patterns
-- How fonts are loaded and resolved
-- How styles and themes are applied
-- Component architecture and data flow
-- How specific edge cases are handled
-
+When stuck on implementation, **first check the editor** — it's a working OOXML editor:
 
 ```bash
 # Understand repo structure
+ls reference/
 
 # Read specific files for concepts
+cat reference/[relevant-file].ts | head -200
 
-# Search for patterns
+# Search for how something is handled
+grep -r "selectionChanged" reference --include="*.ts" -l
 ```
 
-**ABSOLUTE RULES:**
+**Use the editor to understand:**
 
-1. **NEVER copy-paste code verbatim** - understand the concept, then reimplement in your own words
-2. **NEVER copy function bodies** - understand the algorithm, write it fresh
-3. **NEVER copy class structures verbatim** - design your own API based on understanding
-4. **DO take note of:** edge cases handled, DOM APIs used, event sequences, timing considerations
-5. **If you see a solution**, close the file and implement independently/understanding
+- How OOXML concepts are implemented in practice
+- Edge cases that specs don't make clear
+- DOM APIs and event sequences used
+- Architecture patterns for editor components
 
-**Why:** Legal protection. This project must have independently-written code. The the editor repo is for learning _what_ to do, not _how_ to write it character-by-character.
+### ⚠️ CRITICAL LEGAL RULES — AGPL-3.0 COPYLEFT ⚠️
 
-**Good example:**
+the editor is licensed under **AGPL-3.0**, a strong copyleft license. If you copy ANY code:
+
+- The ENTIRE EigenPal project becomes AGPL-3.0
+- You MUST open-source all code
+- This is INCOMPATIBLE with commercial use for banks
+
+**INDEPENDENT BUILD IMPLEMENTATION REQUIRED:**
+
+1. ❌ **NEVER copy-paste code** — not even a single function
+2. ❌ **NEVER copy variable names, function signatures, or class structures**
+3. ❌ **NEVER copy comments or documentation text**
+4. ✅ **DO read to understand the CONCEPT**
+5. ✅ **DO close the file before writing**
+6. ✅ **DO write your own implementation from scratch**
+
+**The process:**
 
 ```
-I see the editor handles Element node selections by checking nodeType.
-I'll implement my own calculateOffset() that handles Element vs Text nodes.
+1. READ the editor to understand the concept
+2. CLOSE the file
+3. WRITE your own implementation independently/understanding
 ```
 
-**Bad example:**
+**✅ GOOD — Clean room approach:**
 
 ```
-function calculateOffset(node, offset) { ... }
+I read the editor and understand that selection across runs requires
+checking nodeType to handle Element vs Text nodes differently.
+
+My implementation (written fresh):
+function getSelectionOffset(node: Node): number {
+  // My own logic based on understanding...
+}
 ```
+
+**❌ BAD — Copyright infringement:**
+
+```typescript
+function calculateOffset(node, offset) {
+  // Any code that resembles the editor
+}
+```
+
+---
+
+## ECMA-376 Official Spec — Secondary Reference
+
+The DOCX format is standardized as ECMA-376 / ISO-29500. Local reference docs:
+
+```bash
+# Quick reference
+reference/quick-ref/wordprocessingml.md   # Paragraphs, runs, formatting
+reference/quick-ref/themes-colors.md      # Theme colors, fonts, tints
+
+# XML Schemas
+reference/ecma-376/part1/schemas/wml.xsd      # WordprocessingML
+reference/ecma-376/part1/schemas/dml-main.xsd # DrawingML (themes, colors)
+
+# Full spec PDFs (5000+ pages)
+reference/ecma-376/part1/*.pdf
+```
+
+**Online resources:**
+
+- ECMA-376: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- Microsoft Open Specs: https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/
+
 
 ---
 
@@ -125,7 +178,7 @@ This is a WYSIWYG editor. Output must look identical to Microsoft Word.
 - User cannot select text spanning multiple runs with different formatting
 - When selecting across bold → normal → italic, the selection breaks
 - This is likely in `getSelectionRange()` or selection restoration logic
-- **Reference the editor's selection handling** (for concepts, not code)
+- **Reference:** ECMA-376 Part 1 for run structure, DOM Selection API spec for browser behavior
 
 ---
 
@@ -166,7 +219,7 @@ bun run typecheck && npx playwright test --timeout=60000 --workers=4
 
 Minimal Bun + React (TSX) app for EigenPal:
 
-1. **Display DOCX** — render with full formatting fidelity using the editor
+1. **Display DOCX** — render with full WYSIWYG fidelity per ECMA-376 spec
 2. **Insert docxtemplater variables** — `{{variable}}` mappings with live preview
 
 Target users: Non-technical clients at European banks/insurance companies.
@@ -191,4 +244,5 @@ EOF
 1. **Type error?** Read the actual types, don't guess
 2. **Test failing?** Run with `--debug` and check console output
 3. **Selection bug?** Add `console.log` in `getSelectionRange()` to trace
-5. **Timeout?** Kill command, narrow test scope, retry
+5. **OOXML spec question?** Check `reference/quick-ref/` or ECMA-376 schemas
+6. **Timeout?** Kill command, narrow test scope, retry

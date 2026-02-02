@@ -58,6 +58,7 @@ git add -A
 
 
 2. Reads `prd.json` for that task's full description and acceptance criteria
+3. Investigates `the OOXML spec` source for the editor API details (not guessing)
 4. Implements the task, runs `bun build` to verify
 
 
