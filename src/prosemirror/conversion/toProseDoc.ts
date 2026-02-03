@@ -325,6 +325,26 @@ function convertTableCell(
   const backgroundColor =
     formatting?.shading?.fill?.rgb ?? conditionalStyle?.tcPr?.shading?.fill?.rgb;
 
+  // Convert borders to the format expected by ProseMirror schema
+  const cellEdgeSet = formatting?.borders;
+  let borders: { top?: boolean; bottom?: boolean; left?: boolean; right?: boolean } | undefined;
+  let borderColors: { top?: string; bottom?: string; left?: string; right?: string } | undefined;
+
+  if (cellEdgeSet) {
+    borders = {
+      top: cellEdgeSet.top?.style !== 'none' && cellEdgeSet.top?.style !== 'nil',
+      bottom: cellEdgeSet.bottom?.style !== 'none' && cellEdgeSet.bottom?.style !== 'nil',
+      left: cellEdgeSet.left?.style !== 'none' && cellEdgeSet.left?.style !== 'nil',
+      right: cellEdgeSet.right?.style !== 'none' && cellEdgeSet.right?.style !== 'nil',
+    };
+    borderColors = {
+      top: cellEdgeSet.top?.color?.rgb,
+      bottom: cellEdgeSet.bottom?.color?.rgb,
+      left: cellEdgeSet.left?.color?.rgb,
+      right: cellEdgeSet.right?.color?.rgb,
+    };
+  }
+
   const attrs: TableCellAttrs = {
     colspan: formatting?.gridSpan ?? 1,
     rowspan: rowspan,
@@ -333,6 +353,8 @@ function convertTableCell(
     verticalAlign: formatting?.verticalAlign,
     backgroundColor: backgroundColor,
     noWrap: formatting?.noWrap,
+    borders: borders,
+    borderColors: borderColors,
   };
 
   // Convert cell content (paragraphs and nested tables)
