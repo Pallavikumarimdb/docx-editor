@@ -28,7 +28,7 @@ function App() {
 ### Load a DOCX file
 
 ```tsx
-import { parseDocx } from '@eigenpal/docx-js-editor';
+import DocxEditor, { parseDocx } from '@eigenpal/docx-js-editor';
 
 const buffer = await fetch('/template.docx').then((r) => r.arrayBuffer());
 const document = await parseDocx(buffer);
@@ -39,30 +39,65 @@ const document = await parseDocx(buffer);
 ### Save document
 
 ```tsx
-const editorRef = useRef(null);
-
-const handleSave = async () => {
-  const buffer = await editorRef.current.save();
-  // Upload or download the buffer
-};
-
-<DocxEditor ref={editorRef} />;
-```
-
-### Headless mode (no toolbar)
-
-Control everything from your own UI:
-
-```tsx
-import DocxEditor, { Toolbar } from '@eigenpal/docx-js-editor';
+import { useRef } from 'react';
+import DocxEditor, { type DocxEditorRef } from '@eigenpal/docx-js-editor';
 
 function App() {
-  const editorRef = useRef(null);
+  const editorRef = useRef<DocxEditorRef>(null);
+
+  const handleSave = async () => {
+    const buffer = await editorRef.current?.save();
+    if (buffer) {
+      // Upload to your backend
+      await fetch('/api/documents/123', {
+        method: 'PUT',
+        body: buffer,
+      });
+    }
+  };
+
+  return (
+    <>
+      <button onClick={handleSave}>Save</button>
+      <DocxEditor ref={editorRef} />
+    </>
+  );
+}
+```
+
+### Ref methods
+
+```tsx
+const editorRef = useRef<DocxEditorRef>(null);
+
+// Save and get buffer
+const buffer = await editorRef.current?.save();
+
+// Get current document object
+const doc = editorRef.current?.getDocument();
+
+// Zoom controls
+editorRef.current?.setZoom(1.5); // 150%
+const zoom = editorRef.current?.getZoom();
+
+// Navigation
+editorRef.current?.focus();
+editorRef.current?.scrollToPage(3);
+```
+
+### Headless mode (bring your own UI)
+
+```tsx
+import { useRef } from 'react';
+import DocxEditor, { type DocxEditorRef } from '@eigenpal/docx-js-editor';
+
+function App() {
+  const editorRef = useRef<DocxEditorRef>(null);
 
   return (
     <>
       {/* Your own toolbar/controls */}
-      <button onClick={() => editorRef.current.save()}>My Save Button</button>
+      <button onClick={() => editorRef.current?.save()}>My Save Button</button>
 
       {/* Editor without built-in toolbar */}
       <DocxEditor ref={editorRef} showToolbar={false} showVariablePanel={false} />
@@ -71,7 +106,7 @@ function App() {
 }
 ```
 
-### Use standalone components
+### Standalone components
 
 ```tsx
 import {
