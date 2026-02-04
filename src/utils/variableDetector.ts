@@ -1,7 +1,8 @@
 /**
  * Variable Detector Utility
  *
- * Scans a DOCX document for template variables in the format {{variable_name}}.
+ * Scans a DOCX document for template variables in the format {variable_name}
+ * (standard docxtemplater syntax).
  * Returns a unique, sorted list of variable names found in the document.
  */
 
@@ -401,19 +402,19 @@ export function detectVariablesInTextBox(textBox: TextBox): string[] {
 
 /**
  * Regular expression for matching template variables
- * Matches {{variable_name}} where variable_name can contain:
+ * Matches {variable_name} (standard docxtemplater syntax) where variable_name can contain:
  * - Letters (a-z, A-Z)
  * - Numbers (0-9)
  * - Underscores (_)
  * - Hyphens (-)
  * - Dots (.)
  */
-const VARIABLE_PATTERN = /\{\{([a-zA-Z_][a-zA-Z0-9_\-\.]*)\}\}/g;
+const VARIABLE_PATTERN = /\{([a-zA-Z_][a-zA-Z0-9_\-\.]*)\}/g;
 
 /**
  * Alternative pattern allowing any content between braces
  */
-const VARIABLE_PATTERN_RELAXED = /\{\{(.+?)\}\}/g;
+const VARIABLE_PATTERN_RELAXED = /\{(.+?)\}/g;
 
 /**
  * Extract variable names from text
@@ -521,17 +522,17 @@ export function sanitizeVariableName(name: string): string {
 }
 
 /**
- * Format a variable name with braces
+ * Format a variable name with braces (standard docxtemplater syntax)
  */
 export function formatVariable(name: string): string {
-  return `{{${name}}}`;
+  return `{${name}}`;
 }
 
 /**
  * Parse a variable string to get the name
  */
 export function parseVariable(variable: string): string | null {
-  const match = variable.match(/^\{\{(.+?)\}\}$/);
+  const match = variable.match(/^\{(.+?)\}$/);
   return match ? match[1] : null;
 }
 

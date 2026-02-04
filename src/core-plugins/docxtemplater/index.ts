@@ -30,7 +30,7 @@ export const docxtemplaterPlugin: CorePlugin = {
   id: 'docxtemplater',
   name: 'Docxtemplater',
   version: '1.0.0',
-  description: 'Template variable support using docxtemplater syntax ({{variable}})',
+  description: 'Template variable support using standard docxtemplater syntax ({variable})',
 
   /**
    * Command handlers for template operations

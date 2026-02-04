@@ -288,7 +288,7 @@ bun run typecheck && npx playwright test --timeout=60000 --workers=4
 Minimal Bun + React (TSX) app for EigenPal:
 
 1. **Display DOCX** — render with full WYSIWYG fidelity per ECMA-376 spec
-2. **Insert docxtemplater variables** — `{{variable}}` mappings with live preview
+2. **Insert docxtemplater variables** — `{variable}` mappings with live preview (standard docxtemplater syntax)
 
 Target users: Non-technical clients at European banks/insurance companies.
 

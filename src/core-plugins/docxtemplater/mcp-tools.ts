@@ -229,7 +229,7 @@ Variable names should follow the pattern: letters, numbers, underscores, startin
 export const applyTemplateTool: McpToolDefinition = {
   name: 'docx_apply_template',
   description: `Substitute template variables with actual values in the document.
-Replaces all {{variable}} placeholders with the corresponding values provided.
+Replaces all {variable} placeholders with the corresponding values provided.
 Preserves all formatting (fonts, styles, colors, tables).
 Use docx_get_variables first to discover what variables exist in the document.`,
 
@@ -248,7 +248,7 @@ Use docx_get_variables first to discover what variables exist in the document.`,
       keepUnmatchedVariables: {
         type: 'boolean',
         description:
-          'If true, keep {{variable}} placeholders for variables not in the map. If false, replace with empty string. Default: true',
+          'If true, keep {variable} placeholders for variables not in the map. If false, replace with empty string. Default: true',
         default: true,
       },
     },

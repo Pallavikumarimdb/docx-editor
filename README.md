@@ -168,7 +168,7 @@ const result = await processTemplate(docxBuffer, {
 - Full WYSIWYG editing with Microsoft Word fidelity
 - Open, edit, and save DOCX files in the browser
 - Standalone components (Toolbar, FontPicker, ColorPicker, etc.)
-- Template variable support (`{{variable}}`)
+- Template variable support (`{variable}` - standard docxtemplater syntax)
 - Extendable plugin architecture
 - Zero server dependencies
 

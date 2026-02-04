@@ -73,7 +73,7 @@ AVAILABLE TOOLS:
 
   Template Tools (docxtemplater plugin):
     docx_get_variables     List template variables
-    docx_insert_variable   Insert {{variable}} placeholder
+    docx_insert_variable   Insert {variable} placeholder
     docx_apply_template    Substitute template variables
     docx_validate_template Validate template syntax
 
