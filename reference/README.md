@@ -20,14 +20,6 @@ reference/
         └── *.pdf                 # Transitional features
 ```
 
-## Setup: the editor Symlink (Local Only)
-
-The `editor/` symlink is gitignored. Each developer must set it up locally:
-
-```bash
-```
-
-
 ## Key Files for DOCX Editing
 
 | File           | Use For                                                             |

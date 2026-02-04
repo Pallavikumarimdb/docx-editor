@@ -4,7 +4,8 @@
 
 2. Find the **first** unchecked task (`- [ ]`).
 3. If all tasks are checked, output the exit signal and stop.
-5. Implement ONLY that one task (using insights from step 4).
+4. Research the ECMA-376 spec and existing code to understand the problem.
+5. Implement ONLY that one task.
 6. Run the **fast verify**: `bun run typecheck` (catches most errors in <5s)
 7. Run **targeted tests only** - see "Test Strategy" below
 
@@ -36,19 +37,16 @@ Format (append to file):
 [TIMESTAMP] NOTES: <brief description - include file names and specifics>
 ```
 
-
-Example (notice the editor research is MANDATORY before editing):
+Example:
 
 ```
 [2024-02-02 10:15] TASK: Fix getSelectionRange for cursor-only
 [2024-02-02 10:15] STATUS: starting
-[2024-02-02 10:16] NOTES: Searching the editor for "selection" and "collapsed"
-[2024-02-02 10:17] NOTES: Found selection handling in reference/selection-manager.ts
-[2024-02-02 10:18] NOTES: this approach: They expand collapsed selection to paragraph boundaries
-[2024-02-02 10:19] NOTES: Key insight: isCollapsed check should NOT return null, should find containing paragraph
+[2024-02-02 10:16] NOTES: Checking ECMA-376 spec for selection handling
 [2024-02-02 10:20] STATUS: reading
-[2024-02-02 10:20] NOTES: Reading our AIEditor.tsx:105 - comparing to this approach
+[2024-02-02 10:20] NOTES: Reading AIEditor.tsx:105
 [2024-02-02 10:21] STATUS: editing
+[2024-02-02 10:21] NOTES: Edited AIEditor.tsx - implemented paragraph expansion
 [2024-02-02 10:22] STATUS: running
 [2024-02-02 10:22] NOTES: Running typecheck - passed
 [2024-02-02 10:23] STATUS: testing
@@ -129,127 +127,7 @@ npx playwright test --grep "test name pattern" --timeout=30000
 
 ---
 
-## 🔍 MANDATORY: follow the spec Before EVERY Task
-
-**THIS IS NOT OPTIONAL.** Before writing a single line of code for any task, you MUST:
-
-### Step 1: Search the editor for the relevant feature
-
-```bash
-# Search for keywords related to your task
-grep -r "<keyword>" reference --include="*.ts" -l
-
-# Examples:
-grep -r "alignment" reference --include="*.ts" -l
-grep -r "bullet" reference --include="*.ts" -l
-grep -r "selection" reference --include="*.ts" -l
-grep -r "format" reference --include="*.ts" -l
-```
-
-### Step 2: Read the relevant the editor files
-
-```bash
-# Read the files you found (first 300 lines usually enough)
-cat reference/<file>.ts | head -300
-```
-
-
-```
-[TIMESTAMP] NOTES: Searched for "alignment" - found in toolbar.ts, paragraph-operations.ts
-[TIMESTAMP] NOTES: this approach: They use getParagraphAtCursor() to find current paragraph
-[TIMESTAMP] NOTES: Key insight: They handle collapsed selection by expanding to full paragraph
-```
-
-### Step 4: CLOSE the the editor file, then write your own implementation
-
-
----
-
-## the editor Reference — ⚠️ LEGAL: INDEPENDENT BUILD ONLY ⚠️
-
-### Live Demo — Check Expected Behavior First!
-
-**Before implementing, check how it SHOULD work:**
-
-🌐 **https://www.docx-editor.dev/** — Live working DOCX editor
-
-Use this to:
-
-- See expected UX behavior (click button → what happens?)
-- Verify cursor-only operations work (click in paragraph, click alignment)
-- Check how lists, indentation, formatting should behave
-- Compare your implementation against working reference
-
-### Local Reference: the editor (`the OOXML spec`)
-
-
-```bash
-# Understand repo structure
-ls reference/
-
-# Read specific files for concepts
-cat reference/[relevant-file].ts | head -200
-
-# Search for how something is handled
-grep -r "selectionChanged" reference --include="*.ts" -l
-```
-
-**Use the editor to understand:**
-
-- How OOXML concepts are implemented in practice
-- Edge cases that specs don't make clear
-- DOM APIs and event sequences used
-- Architecture patterns for editor components
-- **How selection works with cursor-only (no text selected)**
-
-### ⚠️ CRITICAL LEGAL RULES — AGPL-3.0 COPYLEFT ⚠️
-
-the editor is licensed under **AGPL-3.0**, a strong copyleft license. If you copy ANY code:
-
-- The ENTIRE EigenPal project becomes AGPL-3.0
-- You MUST open-source all code
-- This is INCOMPATIBLE with commercial use for banks
-
-**INDEPENDENT BUILD IMPLEMENTATION REQUIRED:**
-
-1. ❌ **NEVER copy-paste code** — not even a single function
-2. ❌ **NEVER copy variable names, function signatures, or class structures**
-3. ❌ **NEVER copy comments or documentation text**
-4. ✅ **DO read to understand the CONCEPT**
-5. ✅ **DO close the file before writing**
-6. ✅ **DO write your own implementation from scratch**
-
-**The process:**
-
-```
-1. CHECK docx-editor.dev to see expected behavior
-3. CLOSE the file
-4. WRITE your own implementation independently/understanding
-```
-
-**✅ GOOD — Clean room approach:**
-
-```
-I checked docx-editor.dev - clicking Center button with cursor (no selection)
-selection handling needs to work even when selection.isCollapsed is true.
-
-My implementation (written fresh):
-function getSelectionRange(...) {
-  // My own logic based on understanding...
-}
-```
-
-**❌ BAD — Copyright infringement:**
-
-```typescript
-function calculateOffset(node, offset) {
-  // Any code that resembles the editor
-}
-```
-
----
-
-## ECMA-376 Official Spec — Secondary Reference
+## ECMA-376 Official Spec — Reference
 
 The DOCX format is standardized as ECMA-376 / ISO-29500. Local reference docs:
 
@@ -271,7 +149,6 @@ reference/ecma-376/part1/*.pdf
 - ECMA-376: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - Microsoft Open Specs: https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/
 
-
 ---
 
 ## WYSIWYG Fidelity — Hard Rule
@@ -292,7 +169,7 @@ This is a WYSIWYG editor. Output must look identical to Microsoft Word.
 
 ## ProseMirror Editor Architecture
 
-The editor uses **ProseMirror** as the editing core, replacing the previous contentEditable-based implementation.
+The editor uses **ProseMirror** as the editing core.
 
 ### Key Files
 
@@ -403,8 +280,6 @@ bun run typecheck && npx playwright test --timeout=60000 --workers=4
 - Do NOT delete files from previous tasks unless required
 - Client-side only. No backend.
 - No collaboration, comments, tracked changes, or PDF export
-- **🔍 MANDATORY: Search `the OOXML spec` for how they solved the problem BEFORE writing any code**
-- **Check docx-editor.dev for expected behavior before implementing**
 
 ---
 
@@ -434,12 +309,9 @@ EOF
 
 ## When Stuck
 
-1. **Did you check the editor?** — If not, go back and search `the OOXML spec` FIRST. This should have been done before you started coding.
-2. **Check expected behavior** — Visit https://www.docx-editor.dev/ to see how it should work
-3. **Type error?** Read the actual types, don't guess
-4. **Test failing?** Run with `--debug` and check console output
-5. **Selection bug?** Add `console.log` in `getSelectionRange()` to trace
-6. **Still stuck after the editor?** Search for more keywords: `grep -r "<another-keyword>" reference --include="*.ts" -l`
-7. **OOXML spec question?** Check `reference/quick-ref/` or ECMA-376 schemas
-8. **Timeout?** Kill command, narrow test scope, retry
-9. **Complex task?** Spin up a subagent with Task tool
+1. **Type error?** Read the actual types, don't guess
+2. **Test failing?** Run with `--debug` and check console output
+3. **Selection bug?** Add `console.log` in `getSelectionRange()` to trace
+4. **OOXML spec question?** Check `reference/quick-ref/` or ECMA-376 schemas
+5. **Timeout?** Kill command, narrow test scope, retry
+6. **Complex task?** Spin up a subagent with Task tool
