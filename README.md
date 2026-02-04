@@ -25,18 +25,32 @@ function App() {
 }
 ```
 
-### Load a DOCX file
+### Load from backend
 
 ```tsx
-import DocxEditor, { parseDocx } from '@eigenpal/docx-js-editor';
+import { useState, useEffect } from 'react';
+import DocxEditor, { parseDocx, type Document } from '@eigenpal/docx-js-editor';
 
-const buffer = await fetch('/template.docx').then((r) => r.arrayBuffer());
-const document = await parseDocx(buffer);
+function App() {
+  const [document, setDocument] = useState<Document | null>(null);
 
-<DocxEditor document={document} />;
+  useEffect(() => {
+    async function loadDocument() {
+      const response = await fetch('/api/documents/123');
+      const buffer = await response.arrayBuffer();
+      const doc = await parseDocx(buffer);
+      setDocument(doc);
+    }
+    loadDocument();
+  }, []);
+
+  if (!document) return <div>Loading...</div>;
+
+  return <DocxEditor document={document} />;
+}
 ```
 
-### Save document
+### Save to backend
 
 ```tsx
 import { useRef } from 'react';
@@ -48,7 +62,6 @@ function App() {
   const handleSave = async () => {
     const buffer = await editorRef.current?.save();
     if (buffer) {
-      // Upload to your backend
       await fetch('/api/documents/123', {
         method: 'PUT',
         body: buffer,
@@ -60,6 +73,42 @@ function App() {
     <>
       <button onClick={handleSave}>Save</button>
       <DocxEditor ref={editorRef} />
+    </>
+  );
+}
+```
+
+### Full example (load + save)
+
+```tsx
+import { useState, useEffect, useRef } from 'react';
+import DocxEditor, { parseDocx, type Document, type DocxEditorRef } from '@eigenpal/docx-js-editor';
+import '@eigenpal/docx-js-editor/styles.css';
+
+function App() {
+  const editorRef = useRef<DocxEditorRef>(null);
+  const [document, setDocument] = useState<Document | null>(null);
+
+  useEffect(() => {
+    fetch('/api/documents/123')
+      .then((r) => r.arrayBuffer())
+      .then((buffer) => parseDocx(buffer))
+      .then(setDocument);
+  }, []);
+
+  const handleSave = async () => {
+    const buffer = await editorRef.current?.save();
+    if (buffer) {
+      await fetch('/api/documents/123', { method: 'PUT', body: buffer });
+    }
+  };
+
+  if (!document) return <div>Loading...</div>;
+
+  return (
+    <>
+      <button onClick={handleSave}>Save</button>
+      <DocxEditor ref={editorRef} document={document} />
     </>
   );
 }
@@ -88,22 +137,7 @@ editorRef.current?.scrollToPage(3);
 ### Headless mode (bring your own UI)
 
 ```tsx
-import { useRef } from 'react';
-import DocxEditor, { type DocxEditorRef } from '@eigenpal/docx-js-editor';
-
-function App() {
-  const editorRef = useRef<DocxEditorRef>(null);
-
-  return (
-    <>
-      {/* Your own toolbar/controls */}
-      <button onClick={() => editorRef.current?.save()}>My Save Button</button>
-
-      {/* Editor without built-in toolbar */}
-      <DocxEditor ref={editorRef} showToolbar={false} showVariablePanel={false} />
-    </>
-  );
-}
+<DocxEditor ref={editorRef} showToolbar={false} showVariablePanel={false} />
 ```
 
 ### Standalone components
