@@ -345,7 +345,6 @@ function EditorWrapper({
       showPageNumbers={false}
       initialZoom={1.0}
       variablePanelPosition="right"
-      usePaginatedEditor={true}
     />
   );
 

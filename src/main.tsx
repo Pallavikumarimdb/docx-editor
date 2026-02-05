@@ -82,7 +82,6 @@ function App() {
           showVariablePanel={true}
           showZoomControl={true}
           showPageNumbers={true}
-          usePaginatedEditor={true}
           onError={(error) => console.error('Editor error:', error)}
         />
       </div>

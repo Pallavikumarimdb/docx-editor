@@ -29,13 +29,9 @@ export type { ToProseDocOptions } from './conversion';
 export { StyleResolver, createStyleResolver } from './styles';
 export type { ResolvedParagraphStyle } from './styles';
 
-// Editor component
-export { ProseMirrorEditor, extractSelectionState } from './ProseMirrorEditor';
-export type {
-  ProseMirrorEditorProps,
-  ProseMirrorEditorRef,
-  SelectionState,
-} from './ProseMirrorEditor';
+// Selection state utilities
+export { extractSelectionState } from './selectionState';
+export type { SelectionState } from './selectionState';
 
 // Re-export TextSelection for restoring selections after toolbar interactions
 export { TextSelection } from 'prosemirror-state';

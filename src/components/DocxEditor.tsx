@@ -59,8 +59,6 @@ import { useDocumentHistory } from '../hooks/useHistory';
 
 // ProseMirror editor
 import {
-  ProseMirrorEditor,
-  type ProseMirrorEditorRef,
   type SelectionState,
   TextSelection,
   extractSelectionState,
@@ -197,12 +195,6 @@ export interface DocxEditorProps {
   /** Callback when content is pasted */
   onPaste?: () => void;
   /**
-   * Use paginated editor mode (experimental).
-   * When enabled, shows true paginated editing with visible page breaks.
-   * When disabled (default), uses standard ProseMirror editor.
-   */
-  usePaginatedEditor?: boolean;
-  /**
    * Callback when rendered DOM context is ready (for plugin overlays).
    * Used by PluginHost to get access to the rendered page DOM for positioning.
    */
@@ -222,8 +214,8 @@ export interface DocxEditorRef {
   getAgent: () => DocumentAgent | null;
   /** Get the current document */
   getDocument: () => Document | null;
-  /** Get the ProseMirror editor ref */
-  getEditorRef: () => ProseMirrorEditorRef | null;
+  /** Get the editor ref */
+  getEditorRef: () => PagedEditorRef | null;
   /** Save the document to buffer */
   save: () => Promise<ArrayBuffer | null>;
   /** Set zoom level */
@@ -310,7 +302,6 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     onPaste: _onPaste,
     externalPlugins,
     onEditorViewReady,
-    usePaginatedEditor = true,
     onRenderedDomContextReady,
     pluginOverlays,
   },
@@ -338,7 +329,6 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   });
 
   // Refs
-  const editorRef = useRef<ProseMirrorEditorRef>(null);
   const pagedEditorRef = useRef<PagedEditorRef>(null);
   const agentRef = useRef<DocumentAgent | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -347,38 +337,23 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
 
   // Helper to get the active editor's view
   const getActiveEditorView = useCallback(() => {
-    if (usePaginatedEditor) {
-      return pagedEditorRef.current?.getView();
-    }
-    return editorRef.current?.getView();
-  }, [usePaginatedEditor]);
+    return pagedEditorRef.current?.getView();
+  }, []);
 
   // Helper to focus the active editor
   const focusActiveEditor = useCallback(() => {
-    if (usePaginatedEditor) {
-      pagedEditorRef.current?.focus();
-    } else {
-      editorRef.current?.focus();
-    }
-  }, [usePaginatedEditor]);
+    pagedEditorRef.current?.focus();
+  }, []);
 
   // Helper to undo in the active editor
   const undoActiveEditor = useCallback(() => {
-    if (usePaginatedEditor) {
-      pagedEditorRef.current?.undo();
-    } else {
-      editorRef.current?.undo();
-    }
-  }, [usePaginatedEditor]);
+    pagedEditorRef.current?.undo();
+  }, []);
 
   // Helper to redo in the active editor
   const redoActiveEditor = useCallback(() => {
-    if (usePaginatedEditor) {
-      pagedEditorRef.current?.redo();
-    } else {
-      editorRef.current?.redo();
-    }
-  }, [usePaginatedEditor]);
+    pagedEditorRef.current?.redo();
+  }, []);
 
   // Find/Replace hook
   const findReplace = useFindReplace();
@@ -484,9 +459,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
         } else if (e.key.toLowerCase() === 'k') {
           e.preventDefault();
           // Open hyperlink dialog
-          const view = usePaginatedEditor
-            ? pagedEditorRef.current?.getView()
-            : editorRef.current?.getView();
+          const view = pagedEditorRef.current?.getView();
           if (view) {
             const selectedText = getSelectedText(view.state);
             const existingLink = getHyperlinkAttrs(view.state);
@@ -508,7 +481,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [findReplace, hyperlinkDialog, usePaginatedEditor]);
+  }, [findReplace, hyperlinkDialog]);
 
   // Handle document change
   const handleDocumentChange = useCallback(
@@ -680,149 +653,144 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   );
 
   // Handle formatting action from toolbar
-  const handleFormat = useCallback(
-    (action: FormattingAction) => {
-      const view = usePaginatedEditor
-        ? pagedEditorRef.current?.getView()
-        : editorRef.current?.getView();
-      if (!view) return;
+  const handleFormat = useCallback((action: FormattingAction) => {
+    const view = pagedEditorRef.current?.getView();
+    if (!view) return;
 
-      // Focus editor first to ensure we can dispatch commands
-      view.focus();
+    // Focus editor first to ensure we can dispatch commands
+    view.focus();
 
-      // Restore selection if it was lost during toolbar interaction
-      // This happens when user clicks on dropdown menus (font picker, style picker, etc.)
-      const { from, to } = view.state.selection;
-      const isEmptySelection = from === to;
-      const savedSelection = lastSelectionRef.current;
+    // Restore selection if it was lost during toolbar interaction
+    // This happens when user clicks on dropdown menus (font picker, style picker, etc.)
+    const { from, to } = view.state.selection;
+    const isEmptySelection = from === to;
+    const savedSelection = lastSelectionRef.current;
 
-      if (isEmptySelection && savedSelection && savedSelection.from !== savedSelection.to) {
-        // Selection was lost - restore it before applying the format
-        try {
-          const tr = view.state.tr.setSelection(
-            TextSelection.create(view.state.doc, savedSelection.from, savedSelection.to)
-          );
-          view.dispatch(tr);
-        } catch (e) {
-          // If restoration fails (e.g., positions are invalid after doc change), continue with current selection
-          console.warn('Could not restore selection:', e);
-        }
+    if (isEmptySelection && savedSelection && savedSelection.from !== savedSelection.to) {
+      // Selection was lost - restore it before applying the format
+      try {
+        const tr = view.state.tr.setSelection(
+          TextSelection.create(view.state.doc, savedSelection.from, savedSelection.to)
+        );
+        view.dispatch(tr);
+      } catch (e) {
+        // If restoration fails (e.g., positions are invalid after doc change), continue with current selection
+        console.warn('Could not restore selection:', e);
       }
+    }
 
-      // Handle simple toggle actions
-      if (action === 'bold') {
-        toggleBold(view.state, view.dispatch);
-        return;
+    // Handle simple toggle actions
+    if (action === 'bold') {
+      toggleBold(view.state, view.dispatch);
+      return;
+    }
+    if (action === 'italic') {
+      toggleItalic(view.state, view.dispatch);
+      return;
+    }
+    if (action === 'underline') {
+      toggleUnderline(view.state, view.dispatch);
+      return;
+    }
+    if (action === 'strikethrough') {
+      toggleStrike(view.state, view.dispatch);
+      return;
+    }
+    if (action === 'superscript') {
+      toggleSuperscript(view.state, view.dispatch);
+      return;
+    }
+    if (action === 'subscript') {
+      toggleSubscript(view.state, view.dispatch);
+      return;
+    }
+    if (action === 'bulletList') {
+      toggleBulletList(view.state, view.dispatch);
+      return;
+    }
+    if (action === 'numberedList') {
+      toggleNumberedList(view.state, view.dispatch);
+      return;
+    }
+    if (action === 'indent') {
+      // Try list indent first, then paragraph indent
+      if (!increaseListLevel(view.state, view.dispatch)) {
+        increaseIndent()(view.state, view.dispatch);
       }
-      if (action === 'italic') {
-        toggleItalic(view.state, view.dispatch);
-        return;
+      return;
+    }
+    if (action === 'outdent') {
+      // Try list outdent first, then paragraph outdent
+      if (!decreaseListLevel(view.state, view.dispatch)) {
+        decreaseIndent()(view.state, view.dispatch);
       }
-      if (action === 'underline') {
-        toggleUnderline(view.state, view.dispatch);
-        return;
+      return;
+    }
+    if (action === 'clearFormatting') {
+      clearFormatting(view.state, view.dispatch);
+      return;
+    }
+    if (action === 'insertLink') {
+      // Get the selected text for the hyperlink dialog
+      const selectedText = getSelectedText(view.state);
+      // Check if we're editing an existing link
+      const existingLink = getHyperlinkAttrs(view.state);
+      if (existingLink) {
+        hyperlinkDialog.openEdit({
+          url: existingLink.href,
+          displayText: selectedText,
+          tooltip: existingLink.tooltip,
+        });
+      } else {
+        hyperlinkDialog.openInsert(selectedText);
       }
-      if (action === 'strikethrough') {
-        toggleStrike(view.state, view.dispatch);
-        return;
-      }
-      if (action === 'superscript') {
-        toggleSuperscript(view.state, view.dispatch);
-        return;
-      }
-      if (action === 'subscript') {
-        toggleSubscript(view.state, view.dispatch);
-        return;
-      }
-      if (action === 'bulletList') {
-        toggleBulletList(view.state, view.dispatch);
-        return;
-      }
-      if (action === 'numberedList') {
-        toggleNumberedList(view.state, view.dispatch);
-        return;
-      }
-      if (action === 'indent') {
-        // Try list indent first, then paragraph indent
-        if (!increaseListLevel(view.state, view.dispatch)) {
-          increaseIndent()(view.state, view.dispatch);
-        }
-        return;
-      }
-      if (action === 'outdent') {
-        // Try list outdent first, then paragraph outdent
-        if (!decreaseListLevel(view.state, view.dispatch)) {
-          decreaseIndent()(view.state, view.dispatch);
-        }
-        return;
-      }
-      if (action === 'clearFormatting') {
-        clearFormatting(view.state, view.dispatch);
-        return;
-      }
-      if (action === 'insertLink') {
-        // Get the selected text for the hyperlink dialog
-        const selectedText = getSelectedText(view.state);
-        // Check if we're editing an existing link
-        const existingLink = getHyperlinkAttrs(view.state);
-        if (existingLink) {
-          hyperlinkDialog.openEdit({
-            url: existingLink.href,
-            displayText: selectedText,
-            tooltip: existingLink.tooltip,
-          });
-        } else {
-          hyperlinkDialog.openInsert(selectedText);
-        }
-        return;
-      }
+      return;
+    }
 
-      // Handle object-based actions
-      if (typeof action === 'object') {
-        switch (action.type) {
-          case 'alignment':
-            setAlignment(action.value)(view.state, view.dispatch);
-            break;
-          case 'textColor':
-            // action.value can be a string like "#FF0000" or a color name
-            setTextColor({ rgb: action.value.replace('#', '') })(view.state, view.dispatch);
-            break;
-          case 'highlightColor':
-            setHighlight(action.value)(view.state, view.dispatch);
-            break;
-          case 'fontSize':
-            // Convert points to half-points (OOXML uses half-points for font sizes)
-            setFontSize(pointsToHalfPoints(action.value))(view.state, view.dispatch);
-            break;
-          case 'fontFamily':
-            setFontFamily(action.value)(view.state, view.dispatch);
-            break;
-          case 'lineSpacing':
-            setLineSpacing(action.value)(view.state, view.dispatch);
-            break;
-          case 'applyStyle': {
-            // Resolve style to get its formatting properties
-            const styleResolver = history.state?.package.styles
-              ? createStyleResolver(history.state.package.styles)
-              : null;
+    // Handle object-based actions
+    if (typeof action === 'object') {
+      switch (action.type) {
+        case 'alignment':
+          setAlignment(action.value)(view.state, view.dispatch);
+          break;
+        case 'textColor':
+          // action.value can be a string like "#FF0000" or a color name
+          setTextColor({ rgb: action.value.replace('#', '') })(view.state, view.dispatch);
+          break;
+        case 'highlightColor':
+          setHighlight(action.value)(view.state, view.dispatch);
+          break;
+        case 'fontSize':
+          // Convert points to half-points (OOXML uses half-points for font sizes)
+          setFontSize(pointsToHalfPoints(action.value))(view.state, view.dispatch);
+          break;
+        case 'fontFamily':
+          setFontFamily(action.value)(view.state, view.dispatch);
+          break;
+        case 'lineSpacing':
+          setLineSpacing(action.value)(view.state, view.dispatch);
+          break;
+        case 'applyStyle': {
+          // Resolve style to get its formatting properties
+          const styleResolver = history.state?.package.styles
+            ? createStyleResolver(history.state.package.styles)
+            : null;
 
-            if (styleResolver) {
-              const resolved = styleResolver.resolveParagraphStyle(action.value);
-              applyStyle(action.value, {
-                paragraphFormatting: resolved.paragraphFormatting,
-                runFormatting: resolved.runFormatting,
-              })(view.state, view.dispatch);
-            } else {
-              // No styles available, just set the styleId
-              applyStyle(action.value)(view.state, view.dispatch);
-            }
-            break;
+          if (styleResolver) {
+            const resolved = styleResolver.resolveParagraphStyle(action.value);
+            applyStyle(action.value, {
+              paragraphFormatting: resolved.paragraphFormatting,
+              runFormatting: resolved.runFormatting,
+            })(view.state, view.dispatch);
+          } else {
+            // No styles available, just set the styleId
+            applyStyle(action.value)(view.state, view.dispatch);
           }
+          break;
         }
       }
-    },
-    [usePaginatedEditor]
-  );
+    }
+  }, []);
 
   // Handle variable values change
   const handleVariableValuesChange = useCallback((values: Record<string, string>) => {
@@ -1211,16 +1179,12 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     () => ({
       getAgent: () => agentRef.current,
       getDocument: () => history.state,
-      getEditorRef: () => editorRef.current,
+      getEditorRef: () => pagedEditorRef.current,
       save: handleSave,
       setZoom: (zoom: number) => setState((prev) => ({ ...prev, zoom })),
       getZoom: () => state.zoom,
       focus: () => {
-        if (usePaginatedEditor) {
-          pagedEditorRef.current?.focus();
-        } else {
-          editorRef.current?.focus();
-        }
+        pagedEditorRef.current?.focus();
       },
       getCurrentPage: () => state.currentPage,
       getTotalPages: () => state.totalPages,
@@ -1238,7 +1202,6 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
       handleSave,
       handleOpenPrintPreview,
       handleDirectPrint,
-      usePaginatedEditor,
     ]
   );
 
@@ -1441,57 +1404,38 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
                   // Using mouseDown for immediate response before focus can be lost
                   if (e.target === e.currentTarget) {
                     e.preventDefault();
-                    if (usePaginatedEditor) {
-                      pagedEditorRef.current?.focus();
-                    } else {
-                      editorRef.current?.focus();
-                    }
+                    pagedEditorRef.current?.focus();
                   }
                 }}
               >
-                {usePaginatedEditor ? (
-                  <PagedEditor
-                    ref={pagedEditorRef}
-                    document={history.state}
-                    styles={history.state?.package.styles}
-                    theme={history.state?.package.theme || theme}
-                    sectionProperties={history.state?.package.document?.finalSectionProperties}
-                    headerContent={headerContent}
-                    footerContent={footerContent}
-                    zoom={state.zoom}
-                    readOnly={readOnly}
-                    onDocumentChange={handleDocumentChange}
-                    onSelectionChange={(_from, _to) => {
-                      // Extract full selection state from PM and use the standard handler
-                      const view = pagedEditorRef.current?.getView();
-                      if (view) {
-                        const selectionState = extractSelectionState(view.state);
-                        handleSelectionChange(selectionState);
-                      } else {
-                        handleSelectionChange(null);
-                      }
-                    }}
-                    externalPlugins={externalPlugins}
-                    onReady={(ref) => {
-                      onEditorViewReady?.(ref.getView()!);
-                    }}
-                    onRenderedDomContextReady={onRenderedDomContextReady}
-                    pluginOverlays={pluginOverlays}
-                  />
-                ) : (
-                  <ProseMirrorEditor
-                    ref={editorRef}
-                    document={history.state}
-                    sectionProperties={history.state?.package.document?.finalSectionProperties}
-                    zoom={state.zoom}
-                    onChange={handleDocumentChange}
-                    onSelectionChange={handleSelectionChange}
-                    readOnly={readOnly}
-                    autoFocus
-                    externalPlugins={externalPlugins}
-                    onEditorViewReady={onEditorViewReady}
-                  />
-                )}
+                <PagedEditor
+                  ref={pagedEditorRef}
+                  document={history.state}
+                  styles={history.state?.package.styles}
+                  theme={history.state?.package.theme || theme}
+                  sectionProperties={history.state?.package.document?.finalSectionProperties}
+                  headerContent={headerContent}
+                  footerContent={footerContent}
+                  zoom={state.zoom}
+                  readOnly={readOnly}
+                  onDocumentChange={handleDocumentChange}
+                  onSelectionChange={(_from, _to) => {
+                    // Extract full selection state from PM and use the standard handler
+                    const view = pagedEditorRef.current?.getView();
+                    if (view) {
+                      const selectionState = extractSelectionState(view.state);
+                      handleSelectionChange(selectionState);
+                    } else {
+                      handleSelectionChange(null);
+                    }
+                  }}
+                  externalPlugins={externalPlugins}
+                  onReady={(ref) => {
+                    onEditorViewReady?.(ref.getView()!);
+                  }}
+                  onRenderedDomContextReady={onRenderedDomContextReady}
+                  pluginOverlays={pluginOverlays}
+                />
 
                 {/* Page navigation / indicator */}
                 {showPageNumbers &&
