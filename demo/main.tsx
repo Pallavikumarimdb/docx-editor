@@ -342,6 +342,7 @@ function EditorWrapper({
       showRuler={true}
       showVariablePanel={!withTemplatePlugin}
       showZoomControl={true}
+      showPageNumbers={false}
       initialZoom={1.0}
       variablePanelPosition="right"
       usePaginatedEditor={true}

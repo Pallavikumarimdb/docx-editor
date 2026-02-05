@@ -5,7 +5,7 @@
  * Uses RenderedDomContext to get accurate positioning.
  */
 
-import { useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { RenderedDomContext } from '../../../plugin-api/types';
 import type { TemplateTag, TagType } from '../prosemirror-plugin';
 
@@ -52,11 +52,12 @@ export function TemplateHighlightOverlay({
   onHover,
   onSelect,
 }: TemplateHighlightOverlayProps) {
-  // Get container offset for viewport-level positioning
-  const containerOffset = useMemo(() => context.getContainerOffset(), [context]);
+  // Use state to store highlights so we can update on resize
+  const [highlights, setHighlights] = useState<HighlightRect[]>([]);
 
-  // Compute highlight rectangles for all tags
-  const highlights = useMemo(() => {
+  // Function to compute highlight rectangles
+  const computeHighlights = useCallback(() => {
+    const containerOffset = context.getContainerOffset();
     const rects: HighlightRect[] = [];
 
     for (const tag of tags) {
@@ -74,8 +75,32 @@ export function TemplateHighlightOverlay({
       }
     }
 
-    return rects;
-  }, [context, tags, containerOffset]);
+    setHighlights(rects);
+  }, [context, tags]);
+
+  // Compute highlights when tags or context change
+  useEffect(() => {
+    computeHighlights();
+  }, [computeHighlights]);
+
+  // Recompute on window resize
+  useEffect(() => {
+    const handleResize = () => {
+      requestAnimationFrame(computeHighlights);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [computeHighlights]);
+
+  // Also observe the pagesContainer for size changes (zoom, layout changes)
+  useEffect(() => {
+    const observer = new ResizeObserver(() => {
+      requestAnimationFrame(computeHighlights);
+    });
+    observer.observe(context.pagesContainer);
+    return () => observer.disconnect();
+  }, [context.pagesContainer, computeHighlights]);
 
   // Show all highlights, with enhanced styling for hovered/selected
   if (highlights.length === 0) {

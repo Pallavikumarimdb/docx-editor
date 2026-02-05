@@ -155,43 +155,32 @@ const PLUGIN_HOST_STYLES = `
   overflow: auto;
 }
 
-/* Overlay panels - positioned absolutely over the editor, outside the page */
-.plugin-panels-overlay-right {
+/* Right panel rendered inside viewport - scrolls with content */
+.plugin-panel-in-viewport {
   position: absolute;
   top: 0;
-  right: 50%;
-  margin-right: -600px; /* Position outside the ~816px page width / 2 + gap */
-  bottom: 0;
+  /* Position is set dynamically via inline styles based on page edge */
   width: 220px;
-  pointer-events: none;
+  pointer-events: auto;
   z-index: 10;
   overflow: visible;
-  clip: unset;
 }
 
-.plugin-panel-overlay {
-  position: absolute;
+.plugin-panel-in-viewport.collapsed {
+  width: 32px;
+}
+
+.plugin-panel-in-viewport .plugin-panel-toggle {
+  position: sticky;
   top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  flex-shrink: 0;
-  pointer-events: none;
-  background: transparent;
-  overflow: visible;
-  clip: unset;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.plugin-panel-overlay.collapsed {
-  display: none;
-}
-
-.plugin-panel-overlay-content {
-  flex: 1;
+.plugin-panel-in-viewport-content {
   overflow: visible;
   position: relative;
-  clip: unset;
 }
 
 /* Plugin overlay container for rendering highlights/decorations */
@@ -463,23 +452,142 @@ export const PluginHost = forwardRef<PluginHostRef, PluginHostProps>(function Pl
     });
   }, []);
 
-  // Generate overlay elements for plugins that have renderOverlay
-  const pluginOverlays = useMemo(() => {
-    if (!renderedDomContext) return null;
+  // State for panel position (calculated from page bounds)
+  const [panelLeftPosition, setPanelLeftPosition] = useState<number | null>(null);
 
-    const overlays = plugins
-      .filter((plugin) => plugin.renderOverlay)
-      .map((plugin) => {
-        const pluginState = pluginStatesRef.current.get(plugin.id);
-        return (
-          <div key={`overlay-${plugin.id}`} className="plugin-overlay" data-plugin-id={plugin.id}>
-            {plugin.renderOverlay!(renderedDomContext, pluginState, editorView)}
-          </div>
-        );
-      });
+  // Calculate panel position relative to page right edge
+  useEffect(() => {
+    if (!renderedDomContext) {
+      setPanelLeftPosition(null);
+      return;
+    }
+
+    const calculatePanelPosition = () => {
+      const pagesContainer = renderedDomContext.pagesContainer;
+      const firstPage = pagesContainer.querySelector('.layout-page') as HTMLElement;
+      if (!firstPage) {
+        setPanelLeftPosition(null);
+        return;
+      }
+
+      // Get the container offset (position of pagesContainer in the overlay coordinate system)
+      const containerOffset = renderedDomContext.getContainerOffset();
+
+      // Get the first page's position and width relative to pagesContainer
+      const pageRect = firstPage.getBoundingClientRect();
+      const containerRect = pagesContainer.getBoundingClientRect();
+
+      // Calculate the page's right edge relative to pagesContainer
+      const pageRightInContainer = (pageRect.right - containerRect.left) / renderedDomContext.zoom;
+
+      // Position the panel 20px to the right of the page edge, plus container offset
+      const panelLeft = containerOffset.x + pageRightInContainer + 5;
+      setPanelLeftPosition(panelLeft);
+    };
+
+    // Initial calculation
+    calculatePanelPosition();
+
+    // Recalculate on resize
+    const handleResize = () => {
+      requestAnimationFrame(calculatePanelPosition);
+    };
+
+    window.addEventListener('resize', handleResize);
+
+    // Also observe the pagesContainer for size changes
+    const observer = new ResizeObserver(() => {
+      requestAnimationFrame(calculatePanelPosition);
+    });
+    observer.observe(renderedDomContext.pagesContainer);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      observer.disconnect();
+    };
+  }, [renderedDomContext]);
+
+  // Generate overlay elements for plugins that have renderOverlay OR right panels
+  // Right panels are rendered inside the viewport so they scroll with the content
+  const pluginOverlays = useMemo(() => {
+    const overlays: React.ReactNode[] = [];
+
+    // Add renderOverlay content
+    if (renderedDomContext) {
+      for (const plugin of plugins) {
+        if (plugin.renderOverlay) {
+          const pluginState = pluginStatesRef.current.get(plugin.id);
+          overlays.push(
+            <div key={`overlay-${plugin.id}`} className="plugin-overlay" data-plugin-id={plugin.id}>
+              {plugin.renderOverlay(renderedDomContext, pluginState, editorView)}
+            </div>
+          );
+        }
+      }
+    }
+
+    // Add right panel content (rendered inside viewport to scroll with content)
+    for (const plugin of plugins) {
+      if (!plugin.Panel) continue;
+      const position = plugin.panelConfig?.position ?? 'right';
+      if (position !== 'right') continue;
+
+      const config = { ...DEFAULT_PANEL_CONFIG, ...plugin.panelConfig };
+      const isCollapsed = collapsedPanels.has(plugin.id);
+      const size = panelSizes.get(plugin.id) ?? config.defaultSize;
+      const Panel = plugin.Panel;
+      const pluginState = pluginStatesRef.current.get(plugin.id);
+
+      // Use calculated position, fall back to a default if not ready
+      const leftStyle = panelLeftPosition !== null ? `${panelLeftPosition}px` : 'calc(50% + 428px)';
+
+      overlays.push(
+        <div
+          key={`panel-overlay-${plugin.id}`}
+          className={`plugin-panel-in-viewport ${isCollapsed ? 'collapsed' : ''}`}
+          style={{ width: isCollapsed ? '32px' : `${size}px`, left: leftStyle }}
+          data-plugin-id={plugin.id}
+        >
+          {config.collapsible && (
+            <button
+              className="plugin-panel-toggle"
+              onClick={() => togglePanelCollapsed(plugin.id)}
+              title={isCollapsed ? `Show ${plugin.name}` : `Hide ${plugin.name}`}
+              aria-label={isCollapsed ? `Show ${plugin.name}` : `Hide ${plugin.name}`}
+            >
+              <span className="plugin-panel-toggle-icon">{isCollapsed ? '‹' : '›'}</span>
+            </button>
+          )}
+          {!isCollapsed && renderedDomContext && (
+            <div className="plugin-panel-in-viewport-content">
+              <Panel
+                editorView={editorView}
+                doc={editorView?.state.doc ?? null}
+                scrollToPosition={scrollToPosition}
+                selectRange={selectRange}
+                pluginState={pluginState}
+                panelWidth={size}
+                renderedDomContext={renderedDomContext}
+              />
+            </div>
+          )}
+        </div>
+      );
+    }
 
     return overlays.length > 0 ? overlays : null;
-  }, [renderedDomContext, plugins, stateVersion, editorView]);
+  }, [
+    renderedDomContext,
+    plugins,
+    stateVersion,
+    editorView,
+    collapsedPanels,
+    panelSizes,
+    scrollToPosition,
+    selectRange,
+    togglePanelCollapsed,
+    panelLeftPosition,
+  ]);
 
   // Callback to receive rendered DOM context from editor
   const handleRenderedDomContextReady = useCallback(
@@ -591,53 +699,6 @@ export const PluginHost = forwardRef<PluginHostRef, PluginHostProps>(function Pl
     );
   };
 
-  // Render right panels as overlay inside editor
-  const renderRightPanelOverlay = (plugin: EditorPlugin) => {
-    if (!plugin.Panel) return null;
-
-    const config = { ...DEFAULT_PANEL_CONFIG, ...plugin.panelConfig };
-    const isCollapsed = collapsedPanels.has(plugin.id);
-    const size = panelSizes.get(plugin.id) ?? config.defaultSize;
-
-    const Panel = plugin.Panel;
-    const pluginState = pluginStatesRef.current.get(plugin.id);
-
-    return (
-      <div
-        key={plugin.id}
-        className={`plugin-panel-overlay ${isCollapsed ? 'collapsed' : ''}`}
-        style={{
-          width: isCollapsed ? '32px' : `${size}px`,
-        }}
-        data-plugin-id={plugin.id}
-      >
-        {config.collapsible && (
-          <button
-            className="plugin-panel-toggle"
-            onClick={() => togglePanelCollapsed(plugin.id)}
-            title={isCollapsed ? `Show ${plugin.name}` : `Hide ${plugin.name}`}
-            aria-label={isCollapsed ? `Show ${plugin.name}` : `Hide ${plugin.name}`}
-          >
-            <span className="plugin-panel-toggle-icon">{isCollapsed ? '‹' : '›'}</span>
-          </button>
-        )}
-        {!isCollapsed && (
-          <div className="plugin-panel-overlay-content">
-            <Panel
-              editorView={editorView}
-              doc={editorView?.state.doc ?? null}
-              scrollToPosition={scrollToPosition}
-              selectRange={selectRange}
-              pluginState={pluginState}
-              panelWidth={size}
-              renderedDomContext={renderedDomContext ?? null}
-            />
-          </div>
-        )}
-      </div>
-    );
-  };
-
   return (
     <div className={`plugin-host ${className}`}>
       {/* Left panels */}
@@ -655,12 +716,7 @@ export const PluginHost = forwardRef<PluginHostRef, PluginHostProps>(function Pl
         )}
       </div>
 
-      {/* Right panels as floating overlay */}
-      {pluginsByPosition.right.length > 0 && (
-        <div className="plugin-panels-overlay-right">
-          {pluginsByPosition.right.map(renderRightPanelOverlay)}
-        </div>
-      )}
+      {/* Right panels are now rendered inside pluginOverlays to scroll with content */}
     </div>
   );
 });

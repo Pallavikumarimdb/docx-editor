@@ -59,16 +59,14 @@ export function AnnotationPanel({
   const containerRef = useRef<HTMLDivElement>(null);
   const chipRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const lastMeasuredTagsKey = useRef<string>('');
-  const rafRef = useRef<number | null>(null);
-  const panelTopRef = useRef<number>(0);
 
   // Filter to show only variables and section starts (not ends or vars inside sections)
   const visibleTags = useMemo(() => {
     return tags.filter((t) => t.type !== 'sectionEnd' && !t.insideSection);
   }, [tags]);
 
-  // Calculate positions using viewport-relative coordinates
-  // This gets called on scroll with RAF debouncing for smooth performance
+  // Calculate positions relative to pagesContainer
+  // Since the panel now scrolls with content, positions are static relative to pages
   const updatePositions = useCallback(() => {
     if (visibleTags.length === 0) {
       setPositions([]);
@@ -80,29 +78,20 @@ export function AnnotationPanel({
       return;
     }
 
-    // Get panel container's top position for relative positioning
-    const panelContainer = containerRef.current;
-    const panelTop = panelContainer?.getBoundingClientRect().top ?? 0;
-    panelTopRef.current = panelTop;
-
     const newPositions: TagPosition[] = [];
 
-    // Get the scroll container's viewport position to calculate true viewport Y
-    const scrollContainer = renderedDomContext.pagesContainer.parentElement;
-    const scrollContainerTop = scrollContainer?.getBoundingClientRect().top ?? 0;
+    // Get container offset once (pagesContainer position within viewport)
+    const containerOffset = renderedDomContext.getContainerOffset();
 
     for (const tag of visibleTags) {
-      // Get viewport-relative coordinates using the range API
+      // Get position relative to pagesContainer using the range API
       const rects = renderedDomContext.getRectsForRange(tag.from, tag.from + 1);
       if (rects.length > 0) {
-        // Get container offset (pagesContainer relative to scroll container)
-        const containerOffset = renderedDomContext.getContainerOffset();
-        // Calculate true viewport Y: position within pages + offset to scroll container + scroll container's viewport position
-        const viewportY =
-          (rects[0].y + containerOffset.y) * renderedDomContext.zoom + scrollContainerTop;
-        // Convert to panel-relative coordinates
-        const panelRelativeTop = viewportY - panelTop;
-        newPositions.push({ tag, top: panelRelativeTop });
+        // Position = rect Y + container offset (both are at 1x scale, before zoom transform)
+        // The overlay is inside the zoomed viewport, so we don't multiply by zoom
+        // Subtract 8px to account for chip padding and align text baselines
+        const top = rects[0].y + containerOffset.y - 40;
+        newPositions.push({ tag, top });
       }
     }
 
@@ -131,12 +120,12 @@ export function AnnotationPanel({
     setPositions(newPositions);
   }, [visibleTags, renderedDomContext]);
 
-  // Update positions when tags or context change (not on scroll!)
+  // Update positions when tags or context change
   useEffect(() => {
     updatePositions();
   }, [updatePositions]);
 
-  // ResizeObserver for zoom/layout changes only
+  // ResizeObserver for zoom/layout changes
   useEffect(() => {
     if (!renderedDomContext) return;
 
@@ -146,6 +135,15 @@ export function AnnotationPanel({
     observer.observe(renderedDomContext.pagesContainer);
     return () => observer.disconnect();
   }, [renderedDomContext, updatePositions]);
+
+  // Window resize handler
+  useEffect(() => {
+    const handleResize = () => {
+      requestAnimationFrame(updatePositions);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [updatePositions]);
 
   // Second pass: recalculate once after initial render to use measured heights
   useEffect(() => {
@@ -158,32 +156,6 @@ export function AnnotationPanel({
       return () => clearTimeout(timer);
     }
   }, [visibleTags, updatePositions]);
-
-  // Update positions on scroll using RAF for smooth performance
-  useEffect(() => {
-    if (!renderedDomContext) return;
-
-    // Find the scroll container directly by class name
-    const scrollContainer = document.querySelector('.paged-editor') as HTMLElement | null;
-    if (!scrollContainer) return;
-
-    const handleScroll = () => {
-      if (rafRef.current) return; // Skip if already scheduled
-      rafRef.current = requestAnimationFrame(() => {
-        rafRef.current = null;
-        updatePositions();
-      });
-    };
-
-    scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
-    return () => {
-      scrollContainer.removeEventListener('scroll', handleScroll);
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-    };
-  }, [renderedDomContext, updatePositions]); // Run when context is available
 
   const handleHover = (id: string | undefined) => {
     if (editorView) setHoveredElement(editorView, id);
