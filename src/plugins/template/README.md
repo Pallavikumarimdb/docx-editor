@@ -1,4 +1,4 @@
-# Template Plugin
+# Docxtemplater Plugin
 
 Adds [docxtemplater](https://docxtemplater.com) syntax support to the DOCX editor. Detects template tags in the document and provides visual highlighting and a schema annotation panel.
 

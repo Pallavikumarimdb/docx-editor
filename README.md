@@ -99,9 +99,9 @@ function Editor({ file }: { file: ArrayBuffer }) {
 
 Each plugin can provide custom ProseMirror plugins, toolbar panels, and overlays. See the individual plugin READMEs under [`src/plugins/`](src/plugins/) for usage details.
 
-| Plugin                            | Description                                            |
-| --------------------------------- | ------------------------------------------------------ |
-| [Template](src/plugins/template/) | Docxtemplater syntax highlighting and annotation panel |
+| Plugin                                 | Description                                                                                  |
+| -------------------------------------- | -------------------------------------------------------------------------------------------- |
+| [Docxtemplater](src/plugins/template/) | Syntax highlighting and annotation panel for [docxtemplater](https://docxtemplater.com) tags |
 
 ## Features
 

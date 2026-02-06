@@ -476,7 +476,7 @@ function BaseDemo({ title, badge, withTemplatePlugin = false, initialDocument }:
             href="#/docxtemplater"
             style={currentPath === '/docxtemplater' ? styles.navLinkActive : styles.navLink}
           >
-            Template
+            Docxtemplater
           </a>
           <span style={{ width: '1px', height: '20px', background: '#e2e8f0' }} />
           <label style={styles.fileInputLabel}>
@@ -532,7 +532,7 @@ function Router() {
     return (
       <BaseDemo
         title="docx-js-editor"
-        badge="Template Plugin"
+        badge="Docxtemplater Plugin"
         withTemplatePlugin={true}
         initialDocument={createTemplateDocument()}
       />
