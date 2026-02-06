@@ -1,10 +1,6 @@
 # @eigenpal/docx-js-editor
 
-An open-source, extendable WYSIWYG DOCX editor for JavaScript.
-
-## Demo
-
-<!-- Add video here -->
+Open-source WYSIWYG DOCX editor for React. Open, edit, and save `.docx` files entirely in the browser — no server required.
 
 ## Installation
 
@@ -12,164 +8,97 @@ An open-source, extendable WYSIWYG DOCX editor for JavaScript.
 npm install @eigenpal/docx-js-editor
 ```
 
-## Usage
-
-### Basic
-
-```tsx
-import DocxEditor from '@eigenpal/docx-js-editor';
-import '@eigenpal/docx-js-editor/styles.css';
-
-function App() {
-  return <DocxEditor onChange={(doc) => console.log(doc)} />;
-}
-```
-
-### Load from backend
-
-```tsx
-import { useState, useEffect } from 'react';
-import DocxEditor, { parseDocx, type Document } from '@eigenpal/docx-js-editor';
-
-function App() {
-  const [document, setDocument] = useState<Document | null>(null);
-
-  useEffect(() => {
-    async function loadDocument() {
-      const response = await fetch('/api/documents/123');
-      const buffer = await response.arrayBuffer();
-      const doc = await parseDocx(buffer);
-      setDocument(doc);
-    }
-    loadDocument();
-  }, []);
-
-  if (!document) return <div>Loading...</div>;
-
-  return <DocxEditor document={document} />;
-}
-```
-
-### Save to backend
+## Quick Start
 
 ```tsx
 import { useRef } from 'react';
-import DocxEditor, { type DocxEditorRef } from '@eigenpal/docx-js-editor';
-
-function App() {
-  const editorRef = useRef<DocxEditorRef>(null);
-
-  const handleSave = async () => {
-    const buffer = await editorRef.current?.save();
-    if (buffer) {
-      await fetch('/api/documents/123', {
-        method: 'PUT',
-        body: buffer,
-      });
-    }
-  };
-
-  return (
-    <>
-      <button onClick={handleSave}>Save</button>
-      <DocxEditor ref={editorRef} />
-    </>
-  );
-}
-```
-
-### Full example (load + save)
-
-```tsx
-import { useState, useEffect, useRef } from 'react';
-import DocxEditor, { parseDocx, type Document, type DocxEditorRef } from '@eigenpal/docx-js-editor';
+import { DocxEditor, type DocxEditorRef } from '@eigenpal/docx-js-editor';
 import '@eigenpal/docx-js-editor/styles.css';
 
-function App() {
+function Editor({ file }: { file: ArrayBuffer }) {
   const editorRef = useRef<DocxEditorRef>(null);
-  const [document, setDocument] = useState<Document | null>(null);
-
-  useEffect(() => {
-    fetch('/api/documents/123')
-      .then((r) => r.arrayBuffer())
-      .then((buffer) => parseDocx(buffer))
-      .then(setDocument);
-  }, []);
 
   const handleSave = async () => {
     const buffer = await editorRef.current?.save();
     if (buffer) {
-      await fetch('/api/documents/123', { method: 'PUT', body: buffer });
+      await fetch('/api/documents/1', { method: 'PUT', body: buffer });
     }
   };
-
-  if (!document) return <div>Loading...</div>;
 
   return (
     <>
       <button onClick={handleSave}>Save</button>
-      <DocxEditor ref={editorRef} document={document} />
+      <DocxEditor ref={editorRef} documentBuffer={file} onChange={() => {}} />
     </>
   );
 }
 ```
 
-### Ref methods
+> **Next.js / SSR:** The editor requires the DOM. Use a dynamic import or lazy `useEffect` load to avoid server-side rendering issues.
+
+## Props
+
+| Prop                | Type                            | Default | Description                                 |
+| ------------------- | ------------------------------- | ------- | ------------------------------------------- |
+| `documentBuffer`    | `ArrayBuffer`                   | —       | `.docx` file contents to load               |
+| `document`          | `Document`                      | —       | Pre-parsed document (alternative to buffer) |
+| `readOnly`          | `boolean`                       | `false` | Disable editing                             |
+| `showToolbar`       | `boolean`                       | `true`  | Show formatting toolbar                     |
+| `showRuler`         | `boolean`                       | `false` | Show horizontal ruler                       |
+| `showZoomControl`   | `boolean`                       | `true`  | Show zoom controls                          |
+| `showVariablePanel` | `boolean`                       | `true`  | Show template variable panel                |
+| `initialZoom`       | `number`                        | `1.0`   | Initial zoom level                          |
+| `onChange`          | `(doc: Document) => void`       | —       | Called on document change                   |
+| `onSave`            | `(buffer: ArrayBuffer) => void` | —       | Called on save                              |
+| `onError`           | `(error: Error) => void`        | —       | Called on error                             |
+
+## Ref Methods
 
 ```tsx
-const editorRef = useRef<DocxEditorRef>(null);
+const ref = useRef<DocxEditorRef>(null);
 
-// Save and get buffer
-const buffer = await editorRef.current?.save();
-
-// Get current document object
-const doc = editorRef.current?.getDocument();
-
-// Zoom controls
-editorRef.current?.setZoom(1.5); // 150%
-const zoom = editorRef.current?.getZoom();
-
-// Navigation
-editorRef.current?.focus();
-editorRef.current?.scrollToPage(3);
+await ref.current.save(); // Returns ArrayBuffer of the .docx
+ref.current.getDocument(); // Current document object
+ref.current.setZoom(1.5); // Set zoom to 150%
+ref.current.focus(); // Focus the editor
+ref.current.scrollToPage(3); // Scroll to page 3
+ref.current.print(); // Print the document
 ```
 
-### Headless mode (bring your own UI)
+## Plugins
+
+Extend the editor with the plugin system. Wrap `DocxEditor` in a `PluginHost` and pass an array of plugins:
 
 ```tsx
-<DocxEditor ref={editorRef} showToolbar={false} showVariablePanel={false} />
+import { DocxEditor, PluginHost, type EditorPlugin } from '@eigenpal/docx-js-editor';
+
+const myPlugin: EditorPlugin = {
+  /* ... */
+};
+
+function Editor({ file }: { file: ArrayBuffer }) {
+  return (
+    <PluginHost plugins={[myPlugin]}>
+      <DocxEditor documentBuffer={file} />
+    </PluginHost>
+  );
+}
 ```
 
-### Standalone components
+Each plugin can provide custom ProseMirror plugins, toolbar panels, and overlays. See the individual plugin READMEs under [`src/plugins/`](src/plugins/) for usage details.
 
-```tsx
-import {
-  Toolbar,
-  FontPicker,
-  ColorPicker,
-  parseDocx,
-  serializeDocx,
-} from '@eigenpal/docx-js-editor';
-```
-
-### Template variables
-
-```tsx
-import { processTemplate } from '@eigenpal/docx-js-editor';
-
-const result = await processTemplate(docxBuffer, {
-  name: 'John Doe',
-  company: 'Acme Inc',
-});
-```
+| Plugin                            | Description                                            |
+| --------------------------------- | ------------------------------------------------------ |
+| [Template](src/plugins/template/) | Docxtemplater syntax highlighting and annotation panel |
 
 ## Features
 
 - Full WYSIWYG editing with Microsoft Word fidelity
-- Open, edit, and save DOCX files in the browser
-- Standalone components (Toolbar, FontPicker, ColorPicker, etc.)
-- Template variable support (`{variable}` - standard docxtemplater syntax)
-- Extendable plugin architecture
+- Text and paragraph formatting (bold, italic, fonts, colors, alignment, spacing)
+- Tables, images, hyperlinks
+- Extensible plugin architecture
+- Undo/redo, find & replace, keyboard shortcuts
+- Print preview
 - Zero server dependencies
 
 ## Development
@@ -178,13 +107,6 @@ const result = await processTemplate(docxBuffer, {
 bun install
 bun run dev
 ```
-
-## Contributing
-
-This is an open-source project. Contributions are welcome!
-
-- [Open an issue](https://github.com/eigenpal/docx-js-editor/issues) to report bugs or request features
-- Submit pull requests to help improve the editor
 
 ## License
 
