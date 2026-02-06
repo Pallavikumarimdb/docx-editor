@@ -106,14 +106,6 @@ export {
 } from './components/Toolbar';
 export { VariablePanel, type VariablePanelProps } from './components/VariablePanel';
 export {
-  DocumentViewer,
-  type DocumentViewerProps,
-  scrollToPage,
-  getVisiblePages,
-  calculateFitWidthZoom,
-  calculateFitPageZoom,
-} from './components/DocumentViewer';
-export {
   ContextMenu,
   type ContextMenuProps,
   useContextMenu,
@@ -235,8 +227,6 @@ export {
   positionToMargin,
 } from './components/ui/HorizontalRuler';
 export {
-  PrintPreview,
-  type PrintPreviewProps,
   PrintButton,
   type PrintButtonProps,
   PrintStyles,
