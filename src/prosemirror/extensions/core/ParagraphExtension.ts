@@ -14,6 +14,9 @@ import type {
   ParagraphFormatting,
   TextFormatting,
   NumberFormat,
+  TabMark,
+  TabJustify,
+  TabLeader,
 } from '../../../types/document';
 import { paragraphToStyle } from '../../../utils/formatToStyle';
 import { createNodeExtension } from '../create';
@@ -119,6 +122,8 @@ const paragraphNodeSpec: NodeSpec = {
     keepNext: { default: null },
     keepLines: { default: null },
     defaultTextFormatting: { default: null },
+    sectionBreakType: { default: null },
+    outlineLevel: { default: null },
   },
   parseDOM: [
     {
@@ -129,6 +134,8 @@ const paragraphNodeSpec: NodeSpec = {
           paraId: element.dataset.paraId || undefined,
           alignment: element.dataset.alignment as ParagraphAlignment | undefined,
           styleId: element.dataset.styleId || undefined,
+          sectionBreakType:
+            (element.dataset.sectionBreak as ParagraphAttrs['sectionBreakType']) || undefined,
         };
       },
     },
@@ -162,6 +169,11 @@ const paragraphNodeSpec: NodeSpec = {
 
     if (attrs.listMarker) {
       domAttrs['data-list-marker'] = attrs.listMarker;
+    }
+
+    if (attrs.sectionBreakType) {
+      domAttrs['data-section-break'] = attrs.sectionBreakType;
+      domAttrs.class = (domAttrs.class ? domAttrs.class + ' ' : '') + 'docx-section-break';
     }
 
     return ['p', domAttrs, 0];
@@ -413,6 +425,14 @@ export function getParagraphAlignment(state: EditorState): ParagraphAlignment | 
   return paragraph.attrs.alignment || null;
 }
 
+export function getParagraphTabs(state: EditorState): TabMark[] | null {
+  const { $from } = state.selection;
+  const paragraph = $from.parent;
+
+  if (paragraph.type.name !== 'paragraph') return null;
+  return paragraph.attrs.tabs || null;
+}
+
 export function getStyleId(state: EditorState): string | null {
   const { $from } = state.selection;
   const paragraph = $from.parent;
@@ -450,6 +470,110 @@ export const ParagraphExtension = createNodeExtension({
         applyStyle: (styleId: string, resolvedAttrs?: ResolvedStyleAttrs) =>
           applyStyleFn(styleId, resolvedAttrs),
         clearStyle: () => setParagraphAttr('styleId', null),
+        insertSectionBreak: (breakType: 'nextPage' | 'continuous' | 'oddPage' | 'evenPage') =>
+          setParagraphAttr('sectionBreakType', breakType),
+        removeSectionBreak: () => setParagraphAttr('sectionBreakType', null),
+        generateTOC: () => {
+          return (
+            state: EditorState,
+            dispatch?: (tr: import('prosemirror-state').Transaction) => void
+          ) => {
+            if (!dispatch) return true;
+
+            // Collect headings with outline levels
+            const headings: { text: string; level: number }[] = [];
+            state.doc.descendants((node) => {
+              if (node.type.name === 'paragraph') {
+                const level = node.attrs.outlineLevel;
+                const styleId = node.attrs.styleId as string | null;
+                // Heading styles typically have outline levels, or detect from styleId
+                let effectiveLevel = level;
+                if (effectiveLevel == null && styleId) {
+                  const match = styleId.match(/^[Hh]eading(\d)$/);
+                  if (match) effectiveLevel = parseInt(match[1], 10) - 1;
+                }
+                if (effectiveLevel != null && effectiveLevel >= 0 && effectiveLevel <= 8) {
+                  let text = '';
+                  node.forEach((child) => {
+                    if (child.isText) text += child.text || '';
+                  });
+                  if (text.trim()) {
+                    headings.push({ text: text.trim(), level: effectiveLevel });
+                  }
+                }
+              }
+            });
+
+            if (headings.length === 0) return false;
+
+            // Build TOC paragraphs and insert at cursor
+            const { schema: s } = state;
+            const tocNodes: import('prosemirror-model').Node[] = [];
+
+            // TOC title
+            tocNodes.push(
+              s.node('paragraph', { alignment: 'center' }, [
+                s.text('Table of Contents', [s.marks.bold.create()]),
+              ])
+            );
+
+            // TOC entries
+            for (const h of headings) {
+              const indent = h.level * 720; // 0.5 inch per level
+              tocNodes.push(
+                s.node(
+                  'paragraph',
+                  {
+                    indentLeft: indent > 0 ? indent : null,
+                  },
+                  [s.text(h.text)]
+                )
+              );
+            }
+
+            const tr = state.tr;
+            const insertPos = state.selection.from;
+            for (let i = tocNodes.length - 1; i >= 0; i--) {
+              tr.insert(insertPos, tocNodes[i]);
+            }
+            dispatch(tr.scrollIntoView());
+            return true;
+          };
+        },
+        setTabs: (tabs: TabMark[]) => setParagraphAttr('tabs', tabs.length > 0 ? tabs : null),
+        addTabMark: (
+          position: number,
+          alignment: TabJustify = 'left',
+          leader: TabLeader = 'none'
+        ) => {
+          return (
+            state: EditorState,
+            dispatch?: (tr: import('prosemirror-state').Transaction) => void
+          ) => {
+            const { $from } = state.selection;
+            const paragraph = $from.parent;
+            if (paragraph.type.name !== 'paragraph') return false;
+            const currentTabs: TabMark[] = paragraph.attrs.tabs || [];
+            const filtered = currentTabs.filter((t: TabMark) => t.position !== position);
+            const newTabs = [...filtered, { position, alignment, leader }].sort(
+              (a: TabMark, b: TabMark) => a.position - b.position
+            );
+            return setParagraphAttr('tabs', newTabs)(state, dispatch);
+          };
+        },
+        removeTabMark: (position: number) => {
+          return (
+            state: EditorState,
+            dispatch?: (tr: import('prosemirror-state').Transaction) => void
+          ) => {
+            const { $from } = state.selection;
+            const paragraph = $from.parent;
+            if (paragraph.type.name !== 'paragraph') return false;
+            const currentTabs: TabMark[] = paragraph.attrs.tabs || [];
+            const newTabs = currentTabs.filter((t: TabMark) => t.position !== position);
+            return setParagraphAttr('tabs', newTabs.length > 0 ? newTabs : null)(state, dispatch);
+          };
+        },
       },
     };
   },

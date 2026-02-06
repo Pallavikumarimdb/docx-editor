@@ -54,12 +54,20 @@ export function deleteTable(state: EditorState, dispatch?: (tr: Transaction) => 
   return cmds.deleteTable()(state, dispatch);
 }
 
-// Merge/Split (stubs — full implementation requires prosemirror-tables)
-export function mergeCells(_state: EditorState, _dispatch?: (tr: Transaction) => void): boolean {
-  return false;
+// Merge/Split — delegated to prosemirror-tables via singleton extension manager
+export function mergeCells(state: EditorState, dispatch?: (tr: Transaction) => void): boolean {
+  return cmds.mergeCells()(state, dispatch);
 }
-export function splitCell(_state: EditorState, _dispatch?: (tr: Transaction) => void): boolean {
-  return false;
+export function splitCell(state: EditorState, dispatch?: (tr: Transaction) => void): boolean {
+  return cmds.splitCell()(state, dispatch);
+}
+
+// Per-cell border editing
+export function setCellBorder(
+  side: 'top' | 'bottom' | 'left' | 'right' | 'all',
+  spec: { style: string; size?: number; color?: { rgb: string } } | null
+): (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean {
+  return cmds.setCellBorder(side, spec);
 }
 
 // Borders
@@ -91,6 +99,88 @@ export function setInsideTableBorders(
   dispatch?: (tr: Transaction) => void
 ): boolean {
   return cmds.setInsideTableBorders()(state, dispatch);
+}
+
+// Vertical alignment
+export function setCellVerticalAlign(
+  align: 'top' | 'center' | 'bottom'
+): (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean {
+  return cmds.setCellVerticalAlign(align);
+}
+
+// Cell margins
+export function setCellMargins(margins: {
+  top?: number;
+  bottom?: number;
+  left?: number;
+  right?: number;
+}): (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean {
+  return cmds.setCellMargins(margins);
+}
+
+// Text direction
+export function setCellTextDirection(
+  direction: string | null
+): (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean {
+  return cmds.setCellTextDirection(direction);
+}
+
+// No-wrap toggle
+export function toggleNoWrap(): (
+  state: EditorState,
+  dispatch?: (tr: Transaction) => void
+) => boolean {
+  return cmds.toggleNoWrap();
+}
+
+// Row height
+export function setRowHeight(
+  height: number | null,
+  rule?: 'auto' | 'atLeast' | 'exact'
+): (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean {
+  return cmds.setRowHeight(height, rule);
+}
+
+// Header row
+export function toggleHeaderRow(): (
+  state: EditorState,
+  dispatch?: (tr: Transaction) => void
+) => boolean {
+  return cmds.toggleHeaderRow();
+}
+
+// Column distribution
+export function distributeColumns(): (
+  state: EditorState,
+  dispatch?: (tr: Transaction) => void
+) => boolean {
+  return cmds.distributeColumns();
+}
+export function autoFitContents(): (
+  state: EditorState,
+  dispatch?: (tr: Transaction) => void
+) => boolean {
+  return cmds.autoFitContents();
+}
+
+// Table properties
+export function setTableProperties(props: {
+  width?: number | null;
+  widthType?: string | null;
+  justification?: 'left' | 'center' | 'right' | null;
+}): (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean {
+  return cmds.setTableProperties(props);
+}
+
+// Table style gallery
+export function applyTableStyle(styleData: {
+  styleId: string;
+  tableBorders?: Record<string, unknown>;
+  conditionals?: Record<string, unknown>;
+  look?: Record<string, boolean>;
+}): (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return cmds.applyTableStyle(styleData as any);
 }
 
 // Cell styling

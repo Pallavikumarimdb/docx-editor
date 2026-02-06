@@ -23,12 +23,20 @@ import type {
   RunContent,
   Hyperlink,
   Image,
+  TextBox,
+  Shape,
   StyleDefinitions,
   Table,
   TableRow,
   TableCell,
   TableCellFormatting,
   TableBorders,
+  SimpleField,
+  ComplexField,
+  InlineSdt,
+  Insertion,
+  Deletion,
+  MathEquation,
 } from '../../types/document';
 import { emuToPixels } from '../../docx/imageParser';
 import { createStyleResolver, type StyleResolver } from '../styles';
@@ -57,8 +65,14 @@ export function toProseDoc(document: Document, options?: ToProseDocOptions): PMN
 
   for (const block of paragraphs) {
     if (block.type === 'paragraph') {
+      // Extract text boxes from paragraph runs before converting
+      const textBoxes = extractTextBoxesFromParagraph(block);
       const pmParagraph = convertParagraph(block, styleResolver);
       nodes.push(pmParagraph);
+      // Append any text box nodes after the paragraph
+      for (const tb of textBoxes) {
+        nodes.push(convertTextBox(tb, styleResolver));
+      }
     } else if (block.type === 'table') {
       const pmTable = convertTable(block, styleResolver);
       nodes.push(pmTable);
@@ -79,12 +93,18 @@ export function toProseDoc(document: Document, options?: ToProseDocOptions): PMN
  * Resolves style-based text formatting and passes it to runs so that
  * paragraph styles (like Heading1) apply their font size, color, etc.
  */
-function convertParagraph(paragraph: Paragraph, styleResolver: StyleResolver | null): PMNode {
+function convertParagraph(
+  paragraph: Paragraph,
+  styleResolver: StyleResolver | null,
+  activeCommentIds?: Set<number>
+): PMNode {
   const attrs = paragraphFormattingToAttrs(paragraph, styleResolver);
   const inlineNodes: PMNode[] = [];
 
+  // Track active comment ranges for this paragraph
+  const commentIds = activeCommentIds ?? new Set<number>();
+
   // Get style-based text formatting (font size, bold, color, etc.)
-  // This comes from the paragraph's style (e.g., Heading1 defines fontSize: 28pt, bold: true)
   let styleRunFormatting: TextFormatting | undefined;
   if (styleResolver) {
     const resolved = styleResolver.resolveParagraphStyle(paragraph.formatting?.styleId);
@@ -92,17 +112,88 @@ function convertParagraph(paragraph: Paragraph, styleResolver: StyleResolver | n
   }
 
   for (const content of paragraph.content) {
-    if (content.type === 'run') {
-      const runNodes = convertRun(content, styleRunFormatting);
+    if (content.type === 'commentRangeStart') {
+      commentIds.add(content.id);
+    } else if (content.type === 'commentRangeEnd') {
+      commentIds.delete(content.id);
+    } else if (content.type === 'run') {
+      let runNodes = convertRun(content, styleRunFormatting);
+      if (commentIds.size > 0) {
+        runNodes = applyCommentMarks(runNodes, commentIds);
+      }
       inlineNodes.push(...runNodes);
     } else if (content.type === 'hyperlink') {
       const linkNodes = convertHyperlink(content, styleRunFormatting);
       inlineNodes.push(...linkNodes);
+    } else if (content.type === 'simpleField' || content.type === 'complexField') {
+      const fieldNode = convertField(content);
+      if (fieldNode) inlineNodes.push(fieldNode);
+    } else if (content.type === 'inlineSdt') {
+      const sdtNode = convertInlineSdt(content, styleRunFormatting);
+      if (sdtNode) inlineNodes.push(sdtNode);
+    } else if (content.type === 'insertion') {
+      const insNodes = convertTrackedChange(content, 'insertion', styleRunFormatting);
+      inlineNodes.push(...insNodes);
+    } else if (content.type === 'deletion') {
+      const delNodes = convertTrackedChange(content, 'deletion', styleRunFormatting);
+      inlineNodes.push(...delNodes);
+    } else if (content.type === 'mathEquation') {
+      const mathNode = convertMathEquation(content);
+      if (mathNode) inlineNodes.push(mathNode);
     }
-    // Skip other content types for now (bookmarks, fields, etc.)
+    // Skip other content types for now (bookmarks, etc.)
   }
 
   return schema.node('paragraph', attrs, inlineNodes);
+}
+
+/**
+ * Apply comment marks to PM nodes within a comment range.
+ * Only the first active comment ID is used (comments don't overlap visually).
+ */
+function applyCommentMarks(nodes: PMNode[], commentIds: Set<number>): PMNode[] {
+  if (commentIds.size === 0) return nodes;
+  const commentId = [...commentIds][0]; // Use first active comment
+  const commentMark = schema.marks.comment.create({ commentId });
+
+  return nodes.map((node) => {
+    if (node.isText) {
+      return node.mark(commentMark.addToSet(node.marks));
+    }
+    return node;
+  });
+}
+
+/**
+ * Convert tracked change (insertion or deletion) content to PM nodes with
+ * an insertion/deletion mark applied.
+ */
+function convertTrackedChange(
+  change: Insertion | Deletion,
+  markType: 'insertion' | 'deletion',
+  styleRunFormatting?: TextFormatting
+): PMNode[] {
+  const nodes: PMNode[] = [];
+  for (const item of change.content) {
+    if (item.type === 'run') {
+      nodes.push(...convertRun(item, styleRunFormatting));
+    } else if (item.type === 'hyperlink') {
+      nodes.push(...convertHyperlink(item, styleRunFormatting));
+    }
+  }
+
+  const mark = schema.marks[markType].create({
+    revisionId: change.info.id,
+    author: change.info.author,
+    date: change.info.date ?? null,
+  });
+
+  return nodes.map((node) => {
+    if (node.isText) {
+      return node.mark(mark.addToSet(node.marks));
+    }
+    return node;
+  });
 }
 
 /**
@@ -154,6 +245,17 @@ function paragraphFormattingToAttrs(
     attrs.keepNext = formatting?.keepNext ?? stylePpr?.keepNext;
     attrs.keepLines = formatting?.keepLines ?? stylePpr?.keepLines;
 
+    // Outline level (for TOC)
+    attrs.outlineLevel = formatting?.outlineLevel ?? stylePpr?.outlineLevel;
+
+    // Section break type from paragraph-level section properties
+    if (paragraph.sectionProperties?.sectionStart) {
+      const st = paragraph.sectionProperties.sectionStart;
+      if (st === 'nextPage' || st === 'continuous' || st === 'oddPage' || st === 'evenPage') {
+        attrs.sectionBreakType = st;
+      }
+    }
+
     // If style defines numPr but inline doesn't, use style's numPr
     if (!formatting?.numPr && stylePpr?.numPr) {
       attrs.numPr = stylePpr.numPr;
@@ -177,6 +279,17 @@ function paragraphFormattingToAttrs(
     attrs.pageBreakBefore = formatting?.pageBreakBefore;
     attrs.keepNext = formatting?.keepNext;
     attrs.keepLines = formatting?.keepLines;
+
+    // Outline level
+    attrs.outlineLevel = formatting?.outlineLevel;
+  }
+
+  // Section break type from paragraph-level section properties
+  if (paragraph.sectionProperties?.sectionStart) {
+    const st = paragraph.sectionProperties.sectionStart;
+    if (st === 'nextPage' || st === 'continuous' || st === 'oddPage' || st === 'evenPage') {
+      attrs.sectionBreakType = st;
+    }
   }
 
   return attrs;
@@ -460,62 +573,33 @@ function convertTableCell(
   const backgroundColor =
     formatting?.shading?.fill?.rgb ?? conditionalStyle?.tcPr?.shading?.fill?.rgb;
 
-  // Convert borders to the format expected by ProseMirror schema
+  // Convert borders — preserve full BorderSpec per side
   // Priority: cell borders > conditional style borders > table borders
   const cellEdgeSet = formatting?.borders ?? conditionalStyle?.tcPr?.borders;
-  let borders: { top?: boolean; bottom?: boolean; left?: boolean; right?: boolean } | undefined;
-  let borderColors: { top?: string; bottom?: string; left?: string; right?: string } | undefined;
-  let borderWidths: { top?: number; bottom?: number; left?: number; right?: number } | undefined;
-
-  // Helper to check if a border side is visible (has a style that's not none/nil)
-  const isBorderVisible = (border?: { style?: string }): boolean => {
-    return !!border && !!border.style && border.style !== 'none' && border.style !== 'nil';
-  };
+  let borders:
+    | {
+        top?: import('../../types/document').BorderSpec;
+        bottom?: import('../../types/document').BorderSpec;
+        left?: import('../../types/document').BorderSpec;
+        right?: import('../../types/document').BorderSpec;
+      }
+    | undefined;
 
   if (cellEdgeSet) {
-    // Use cell-level or conditional style borders
     borders = {
-      top: isBorderVisible(cellEdgeSet.top),
-      bottom: isBorderVisible(cellEdgeSet.bottom),
-      left: isBorderVisible(cellEdgeSet.left),
-      right: isBorderVisible(cellEdgeSet.right),
-    };
-    borderColors = {
-      top: cellEdgeSet.top?.color?.rgb,
-      bottom: cellEdgeSet.bottom?.color?.rgb,
-      left: cellEdgeSet.left?.color?.rgb,
-      right: cellEdgeSet.right?.color?.rgb,
-    };
-    borderWidths = {
-      top: cellEdgeSet.top?.size,
-      bottom: cellEdgeSet.bottom?.size,
-      left: cellEdgeSet.left?.size,
-      right: cellEdgeSet.right?.size,
+      top: cellEdgeSet.top,
+      bottom: cellEdgeSet.bottom,
+      left: cellEdgeSet.left,
+      right: cellEdgeSet.right,
     };
   } else if (tableBorders) {
     // Fall back to table-level borders based on cell position
     // Table borders: top/bottom/left/right for outer edges, insideH/insideV for internal
     borders = {
-      top: isFirstRow ? isBorderVisible(tableBorders.top) : isBorderVisible(tableBorders.insideH),
-      bottom: isLastRow
-        ? isBorderVisible(tableBorders.bottom)
-        : isBorderVisible(tableBorders.insideH),
-      left: isFirstCol ? isBorderVisible(tableBorders.left) : isBorderVisible(tableBorders.insideV),
-      right: isLastCol
-        ? isBorderVisible(tableBorders.right)
-        : isBorderVisible(tableBorders.insideV),
-    };
-    borderColors = {
-      top: isFirstRow ? tableBorders.top?.color?.rgb : tableBorders.insideH?.color?.rgb,
-      bottom: isLastRow ? tableBorders.bottom?.color?.rgb : tableBorders.insideH?.color?.rgb,
-      left: isFirstCol ? tableBorders.left?.color?.rgb : tableBorders.insideV?.color?.rgb,
-      right: isLastCol ? tableBorders.right?.color?.rgb : tableBorders.insideV?.color?.rgb,
-    };
-    borderWidths = {
-      top: isFirstRow ? tableBorders.top?.size : tableBorders.insideH?.size,
-      bottom: isLastRow ? tableBorders.bottom?.size : tableBorders.insideH?.size,
-      left: isFirstCol ? tableBorders.left?.size : tableBorders.insideV?.size,
-      right: isLastCol ? tableBorders.right?.size : tableBorders.insideV?.size,
+      top: isFirstRow ? tableBorders.top : tableBorders.insideH,
+      bottom: isLastRow ? tableBorders.bottom : tableBorders.insideH,
+      left: isFirstCol ? tableBorders.left : tableBorders.insideV,
+      right: isLastCol ? tableBorders.right : tableBorders.insideV,
     };
   }
 
@@ -526,10 +610,17 @@ function convertTableCell(
     widthType: widthType,
     verticalAlign: formatting?.verticalAlign,
     backgroundColor: backgroundColor,
+    textDirection: formatting?.textDirection,
     noWrap: formatting?.noWrap,
     borders: borders,
-    borderColors: borderColors,
-    borderWidths: borderWidths,
+    margins: formatting?.margins
+      ? {
+          top: formatting.margins.top?.value,
+          bottom: formatting.margins.bottom?.value,
+          left: formatting.margins.left?.value,
+          right: formatting.margins.right?.value,
+        }
+      : undefined,
   };
 
   // Convert cell content (paragraphs and nested tables)
@@ -551,6 +642,78 @@ function convertTableCell(
   // Use tableHeader for header cells, tableCell otherwise
   const nodeType = isHeader ? 'tableHeader' : 'tableCell';
   return schema.node(nodeType, attrs, contentNodes);
+}
+
+/**
+ * Convert a SimpleField or ComplexField to a ProseMirror field node.
+ */
+function convertField(field: SimpleField | ComplexField): PMNode | null {
+  // Extract display text from field content/result
+  let displayText = '';
+  const runs = field.type === 'simpleField' ? field.content : field.fieldResult;
+  if (runs) {
+    for (const r of runs) {
+      if (r.type === 'run') {
+        for (const c of r.content) {
+          if (c.type === 'text') displayText += c.text;
+        }
+      }
+    }
+  }
+
+  return schema.node('field', {
+    fieldType: field.fieldType,
+    instruction: field.instruction,
+    displayText,
+    fieldKind: field.type === 'simpleField' ? 'simple' : 'complex',
+    fldLock: field.fldLock ?? false,
+    dirty: field.dirty ?? false,
+  });
+}
+
+/**
+ * Convert a MathEquation to a ProseMirror math node.
+ */
+function convertMathEquation(math: MathEquation): PMNode | null {
+  return schema.node('math', {
+    display: math.display,
+    ommlXml: math.ommlXml,
+    plainText: math.plainText || '',
+  });
+}
+
+/**
+ * Convert an InlineSdt to a ProseMirror sdt node with inline content.
+ */
+function convertInlineSdt(sdt: InlineSdt, styleRunFormatting?: TextFormatting): PMNode | null {
+  const props = sdt.properties;
+  const inlineNodes: PMNode[] = [];
+
+  for (const content of sdt.content) {
+    if (content.type === 'run') {
+      const runNodes = convertRun(content, styleRunFormatting);
+      inlineNodes.push(...runNodes);
+    } else if (content.type === 'hyperlink') {
+      const linkNodes = convertHyperlink(content, styleRunFormatting);
+      inlineNodes.push(...linkNodes);
+    }
+  }
+
+  return schema.node(
+    'sdt',
+    {
+      sdtType: props.sdtType,
+      alias: props.alias ?? null,
+      tag: props.tag ?? null,
+      lock: props.lock ?? null,
+      placeholder: props.placeholder ?? null,
+      showingPlaceholder: props.showingPlaceholder ?? false,
+      dateFormat: props.dateFormat ?? null,
+      listItems: props.listItems ? JSON.stringify(props.listItems) : null,
+      checked: props.checked ?? null,
+    },
+    inlineNodes.length > 0 ? inlineNodes : undefined
+  );
 }
 
 /**
@@ -633,6 +796,17 @@ function convertRunContent(content: RunContent, marks: ReturnType<typeof schema.
         return [convertImage(content.image)];
       }
       return [];
+
+    case 'shape': {
+      // Shapes with text body are handled as text boxes at block level
+      // Other shapes render as inline SVG
+      const shp = content.shape;
+      if (shp.textBody && shp.textBody.content.length > 0) {
+        // Skip - handled by extractTextBoxesFromParagraph
+        return [];
+      }
+      return [convertShape(shp)];
+    }
 
     case 'footnoteRef':
       // Footnote reference - render as superscript number with footnoteRef mark
@@ -781,6 +955,33 @@ function convertImage(image: Image): PMNode {
     };
   }
 
+  // Convert outline to border attrs
+  let borderWidth: number | undefined;
+  let borderColor: string | undefined;
+  let borderKind: string | undefined;
+  if (image.outline && image.outline.width) {
+    // Convert EMU to pixels (1 EMU = 1/914400 inch, 1 inch = 96 px)
+    borderWidth = Math.round((image.outline.width / 914400) * 96 * 100) / 100;
+    if (image.outline.color?.rgb) {
+      borderColor = `#${image.outline.color.rgb}`;
+    }
+    // Map OOXML dash styles to CSS border styles
+    const styleMap: Record<string, string> = {
+      solid: 'solid',
+      dot: 'dotted',
+      dash: 'dashed',
+      lgDash: 'dashed',
+      dashDot: 'dashed',
+      lgDashDot: 'dashed',
+      lgDashDotDot: 'dashed',
+      sysDot: 'dotted',
+      sysDash: 'dashed',
+      sysDashDot: 'dashed',
+      sysDashDotDot: 'dashed',
+    };
+    borderKind = image.outline.style ? styleMap[image.outline.style] || 'solid' : 'solid';
+  }
+
   return schema.node('image', {
     src: image.src || '',
     alt: image.alt,
@@ -797,6 +998,9 @@ function convertImage(image: Image): PMNode {
     distLeft: distLeft,
     distRight: distRight,
     position: position,
+    borderWidth: borderWidth,
+    borderColor: borderColor,
+    borderKind: borderKind,
   });
 }
 
@@ -932,7 +1136,260 @@ function textFormattingToMarks(
     marks.push(schema.mark('smallCaps'));
   }
 
+  // Character spacing (spacing, position, scale, kerning)
+  if (
+    formatting.spacing != null ||
+    formatting.position != null ||
+    formatting.scale != null ||
+    formatting.kerning != null
+  ) {
+    marks.push(
+      schema.mark('characterSpacing', {
+        spacing: formatting.spacing ?? null,
+        position: formatting.position ?? null,
+        scale: formatting.scale ?? null,
+        kerning: formatting.kerning ?? null,
+      })
+    );
+  }
+
+  // Emboss (w:emboss)
+  if (formatting.emboss) {
+    marks.push(schema.mark('emboss'));
+  }
+
+  // Imprint/Engrave (w:imprint)
+  if (formatting.imprint) {
+    marks.push(schema.mark('imprint'));
+  }
+
+  // Text shadow (w:shadow)
+  if (formatting.shadow) {
+    marks.push(schema.mark('textShadow'));
+  }
+
+  // Emphasis mark (w:em)
+  if (formatting.emphasisMark && formatting.emphasisMark !== 'none') {
+    marks.push(schema.mark('emphasisMark', { type: formatting.emphasisMark }));
+  }
+
+  // Text outline (w:outline)
+  if (formatting.outline) {
+    marks.push(schema.mark('textOutline'));
+  }
+
   return marks;
+}
+
+// ============================================================================
+// SHAPE CONVERSION
+// ============================================================================
+
+/**
+ * Convert a Shape to a ProseMirror shape node (inline SVG)
+ */
+function convertShape(shape: Shape): PMNode {
+  const widthPx = shape.size?.width ? emuToPixels(shape.size.width) : 100;
+  const heightPx = shape.size?.height ? emuToPixels(shape.size.height) : 80;
+
+  let fillColor: string | undefined;
+  let fillType: string = 'solid';
+  let gradientType: string | undefined;
+  let gradientAngle: number | undefined;
+  let gradientStops: string | undefined;
+  if (shape.fill) {
+    fillType = shape.fill.type;
+    if (shape.fill.color?.rgb) {
+      fillColor = `#${shape.fill.color.rgb}`;
+    }
+    // Extract gradient data
+    if (shape.fill.type === 'gradient' && shape.fill.gradient) {
+      const g = shape.fill.gradient;
+      gradientType = g.type;
+      gradientAngle = g.angle;
+      // Convert stops to serializable format with CSS colors
+      gradientStops = JSON.stringify(
+        g.stops.map((s) => ({
+          position: s.position,
+          color: s.color.rgb ? `#${s.color.rgb}` : '#000000',
+        }))
+      );
+    }
+  }
+
+  let outlineWidth: number | undefined;
+  let outlineColor: string | undefined;
+  let outlineStyle: string | undefined;
+  if (shape.outline) {
+    if (shape.outline.width) {
+      outlineWidth = Math.round((shape.outline.width / 914400) * 96 * 100) / 100;
+    }
+    if (shape.outline.color?.rgb) {
+      outlineColor = `#${shape.outline.color.rgb}`;
+    }
+    outlineStyle = shape.outline.style || 'solid';
+  }
+
+  let transform: string | undefined;
+  if (shape.transform) {
+    const transforms: string[] = [];
+    if (shape.transform.rotation) {
+      transforms.push(`rotate(${shape.transform.rotation}deg)`);
+    }
+    if (shape.transform.flipH) {
+      transforms.push('scaleX(-1)');
+    }
+    if (shape.transform.flipV) {
+      transforms.push('scaleY(-1)');
+    }
+    if (transforms.length > 0) {
+      transform = transforms.join(' ');
+    }
+  }
+
+  return schema.node('shape', {
+    shapeType: shape.shapeType || 'rect',
+    shapeId: shape.id,
+    width: widthPx,
+    height: heightPx,
+    fillColor,
+    fillType,
+    gradientType,
+    gradientAngle,
+    gradientStops,
+    outlineWidth,
+    outlineColor,
+    outlineStyle,
+    transform,
+  });
+}
+
+// ============================================================================
+// TEXT BOX CONVERSION
+// ============================================================================
+
+/**
+ * Extract text boxes from paragraph runs.
+ * Text boxes appear as ShapeContent where the shape has textBody,
+ * or as DrawingContent that contains a text box instead of an image.
+ */
+function extractTextBoxesFromParagraph(paragraph: Paragraph): TextBox[] {
+  const textBoxes: TextBox[] = [];
+  for (const content of paragraph.content) {
+    if (content.type === 'run') {
+      for (const rc of content.content) {
+        if (rc.type === 'shape' && 'shape' in rc) {
+          const shape = rc.shape as Shape;
+          if (shape.textBody && shape.textBody.content.length > 0) {
+            // Convert shape with text body to TextBox
+            textBoxes.push({
+              type: 'textBox',
+              id: shape.id,
+              size: shape.size,
+              position: shape.position,
+              wrap: shape.wrap,
+              fill: shape.fill,
+              outline: shape.outline,
+              content: shape.textBody.content,
+              margins: shape.textBody.margins,
+            });
+          }
+        }
+      }
+    }
+  }
+  return textBoxes;
+}
+
+/**
+ * Convert a TextBox to a ProseMirror textBox node
+ */
+function convertTextBox(textBox: TextBox, styleResolver: StyleResolver | null): PMNode {
+  const widthPx = textBox.size?.width ? emuToPixels(textBox.size.width) : 200;
+  const heightPx = textBox.size?.height ? emuToPixels(textBox.size.height) : undefined;
+
+  // Convert fill color
+  let fillColor: string | undefined;
+  if (textBox.fill?.color?.rgb) {
+    fillColor = `#${textBox.fill.color.rgb}`;
+  }
+
+  // Convert outline
+  let outlineWidth: number | undefined;
+  let outlineColor: string | undefined;
+  let outlineStyle: string | undefined;
+  if (textBox.outline && textBox.outline.width) {
+    outlineWidth = Math.round((textBox.outline.width / 914400) * 96 * 100) / 100;
+    if (textBox.outline.color?.rgb) {
+      outlineColor = `#${textBox.outline.color.rgb}`;
+    }
+    outlineStyle = textBox.outline.style || 'solid';
+  }
+
+  // Convert margins from EMU to pixels
+  const marginTop = textBox.margins?.top != null ? emuToPixels(textBox.margins.top) : 4;
+  const marginBottom = textBox.margins?.bottom != null ? emuToPixels(textBox.margins.bottom) : 4;
+  const marginLeft = textBox.margins?.left != null ? emuToPixels(textBox.margins.left) : 7;
+  const marginRight = textBox.margins?.right != null ? emuToPixels(textBox.margins.right) : 7;
+
+  // Convert text box content (paragraphs) to PM nodes
+  const contentNodes: PMNode[] = [];
+  for (const para of textBox.content) {
+    contentNodes.push(convertParagraph(para, styleResolver));
+  }
+
+  // Ensure at least one paragraph
+  if (contentNodes.length === 0) {
+    contentNodes.push(schema.node('paragraph', {}, []));
+  }
+
+  return schema.node(
+    'textBox',
+    {
+      width: widthPx,
+      height: heightPx,
+      textBoxId: textBox.id,
+      fillColor,
+      outlineWidth,
+      outlineColor,
+      outlineStyle,
+      marginTop,
+      marginBottom,
+      marginLeft,
+      marginRight,
+    },
+    contentNodes
+  );
+}
+
+/**
+ * Convert HeaderFooter content (array of Paragraph/Table blocks) to a ProseMirror document.
+ * Used for editing headers/footers in their own ProseMirror editor.
+ */
+export function headerFooterToProseDoc(
+  content: Array<Paragraph | Table>,
+  options?: ToProseDocOptions
+): PMNode {
+  const nodes: PMNode[] = [];
+  const styleResolver = options?.styles ? createStyleResolver(options.styles) : null;
+
+  for (const block of content) {
+    if (block.type === 'paragraph') {
+      const textBoxes = extractTextBoxesFromParagraph(block);
+      nodes.push(convertParagraph(block, styleResolver));
+      for (const tb of textBoxes) {
+        nodes.push(convertTextBox(tb, styleResolver));
+      }
+    } else if (block.type === 'table') {
+      nodes.push(convertTable(block, styleResolver));
+    }
+  }
+
+  if (nodes.length === 0) {
+    nodes.push(schema.node('paragraph', {}, []));
+  }
+
+  return schema.node('doc', null, nodes);
 }
 
 /**

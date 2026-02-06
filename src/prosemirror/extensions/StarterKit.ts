@@ -32,18 +32,35 @@ import { HyperlinkExtension } from './marks/HyperlinkExtension';
 import { AllCapsExtension } from './marks/AllCapsExtension';
 import { SmallCapsExtension } from './marks/SmallCapsExtension';
 import { FootnoteRefExtension } from './marks/FootnoteRefExtension';
+import { CharacterSpacingExtension } from './marks/CharacterSpacingExtension';
+import { CommentExtension } from './marks/CommentExtension';
+import { InsertionExtension, DeletionExtension } from './marks/TrackedChangeExtensions';
+import {
+  EmbossExtension,
+  ImprintExtension,
+  TextShadowExtension,
+  EmphasisMarkExtension,
+  TextOutlineExtension,
+} from './marks/TextEffectsExtensions';
 
 // Nodes
 import { HardBreakExtension } from './nodes/HardBreakExtension';
 import { TabExtension } from './nodes/TabExtension';
 import { ImageExtension } from './nodes/ImageExtension';
+import { TextBoxExtension } from './nodes/TextBoxExtension';
+import { ShapeExtension } from './nodes/ShapeExtension';
 import { HorizontalRuleExtension } from './nodes/HorizontalRuleExtension';
+import { FieldExtension } from './nodes/FieldExtension';
+import { SdtExtension } from './nodes/SdtExtension';
+import { MathExtension } from './nodes/MathExtension';
 import { createTableExtensions } from './nodes/TableExtension';
 
 // Features
 import { ListExtension } from './features/ListExtension';
 import { BaseKeymapExtension } from './features/BaseKeymapExtension';
 import { SelectionTrackerExtension } from './features/SelectionTrackerExtension';
+import { ImageDragExtension } from './features/ImageDragExtension';
+import { DropCursorExtension } from './features/DropCursorExtension';
 
 export interface StarterKitOptions {
   /** Extensions to disable by name */
@@ -97,12 +114,28 @@ export function createStarterKit(options: StarterKitOptions = {}): AnyExtension[
   add('allCaps', AllCapsExtension());
   add('smallCaps', SmallCapsExtension());
   add('footnoteRef', FootnoteRefExtension());
+  add('characterSpacing', CharacterSpacingExtension());
+  add('emboss', EmbossExtension());
+  add('imprint', ImprintExtension());
+  add('textShadow', TextShadowExtension());
+  add('emphasisMark', EmphasisMarkExtension());
+  add('textOutline', TextOutlineExtension());
+  add('comment', CommentExtension());
+  add('insertion', InsertionExtension());
+  add('deletion', DeletionExtension());
 
   // Nodes
   add('hardBreak', HardBreakExtension());
   add('tab', TabExtension());
   add('image', ImageExtension());
+  add('textBox', TextBoxExtension());
+  add('shape', ShapeExtension());
+  add('imageDrag', ImageDragExtension());
+  add('dropCursor', DropCursorExtension());
   add('horizontalRule', HorizontalRuleExtension());
+  add('field', FieldExtension());
+  add('sdt', SdtExtension());
+  add('math', MathExtension());
 
   // Table (5 extensions grouped)
   if (!disabled.has('table')) {

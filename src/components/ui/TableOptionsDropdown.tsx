@@ -17,6 +17,8 @@ import { Tooltip } from './Tooltip';
 import { MaterialSymbol } from './MaterialSymbol';
 import { cn } from '../../lib/utils';
 import type { TableAction } from './TableToolbar';
+import type { Style } from '../../types/document';
+import { getBuiltinTableStyles } from './TableStyleGallery';
 
 // ============================================================================
 // TYPES
@@ -38,6 +40,8 @@ export interface TableOptionsDropdownProps {
   className?: string;
   /** Tooltip text */
   tooltip?: string;
+  /** Document styles for table style gallery */
+  documentStyles?: Style[];
 }
 
 // ============================================================================
@@ -80,6 +84,10 @@ type SimpleAction =
   | 'borderOutside'
   | 'borderInside'
   | 'borderNone'
+  | 'borderTop'
+  | 'borderBottom'
+  | 'borderLeft'
+  | 'borderRight'
   | 'mergeCells'
   | 'splitCell';
 
@@ -116,7 +124,11 @@ const MENU_ITEMS: MenuItem[] = [
   { action: 'borderAll', label: 'All borders', icon: 'border_all' },
   { action: 'borderOutside', label: 'Outside borders', icon: 'border_outer' },
   { action: 'borderInside', label: 'Inside borders', icon: 'border_inner' },
-  { action: 'borderNone', label: 'Remove borders', icon: 'border_clear', separator: true },
+  { action: 'borderNone', label: 'Remove borders', icon: 'border_clear' },
+  { action: 'borderTop', label: 'Top border', icon: 'border_top' },
+  { action: 'borderBottom', label: 'Bottom border', icon: 'border_bottom' },
+  { action: 'borderLeft', label: 'Left border', icon: 'border_left' },
+  { action: 'borderRight', label: 'Right border', icon: 'border_right', separator: true },
   {
     action: 'mergeCells',
     label: 'Merge cells',
@@ -288,6 +300,534 @@ function ColorPickerRow({
 }
 
 // ============================================================================
+// VERTICAL ALIGNMENT SUBCOMPONENT
+// ============================================================================
+
+const VALIGN_OPTIONS: { value: 'top' | 'center' | 'bottom'; icon: string; label: string }[] = [
+  { value: 'top', icon: 'vertical_align_top', label: 'Top' },
+  { value: 'center', icon: 'vertical_align_center', label: 'Middle' },
+  { value: 'bottom', icon: 'vertical_align_bottom', label: 'Bottom' },
+];
+
+function VerticalAlignRow({ onAction }: { onAction: (action: TableAction) => void }) {
+  return (
+    <div style={{ padding: '6px 12px' }}>
+      <div style={{ fontSize: 12, color: 'var(--doc-text-muted)', marginBottom: 4 }}>
+        Vertical alignment
+      </div>
+      <div style={{ display: 'flex', gap: 4 }}>
+        {VALIGN_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            title={opt.label}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 32,
+              height: 28,
+              border: '1px solid var(--doc-border)',
+              borderRadius: 4,
+              backgroundColor: 'transparent',
+              cursor: 'pointer',
+            }}
+            onClick={() => onAction({ type: 'cellVerticalAlign', align: opt.value })}
+          >
+            <MaterialSymbol name={opt.icon} size={16} />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// CELL MARGINS SUBCOMPONENT
+// ============================================================================
+
+function CellMarginsRow({ onAction }: { onAction: (action: TableAction) => void }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+  const [marginValues, setMarginValues] = useState({ top: 0, bottom: 0, left: 108, right: 108 });
+
+  const handleApply = () => {
+    onAction({ type: 'cellMargins', margins: marginValues });
+    setIsExpanded(false);
+  };
+
+  return (
+    <div>
+      <button
+        type="button"
+        style={{
+          ...menuItemStyles,
+          backgroundColor: hoveredItem === 'main' ? 'var(--doc-bg-hover)' : 'transparent',
+        }}
+        onMouseEnter={() => setHoveredItem('main')}
+        onMouseLeave={() => setHoveredItem(null)}
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <MaterialSymbol name="padding" size={18} />
+        <span style={{ flex: 1 }}>Cell margins</span>
+        <MaterialSymbol name={isExpanded ? 'expand_less' : 'expand_more'} size={18} />
+      </button>
+
+      {isExpanded && (
+        <div
+          style={{
+            backgroundColor: 'var(--doc-bg-muted)',
+            borderTop: '1px solid var(--doc-border)',
+            borderBottom: '1px solid var(--doc-border)',
+            padding: '8px 12px',
+          }}
+        >
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+            {(['top', 'bottom', 'left', 'right'] as const).map((side) => (
+              <label
+                key={side}
+                style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}
+              >
+                <span
+                  style={{ width: 42, textTransform: 'capitalize', color: 'var(--doc-text-muted)' }}
+                >
+                  {side}
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  step={20}
+                  value={marginValues[side]}
+                  onChange={(e) =>
+                    setMarginValues((prev) => ({ ...prev, [side]: Number(e.target.value) || 0 }))
+                  }
+                  style={{
+                    width: 60,
+                    padding: '2px 4px',
+                    border: '1px solid var(--doc-border)',
+                    borderRadius: 3,
+                    fontSize: 12,
+                  }}
+                />
+                <span style={{ fontSize: 10, color: 'var(--doc-text-muted)' }}>tw</span>
+              </label>
+            ))}
+          </div>
+          <button
+            type="button"
+            style={{
+              marginTop: 6,
+              padding: '4px 12px',
+              fontSize: 12,
+              border: '1px solid var(--doc-border)',
+              borderRadius: 4,
+              backgroundColor: 'var(--doc-primary)',
+              color: 'white',
+              cursor: 'pointer',
+              width: '100%',
+            }}
+            onClick={handleApply}
+          >
+            Apply
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// TEXT DIRECTION SUBCOMPONENT
+// ============================================================================
+
+const TEXT_DIR_OPTIONS: { value: string | null; label: string }[] = [
+  { value: null, label: 'Horizontal (LR)' },
+  { value: 'tbRl', label: 'Vertical (top-bottom, RL)' },
+  { value: 'btLr', label: 'Vertical (bottom-top, LR)' },
+];
+
+function TextDirectionRow({ onAction }: { onAction: (action: TableAction) => void }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+
+  return (
+    <div>
+      <button
+        type="button"
+        style={{
+          ...menuItemStyles,
+          backgroundColor: hoveredItem === 'main' ? 'var(--doc-bg-hover)' : 'transparent',
+        }}
+        onMouseEnter={() => setHoveredItem('main')}
+        onMouseLeave={() => setHoveredItem(null)}
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <MaterialSymbol name="text_rotation_none" size={18} />
+        <span style={{ flex: 1 }}>Text direction</span>
+        <MaterialSymbol name={isExpanded ? 'expand_less' : 'expand_more'} size={18} />
+      </button>
+
+      {isExpanded && (
+        <div
+          style={{
+            backgroundColor: 'var(--doc-bg-muted)',
+            borderTop: '1px solid var(--doc-border)',
+            borderBottom: '1px solid var(--doc-border)',
+            padding: '4px 0',
+          }}
+        >
+          {TEXT_DIR_OPTIONS.map((opt) => (
+            <button
+              key={opt.value ?? 'default'}
+              type="button"
+              style={{
+                ...menuItemStyles,
+                padding: '6px 16px',
+                fontSize: 13,
+                backgroundColor:
+                  hoveredItem === (opt.value ?? 'default') ? 'var(--doc-bg-hover)' : 'transparent',
+              }}
+              onMouseEnter={() => setHoveredItem(opt.value ?? 'default')}
+              onMouseLeave={() => setHoveredItem(null)}
+              onClick={() => {
+                onAction({ type: 'cellTextDirection', direction: opt.value });
+                setIsExpanded(false);
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// NO-WRAP SUBCOMPONENT
+// ============================================================================
+
+function NoWrapRow({ onAction }: { onAction: (action: TableAction) => void }) {
+  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+
+  return (
+    <button
+      type="button"
+      style={{
+        ...menuItemStyles,
+        backgroundColor: hoveredItem === 'main' ? 'var(--doc-bg-hover)' : 'transparent',
+      }}
+      onMouseEnter={() => setHoveredItem('main')}
+      onMouseLeave={() => setHoveredItem(null)}
+      onClick={() => onAction({ type: 'toggleNoWrap' })}
+    >
+      <MaterialSymbol name="wrap_text" size={18} />
+      <span style={{ flex: 1 }}>Toggle no-wrap</span>
+    </button>
+  );
+}
+
+// ============================================================================
+// ROW HEIGHT SUBCOMPONENT
+// ============================================================================
+
+const HEIGHT_RULE_OPTIONS: { value: 'auto' | 'atLeast' | 'exact'; label: string }[] = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'atLeast', label: 'At least' },
+  { value: 'exact', label: 'Exact' },
+];
+
+function RowHeightRow({ onAction }: { onAction: (action: TableAction) => void }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+  const [heightValue, setHeightValue] = useState(0);
+  const [heightRule, setHeightRule] = useState<'auto' | 'atLeast' | 'exact'>('atLeast');
+
+  const handleApply = () => {
+    if (heightRule === 'auto' || heightValue <= 0) {
+      onAction({ type: 'rowHeight', height: null });
+    } else {
+      onAction({ type: 'rowHeight', height: heightValue, rule: heightRule });
+    }
+    setIsExpanded(false);
+  };
+
+  return (
+    <div>
+      <button
+        type="button"
+        style={{
+          ...menuItemStyles,
+          backgroundColor: hoveredItem === 'main' ? 'var(--doc-bg-hover)' : 'transparent',
+        }}
+        onMouseEnter={() => setHoveredItem('main')}
+        onMouseLeave={() => setHoveredItem(null)}
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <MaterialSymbol name="height" size={18} />
+        <span style={{ flex: 1 }}>Row height</span>
+        <MaterialSymbol name={isExpanded ? 'expand_less' : 'expand_more'} size={18} />
+      </button>
+
+      {isExpanded && (
+        <div
+          style={{
+            backgroundColor: 'var(--doc-bg-muted)',
+            borderTop: '1px solid var(--doc-border)',
+            borderBottom: '1px solid var(--doc-border)',
+            padding: '8px 12px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <label style={{ fontSize: 12, color: 'var(--doc-text-muted)', width: 40 }}>Rule</label>
+            <select
+              value={heightRule}
+              onChange={(e) => setHeightRule(e.target.value as typeof heightRule)}
+              style={{
+                flex: 1,
+                padding: '2px 4px',
+                border: '1px solid var(--doc-border)',
+                borderRadius: 3,
+                fontSize: 12,
+              }}
+            >
+              {HEIGHT_RULE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          {heightRule !== 'auto' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <label style={{ fontSize: 12, color: 'var(--doc-text-muted)', width: 40 }}>
+                Height
+              </label>
+              <input
+                type="number"
+                min={0}
+                step={20}
+                value={heightValue}
+                onChange={(e) => setHeightValue(Number(e.target.value) || 0)}
+                style={{
+                  flex: 1,
+                  padding: '2px 4px',
+                  border: '1px solid var(--doc-border)',
+                  borderRadius: 3,
+                  fontSize: 12,
+                }}
+              />
+              <span style={{ fontSize: 10, color: 'var(--doc-text-muted)' }}>tw</span>
+            </div>
+          )}
+          <button
+            type="button"
+            style={{
+              padding: '4px 12px',
+              fontSize: 12,
+              border: '1px solid var(--doc-border)',
+              borderRadius: 4,
+              backgroundColor: 'var(--doc-primary)',
+              color: 'white',
+              cursor: 'pointer',
+              width: '100%',
+            }}
+            onClick={handleApply}
+          >
+            Apply
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// HEADER ROW SUBCOMPONENT
+// ============================================================================
+
+function HeaderRowRow({ onAction }: { onAction: (action: TableAction) => void }) {
+  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+
+  return (
+    <button
+      type="button"
+      style={{
+        ...menuItemStyles,
+        backgroundColor: hoveredItem === 'main' ? 'var(--doc-bg-hover)' : 'transparent',
+      }}
+      onMouseEnter={() => setHoveredItem('main')}
+      onMouseLeave={() => setHoveredItem(null)}
+      onClick={() => onAction({ type: 'toggleHeaderRow' })}
+    >
+      <MaterialSymbol name="table_rows" size={18} />
+      <span style={{ flex: 1 }}>Toggle header row</span>
+    </button>
+  );
+}
+
+// ============================================================================
+// DISTRIBUTE / AUTO-FIT SUBCOMPONENTS
+// ============================================================================
+
+function DistributeColumnsRow({ onAction }: { onAction: (action: TableAction) => void }) {
+  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+
+  return (
+    <button
+      type="button"
+      style={{
+        ...menuItemStyles,
+        backgroundColor: hoveredItem === 'main' ? 'var(--doc-bg-hover)' : 'transparent',
+      }}
+      onMouseEnter={() => setHoveredItem('main')}
+      onMouseLeave={() => setHoveredItem(null)}
+      onClick={() => onAction({ type: 'distributeColumns' })}
+    >
+      <MaterialSymbol name="view_column" size={18} />
+      <span style={{ flex: 1 }}>Distribute columns evenly</span>
+    </button>
+  );
+}
+
+function AutoFitRow({ onAction }: { onAction: (action: TableAction) => void }) {
+  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+
+  return (
+    <button
+      type="button"
+      style={{
+        ...menuItemStyles,
+        backgroundColor: hoveredItem === 'main' ? 'var(--doc-bg-hover)' : 'transparent',
+      }}
+      onMouseEnter={() => setHoveredItem('main')}
+      onMouseLeave={() => setHoveredItem(null)}
+      onClick={() => onAction({ type: 'autoFitContents' })}
+    >
+      <MaterialSymbol name="fit_width" size={18} />
+      <span style={{ flex: 1 }}>Auto-fit to contents</span>
+    </button>
+  );
+}
+
+// ============================================================================
+// TABLE PROPERTIES BUTTON
+// ============================================================================
+
+function TablePropertiesRow({ onAction }: { onAction: (action: TableAction) => void }) {
+  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+
+  return (
+    <>
+      <div style={separatorStyles} role="separator" />
+      <button
+        type="button"
+        style={{
+          ...menuItemStyles,
+          backgroundColor: hoveredItem === 'main' ? 'var(--doc-bg-hover)' : 'transparent',
+        }}
+        onMouseEnter={() => setHoveredItem('main')}
+        onMouseLeave={() => setHoveredItem(null)}
+        onClick={() => onAction({ type: 'openTableProperties' })}
+      >
+        <MaterialSymbol name="settings" size={18} />
+        <span style={{ flex: 1 }}>Table properties...</span>
+      </button>
+    </>
+  );
+}
+
+// ============================================================================
+// TABLE STYLES SECTION
+// ============================================================================
+
+function TableStylesSection({
+  onAction,
+  documentStyles,
+}: {
+  onAction: (action: TableAction) => void;
+  documentStyles?: Style[];
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+
+  const presets = React.useMemo(() => {
+    const all = [...getBuiltinTableStyles()];
+    if (documentStyles) {
+      for (const ds of documentStyles) {
+        if (ds.type !== 'table') continue;
+        if (!all.some((p) => p.id === ds.styleId)) {
+          all.push({
+            id: ds.styleId,
+            name: ds.name ?? ds.styleId,
+          });
+        }
+      }
+    }
+    return all;
+  }, [documentStyles]);
+
+  return (
+    <div>
+      <button
+        type="button"
+        style={{
+          ...menuItemStyles,
+          backgroundColor: hoveredItem === 'main' ? 'var(--doc-bg-hover)' : 'transparent',
+        }}
+        onMouseEnter={() => setHoveredItem('main')}
+        onMouseLeave={() => setHoveredItem(null)}
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <MaterialSymbol name="format_paint" size={18} />
+        <span style={{ flex: 1 }}>Table styles</span>
+        <MaterialSymbol name={isExpanded ? 'expand_less' : 'expand_more'} size={18} />
+      </button>
+
+      {isExpanded && (
+        <div
+          style={{
+            backgroundColor: 'var(--doc-bg-muted)',
+            borderTop: '1px solid var(--doc-border)',
+            borderBottom: '1px solid var(--doc-border)',
+            padding: 8,
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 4,
+            maxHeight: 200,
+            overflowY: 'auto',
+          }}
+        >
+          {presets.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              title={preset.name}
+              onClick={() => {
+                onAction({ type: 'applyTableStyle', styleId: preset.id });
+                setIsExpanded(false);
+              }}
+              style={{
+                padding: '4px 8px',
+                fontSize: 11,
+                border: '1px solid var(--doc-border)',
+                borderRadius: 3,
+                cursor: 'pointer',
+                backgroundColor: 'var(--doc-bg)',
+                color: 'var(--doc-text)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {preset.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
@@ -297,6 +837,7 @@ export function TableOptionsDropdown({
   tableContext,
   className,
   tooltip = 'Table options',
+  documentStyles,
 }: TableOptionsDropdownProps): React.ReactElement {
   const [isOpen, setIsOpen] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
@@ -394,6 +935,10 @@ export function TableOptionsDropdown({
           role="menu"
           aria-label="Table options menu"
         >
+          {/* Table styles section */}
+          <TableStylesSection onAction={handleAction} documentStyles={documentStyles} />
+          <div style={separatorStyles} role="separator" />
+
           {/* Regular menu items */}
           {MENU_ITEMS.map((item, index) => {
             const isDisabled = disabled || item.disabled?.(tableContext);
@@ -454,6 +999,23 @@ export function TableOptionsDropdown({
             onColorSelect={(color) => handleCellFillColor(color)}
             onNoColor={() => handleCellFillColor(null)}
           />
+
+          {/* Vertical alignment section */}
+          <div style={separatorStyles} role="separator" />
+          <VerticalAlignRow onAction={handleAction} />
+
+          {/* Cell margins section */}
+          <CellMarginsRow onAction={handleAction} />
+
+          {/* Text direction + no-wrap section */}
+          <div style={separatorStyles} role="separator" />
+          <TextDirectionRow onAction={handleAction} />
+          <NoWrapRow onAction={handleAction} />
+          <RowHeightRow onAction={handleAction} />
+          <HeaderRowRow onAction={handleAction} />
+          <DistributeColumnsRow onAction={handleAction} />
+          <AutoFitRow onAction={handleAction} />
+          <TablePropertiesRow onAction={handleAction} />
         </div>
       )}
     </div>

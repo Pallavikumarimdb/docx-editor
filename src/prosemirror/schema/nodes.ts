@@ -78,6 +78,12 @@ export interface ParagraphAttrs {
   // Default text formatting for empty paragraphs (persists when navigating away)
   // Maps to OOXML pPr/rPr (paragraph's default run properties)
   defaultTextFormatting?: TextFormatting;
+
+  // Section break type — marks end of a section
+  sectionBreakType?: 'nextPage' | 'continuous' | 'oddPage' | 'evenPage';
+
+  // Outline level for TOC (0-9)
+  outlineLevel?: number;
 }
 
 /**
@@ -126,6 +132,12 @@ export interface ImageAttrs {
   distRight?: number;
   /** Position for floating images (horizontal and vertical alignment) */
   position?: ImagePositionAttrs;
+  /** Border width in pixels */
+  borderWidth?: number;
+  /** Border color as CSS color string */
+  borderColor?: string;
+  /** Border style (CSS border-style value) */
+  borderKind?: string;
 }
 
 /**
@@ -174,12 +186,12 @@ export interface TableCellAttrs {
   verticalAlign?: 'top' | 'center' | 'bottom';
   /** Background color (RGB hex) */
   backgroundColor?: string;
+  /** OOXML text direction (e.g. 'tbRl', 'btLr') */
+  textDirection?: string;
   /** No text wrapping in cell */
   noWrap?: boolean;
-  /** Which borders are visible */
-  borders?: { top?: boolean; bottom?: boolean; left?: boolean; right?: boolean };
-  /** Per-side border colors (RGB hex) */
-  borderColors?: { top?: string; bottom?: string; left?: string; right?: string };
-  /** Per-side border widths (in eighths of a point) */
-  borderWidths?: { top?: number; bottom?: number; left?: number; right?: number };
+  /** Cell borders — full BorderSpec per side (style, color, size) */
+  borders?: { top?: BorderSpec; bottom?: BorderSpec; left?: BorderSpec; right?: BorderSpec };
+  /** Cell margins/padding in twips per side */
+  margins?: { top?: number; bottom?: number; left?: number; right?: number };
 }

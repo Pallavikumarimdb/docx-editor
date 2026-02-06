@@ -50,6 +50,12 @@ import {
   type FindResult,
 } from './dialogs/FindReplaceDialog';
 import { HyperlinkDialog, useHyperlinkDialog, type HyperlinkData } from './dialogs/HyperlinkDialog';
+import { TablePropertiesDialog } from './dialogs/TablePropertiesDialog';
+import { ImagePositionDialog, type ImagePositionData } from './dialogs/ImagePositionDialog';
+import { ImagePropertiesDialog, type ImagePropertiesData } from './dialogs/ImagePropertiesDialog';
+import { HeaderFooterEditor } from './HeaderFooterEditor';
+import { FootnotePropertiesDialog } from './dialogs/FootnotePropertiesDialog';
+import { getBuiltinTableStyle, type TableStylePreset } from './ui/TableStyleGallery';
 import { DocumentAgent } from '../agent/DocumentAgent';
 import {
   DefaultLoadingIndicator,
@@ -110,6 +116,19 @@ import {
   addColumnRight,
   deleteColumn as pmDeleteColumn,
   deleteTable as pmDeleteTable,
+  mergeCells as pmMergeCells,
+  splitCell as pmSplitCell,
+  setCellBorder,
+  setCellVerticalAlign,
+  setCellMargins,
+  setCellTextDirection,
+  toggleNoWrap,
+  setRowHeight,
+  toggleHeaderRow,
+  distributeColumns,
+  autoFitContents,
+  setTableProperties,
+  applyTableStyle,
   removeTableBorders,
   setAllTableBorders,
   setOutsideTableBorders,
@@ -264,6 +283,18 @@ interface EditorState {
   totalPages: number;
   /** ProseMirror table context (for showing table toolbar) */
   pmTableContext: TableContextInfo | null;
+  /** Image context when cursor is on an image node */
+  pmImageContext: {
+    pos: number;
+    wrapType: string;
+    displayMode: string;
+    cssFloat: string | null;
+    transform: string | null;
+    alt: string | null;
+    borderWidth: number | null;
+    borderColor: string | null;
+    borderKind: string | null;
+  } | null;
 }
 
 // ============================================================================
@@ -327,7 +358,19 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     currentPage: 1,
     totalPages: 1,
     pmTableContext: null,
+    pmImageContext: null,
   });
+
+  // Table properties dialog state
+  const [tablePropsOpen, setTablePropsOpen] = useState(false);
+  // Image position dialog state
+  const [imagePositionOpen, setImagePositionOpen] = useState(false);
+  // Image properties dialog state
+  const [imagePropsOpen, setImagePropsOpen] = useState(false);
+  // Footnote properties dialog state
+  const [footnotePropsOpen, setFootnotePropsOpen] = useState(false);
+  // Header/footer editing state
+  const [hfEditPosition, setHfEditPosition] = useState<'header' | 'footer' | null>(null);
 
   // History hook for undo/redo - start with null document
   const history = useDocumentHistory<Document | null>(initialDocument || null, {
@@ -350,6 +393,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   const containerRef = useRef<HTMLDivElement>(null);
   // Save the last known selection for restoring after toolbar interactions
   const lastSelectionRef = useRef<{ from: number; to: number } | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   // Helper to get the active editor's view
   const getActiveEditorView = useCallback(() => {
@@ -530,11 +574,35 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
         }
       }
 
+      // Check if cursor is on an image (NodeSelection)
+      let pmImageCtx: typeof state.pmImageContext = null;
+      if (view) {
+        const sel = view.state.selection;
+        // NodeSelection has a `node` property
+        const selectedNode = (
+          sel as { node?: { type: { name: string }; attrs: Record<string, unknown> } }
+        ).node;
+        if (selectedNode?.type.name === 'image') {
+          pmImageCtx = {
+            pos: sel.from,
+            wrapType: (selectedNode.attrs.wrapType as string) ?? 'inline',
+            displayMode: (selectedNode.attrs.displayMode as string) ?? 'inline',
+            cssFloat: (selectedNode.attrs.cssFloat as string) ?? null,
+            transform: (selectedNode.attrs.transform as string) ?? null,
+            alt: (selectedNode.attrs.alt as string) ?? null,
+            borderWidth: (selectedNode.attrs.borderWidth as number) ?? null,
+            borderColor: (selectedNode.attrs.borderColor as string) ?? null,
+            borderKind: (selectedNode.attrs.borderKind as string) ?? null,
+          };
+        }
+      }
+
       if (!selectionState) {
         setState((prev) => ({
           ...prev,
           selectionFormatting: {},
           pmTableContext: pmTableCtx,
+          pmImageContext: pmImageCtx,
         }));
         return;
       }
@@ -580,6 +648,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
         ...prev,
         selectionFormatting: formatting,
         pmTableContext: pmTableCtx,
+        pmImageContext: pmImageCtx,
       }));
 
       // Notify parent
@@ -606,6 +675,308 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
       focusActiveEditor();
     },
     [getActiveEditorView, focusActiveEditor]
+  );
+
+  // Trigger file picker for image insert
+  const handleInsertImageClick = useCallback(() => {
+    imageInputRef.current?.click();
+  }, []);
+
+  // Handle file selection for image insert
+  const handleImageFileChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const view = getActiveEditorView();
+      if (!view) return;
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+
+        // Create an Image element to get natural dimensions
+        const img = new Image();
+        img.onload = () => {
+          let width = img.naturalWidth;
+          let height = img.naturalHeight;
+
+          // Constrain to reasonable max width (612px ~ 6.375 inches at 96dpi)
+          const maxWidth = 612;
+          if (width > maxWidth) {
+            const scale = maxWidth / width;
+            width = maxWidth;
+            height = Math.round(height * scale);
+          }
+
+          const rId = `rId_img_${Date.now()}`;
+          const imageNode = view.state.schema.nodes.image.create({
+            src: dataUrl,
+            alt: file.name,
+            width,
+            height,
+            rId,
+            wrapType: 'inline',
+            displayMode: 'inline',
+          });
+
+          const { from } = view.state.selection;
+          const tr = view.state.tr.insert(from, imageNode);
+          view.dispatch(tr.scrollIntoView());
+          focusActiveEditor();
+        };
+        img.src = dataUrl;
+      };
+      reader.readAsDataURL(file);
+
+      // Reset the input so the same file can be selected again
+      e.target.value = '';
+    },
+    [getActiveEditorView, focusActiveEditor]
+  );
+
+  // Handle shape insertion
+  const handleInsertShape = useCallback(
+    (data: {
+      shapeType: string;
+      width: number;
+      height: number;
+      fillColor?: string;
+      fillType?: string;
+      outlineWidth?: number;
+      outlineColor?: string;
+    }) => {
+      const view = getActiveEditorView();
+      if (!view) return;
+
+      const { state: editorState } = view;
+
+      if (data.shapeType === 'textBox') {
+        // Insert a text box node (block-level)
+        const textBoxNode = editorState.schema.nodes.textBox.create(
+          {
+            width: data.width,
+            height: data.height,
+            outlineWidth: 1,
+            outlineColor: '#d1d5db',
+            outlineStyle: 'solid',
+          },
+          editorState.schema.nodes.paragraph.create()
+        );
+        const tr = editorState.tr.replaceSelectionWith(textBoxNode);
+        view.dispatch(tr.scrollIntoView());
+      } else {
+        // Insert a shape node (inline)
+        const shapeNode = editorState.schema.nodes.shape.create({
+          shapeType: data.shapeType,
+          width: data.width,
+          height: data.height,
+          fillColor: data.fillColor,
+          fillType: data.fillType,
+          outlineWidth: data.outlineWidth,
+          outlineColor: data.outlineColor,
+          outlineStyle: 'solid',
+        });
+        const tr = editorState.tr.replaceSelectionWith(shapeNode);
+        view.dispatch(tr.scrollIntoView());
+      }
+      focusActiveEditor();
+    },
+    [getActiveEditorView, focusActiveEditor]
+  );
+
+  // Handle image wrap type change
+  const handleImageWrapType = useCallback(
+    (wrapType: string) => {
+      const view = getActiveEditorView();
+      if (!view || !state.pmImageContext) return;
+
+      const pos = state.pmImageContext.pos;
+      const node = view.state.doc.nodeAt(pos);
+      if (!node || node.type.name !== 'image') return;
+
+      // Map wrap type to display mode + cssFloat
+      let displayMode = 'inline';
+      let cssFloat: string | null = null;
+
+      switch (wrapType) {
+        case 'inline':
+          displayMode = 'inline';
+          cssFloat = null;
+          break;
+        case 'square':
+        case 'tight':
+        case 'through':
+          displayMode = 'float';
+          cssFloat = 'left';
+          break;
+        case 'topAndBottom':
+          displayMode = 'block';
+          cssFloat = null;
+          break;
+        case 'behind':
+        case 'inFront':
+          displayMode = 'float';
+          cssFloat = 'none';
+          break;
+        case 'wrapLeft':
+          displayMode = 'float';
+          cssFloat = 'right';
+          wrapType = 'square';
+          break;
+        case 'wrapRight':
+          displayMode = 'float';
+          cssFloat = 'left';
+          wrapType = 'square';
+          break;
+      }
+
+      const tr = view.state.tr.setNodeMarkup(pos, undefined, {
+        ...node.attrs,
+        wrapType,
+        displayMode,
+        cssFloat,
+      });
+      view.dispatch(tr.scrollIntoView());
+      focusActiveEditor();
+    },
+    [getActiveEditorView, focusActiveEditor, state.pmImageContext]
+  );
+
+  // Handle image transform (rotate/flip)
+  const handleImageTransform = useCallback(
+    (action: 'rotateCW' | 'rotateCCW' | 'flipH' | 'flipV') => {
+      const view = getActiveEditorView();
+      if (!view || !state.pmImageContext) return;
+
+      const pos = state.pmImageContext.pos;
+      const node = view.state.doc.nodeAt(pos);
+      if (!node || node.type.name !== 'image') return;
+
+      const currentTransform = (node.attrs.transform as string) || '';
+
+      // Parse current rotation and flip state
+      const rotateMatch = currentTransform.match(/rotate\((-?\d+(?:\.\d+)?)deg\)/);
+      let rotation = rotateMatch ? parseFloat(rotateMatch[1]) : 0;
+      let hasFlipH = /scaleX\(-1\)/.test(currentTransform);
+      let hasFlipV = /scaleY\(-1\)/.test(currentTransform);
+
+      switch (action) {
+        case 'rotateCW':
+          rotation = (rotation + 90) % 360;
+          break;
+        case 'rotateCCW':
+          rotation = (rotation - 90 + 360) % 360;
+          break;
+        case 'flipH':
+          hasFlipH = !hasFlipH;
+          break;
+        case 'flipV':
+          hasFlipV = !hasFlipV;
+          break;
+      }
+
+      // Build new transform string
+      const parts: string[] = [];
+      if (rotation !== 0) parts.push(`rotate(${rotation}deg)`);
+      if (hasFlipH) parts.push('scaleX(-1)');
+      if (hasFlipV) parts.push('scaleY(-1)');
+      const newTransform = parts.length > 0 ? parts.join(' ') : null;
+
+      const tr = view.state.tr.setNodeMarkup(pos, undefined, {
+        ...node.attrs,
+        transform: newTransform,
+      });
+      view.dispatch(tr.scrollIntoView());
+      focusActiveEditor();
+    },
+    [getActiveEditorView, focusActiveEditor, state.pmImageContext]
+  );
+
+  // Open image position dialog
+  const handleOpenImagePosition = useCallback(() => {
+    setImagePositionOpen(true);
+  }, []);
+
+  // Apply image position changes
+  const handleApplyImagePosition = useCallback(
+    (data: ImagePositionData) => {
+      const view = getActiveEditorView();
+      if (!view || !state.pmImageContext) return;
+
+      const pos = state.pmImageContext.pos;
+      const node = view.state.doc.nodeAt(pos);
+      if (!node || node.type.name !== 'image') return;
+
+      const tr = view.state.tr.setNodeMarkup(pos, undefined, {
+        ...node.attrs,
+        position: {
+          horizontal: data.horizontal,
+          vertical: data.vertical,
+        },
+        distTop: data.distTop ?? node.attrs.distTop,
+        distBottom: data.distBottom ?? node.attrs.distBottom,
+        distLeft: data.distLeft ?? node.attrs.distLeft,
+        distRight: data.distRight ?? node.attrs.distRight,
+      });
+      view.dispatch(tr.scrollIntoView());
+      focusActiveEditor();
+    },
+    [getActiveEditorView, focusActiveEditor, state.pmImageContext]
+  );
+
+  // Open image properties dialog
+  const handleOpenImageProperties = useCallback(() => {
+    setImagePropsOpen(true);
+  }, []);
+
+  // Apply image properties (alt text + border)
+  const handleApplyImageProperties = useCallback(
+    (data: ImagePropertiesData) => {
+      const view = getActiveEditorView();
+      if (!view || !state.pmImageContext) return;
+
+      const pos = state.pmImageContext.pos;
+      const node = view.state.doc.nodeAt(pos);
+      if (!node || node.type.name !== 'image') return;
+
+      const tr = view.state.tr.setNodeMarkup(pos, undefined, {
+        ...node.attrs,
+        alt: data.alt ?? null,
+        borderWidth: data.borderWidth ?? null,
+        borderColor: data.borderColor ?? null,
+        borderKind: data.borderKind ?? null,
+      });
+      view.dispatch(tr.scrollIntoView());
+      focusActiveEditor();
+    },
+    [getActiveEditorView, focusActiveEditor, state.pmImageContext]
+  );
+
+  // Handle footnote/endnote properties update
+  const handleApplyFootnoteProperties = useCallback(
+    (
+      footnotePr: import('../types/document').FootnoteProperties,
+      endnotePr: import('../types/document').EndnoteProperties
+    ) => {
+      if (!history.state?.package) return;
+      const newDoc = {
+        ...history.state.package.document,
+        finalSectionProperties: {
+          ...history.state.package.document.finalSectionProperties,
+          footnotePr,
+          endnotePr,
+        },
+      };
+      history.push({
+        ...history.state,
+        package: {
+          ...history.state.package,
+          document: newDoc,
+        },
+      });
+    },
+    [history]
   );
 
   // Handle table action from Toolbar - use ProseMirror commands
@@ -636,6 +1007,12 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
         case 'deleteTable':
           pmDeleteTable(view.state, view.dispatch);
           break;
+        case 'mergeCells':
+          pmMergeCells(view.state, view.dispatch);
+          break;
+        case 'splitCell':
+          pmSplitCell(view.state, view.dispatch);
+          break;
         // Border actions
         case 'borderAll':
           setAllTableBorders(view.state, view.dispatch);
@@ -649,6 +1026,31 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
         case 'borderNone':
           removeTableBorders(view.state, view.dispatch);
           break;
+        // Per-side border actions (toggle with default style)
+        case 'borderTop':
+          setCellBorder('top', { style: 'single', size: 4, color: { rgb: '000000' } })(
+            view.state,
+            view.dispatch
+          );
+          break;
+        case 'borderBottom':
+          setCellBorder('bottom', { style: 'single', size: 4, color: { rgb: '000000' } })(
+            view.state,
+            view.dispatch
+          );
+          break;
+        case 'borderLeft':
+          setCellBorder('left', { style: 'single', size: 4, color: { rgb: '000000' } })(
+            view.state,
+            view.dispatch
+          );
+          break;
+        case 'borderRight':
+          setCellBorder('right', { style: 'single', size: 4, color: { rgb: '000000' } })(
+            view.state,
+            view.dispatch
+          );
+          break;
         default:
           // Handle complex actions (with parameters)
           if (typeof action === 'object') {
@@ -656,6 +1058,98 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
               setCellFillColor(action.color)(view.state, view.dispatch);
             } else if (action.type === 'borderColor') {
               setTableBorderColor(action.color)(view.state, view.dispatch);
+            } else if (action.type === 'cellBorder') {
+              setCellBorder(action.side, {
+                style: action.style,
+                size: action.size,
+                color: { rgb: action.color.replace(/^#/, '') },
+              })(view.state, view.dispatch);
+            } else if (action.type === 'cellVerticalAlign') {
+              setCellVerticalAlign(action.align)(view.state, view.dispatch);
+            } else if (action.type === 'cellMargins') {
+              setCellMargins(action.margins)(view.state, view.dispatch);
+            } else if (action.type === 'cellTextDirection') {
+              setCellTextDirection(action.direction)(view.state, view.dispatch);
+            } else if (action.type === 'toggleNoWrap') {
+              toggleNoWrap()(view.state, view.dispatch);
+            } else if (action.type === 'rowHeight') {
+              setRowHeight(action.height, action.rule)(view.state, view.dispatch);
+            } else if (action.type === 'toggleHeaderRow') {
+              toggleHeaderRow()(view.state, view.dispatch);
+            } else if (action.type === 'distributeColumns') {
+              distributeColumns()(view.state, view.dispatch);
+            } else if (action.type === 'autoFitContents') {
+              autoFitContents()(view.state, view.dispatch);
+            } else if (action.type === 'openTableProperties') {
+              setTablePropsOpen(true);
+            } else if (action.type === 'tableProperties') {
+              setTableProperties(action.props)(view.state, view.dispatch);
+            } else if (action.type === 'applyTableStyle') {
+              // Resolve style data from built-in presets or document styles
+              let preset: TableStylePreset | undefined = getBuiltinTableStyle(action.styleId);
+              if (!preset && history.state?.package.styles) {
+                const styleResolver = createStyleResolver(history.state.package.styles);
+                const docStyle = styleResolver.getStyle(action.styleId);
+                if (docStyle) {
+                  // Convert to preset inline (same as documentStyleToPreset)
+                  preset = { id: docStyle.styleId, name: docStyle.name ?? docStyle.styleId };
+                  if (docStyle.tblPr?.borders) {
+                    const b = docStyle.tblPr.borders;
+                    preset.tableBorders = {};
+                    for (const side of [
+                      'top',
+                      'bottom',
+                      'left',
+                      'right',
+                      'insideH',
+                      'insideV',
+                    ] as const) {
+                      const bs = b[side];
+                      if (bs) {
+                        preset.tableBorders[side] = {
+                          style: bs.style,
+                          size: bs.size,
+                          color: bs.color?.rgb ? { rgb: bs.color.rgb } : undefined,
+                        };
+                      }
+                    }
+                  }
+                  if (docStyle.tblStylePr) {
+                    preset.conditionals = {};
+                    for (const cond of docStyle.tblStylePr) {
+                      const entry: Record<string, unknown> = {};
+                      if (cond.tcPr?.shading?.fill)
+                        entry.backgroundColor = `#${cond.tcPr.shading.fill}`;
+                      if (cond.tcPr?.borders) {
+                        const borders: Record<string, unknown> = {};
+                        for (const s of ['top', 'bottom', 'left', 'right'] as const) {
+                          const bs2 = cond.tcPr.borders[s];
+                          if (bs2)
+                            borders[s] = {
+                              style: bs2.style,
+                              size: bs2.size,
+                              color: bs2.color?.rgb ? { rgb: bs2.color.rgb } : undefined,
+                            };
+                        }
+                        entry.borders = borders;
+                      }
+                      if (cond.rPr?.bold) entry.bold = true;
+                      if (cond.rPr?.color?.rgb) entry.color = `#${cond.rPr.color.rgb}`;
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      (preset.conditionals as any)[cond.type] = entry;
+                    }
+                  }
+                  preset.look = { firstRow: true, lastRow: false, noHBand: false, noVBand: true };
+                }
+              }
+              if (preset) {
+                applyTableStyle({
+                  styleId: preset.id,
+                  tableBorders: preset.tableBorders,
+                  conditionals: preset.conditionals,
+                  look: preset.look,
+                })(view.state, view.dispatch);
+              }
             }
           } else {
             // Fallback to legacy table selection handler for other actions
@@ -1236,6 +1730,60 @@ body { background: white; }
     return { headerContent: header, footerContent: footer };
   }, [history.state]);
 
+  // Handle header/footer double-click — open editing overlay
+  const handleHeaderFooterDoubleClick = useCallback(
+    (position: 'header' | 'footer') => {
+      const hf = position === 'header' ? headerContent : footerContent;
+      if (hf) {
+        setHfEditPosition(position);
+      }
+    },
+    [headerContent, footerContent]
+  );
+
+  // Handle header/footer save — update document package with edited content
+  const handleHeaderFooterSave = useCallback(
+    (content: (import('../types/document').Paragraph | import('../types/document').Table)[]) => {
+      if (!hfEditPosition || !history.state?.package) {
+        setHfEditPosition(null);
+        return;
+      }
+
+      const pkg = history.state.package;
+      const sectionProps = pkg.document?.finalSectionProperties;
+      const refs =
+        hfEditPosition === 'header'
+          ? sectionProps?.headerReferences
+          : sectionProps?.footerReferences;
+      const defaultRef = refs?.find((r) => r.type === 'default');
+      const map = hfEditPosition === 'header' ? pkg.headers : pkg.footers;
+
+      if (defaultRef?.rId && map) {
+        const existing = map.get(defaultRef.rId);
+        if (existing) {
+          const updated: HeaderFooter = {
+            ...existing,
+            content,
+          };
+          map.set(defaultRef.rId, updated);
+
+          // Force re-render by creating a new Document reference
+          const newDoc: Document = {
+            ...history.state,
+            package: {
+              ...pkg,
+              [hfEditPosition === 'header' ? 'headers' : 'footers']: new Map(map),
+            },
+          };
+          history.push(newDoc);
+        }
+      }
+
+      setHfEditPosition(null);
+    },
+    [hfEditPosition, history]
+  );
+
   // Container styles - using overflow: auto so sticky toolbar works
   const containerStyle: CSSProperties = {
     display: 'flex',
@@ -1341,6 +1889,13 @@ body { background: white; }
                     onRefocusEditor={focusActiveEditor}
                     onInsertTable={handleInsertTable}
                     showTableInsert={true}
+                    onInsertImage={handleInsertImageClick}
+                    onInsertShape={handleInsertShape}
+                    imageContext={state.pmImageContext}
+                    onImageWrapType={handleImageWrapType}
+                    onImageTransform={handleImageTransform}
+                    onOpenImagePosition={handleOpenImagePosition}
+                    onOpenImageProperties={handleOpenImageProperties}
                     tableContext={state.pmTableContext}
                     onTableAction={handleTableAction}
                   >
@@ -1405,6 +1960,7 @@ body { background: white; }
                   sectionProperties={history.state?.package.document?.finalSectionProperties}
                   headerContent={headerContent}
                   footerContent={footerContent}
+                  onHeaderFooterDoubleClick={handleHeaderFooterDoubleClick}
                   zoom={state.zoom}
                   readOnly={readOnly}
                   extensionManager={extensionManager}
@@ -1490,6 +2046,75 @@ body { background: white; }
             initialData={hyperlinkDialog.state.initialData}
             selectedText={hyperlinkDialog.state.selectedText}
             isEditing={hyperlinkDialog.state.isEditing}
+          />
+          <TablePropertiesDialog
+            isOpen={tablePropsOpen}
+            onClose={() => setTablePropsOpen(false)}
+            onApply={(props) => {
+              const view = getActiveEditorView();
+              if (view) {
+                setTableProperties(props)(view.state, view.dispatch);
+              }
+            }}
+            currentProps={state.pmTableContext?.table?.attrs as Record<string, unknown> | undefined}
+          />
+          <ImagePositionDialog
+            isOpen={imagePositionOpen}
+            onClose={() => setImagePositionOpen(false)}
+            onApply={handleApplyImagePosition}
+          />
+          <ImagePropertiesDialog
+            isOpen={imagePropsOpen}
+            onClose={() => setImagePropsOpen(false)}
+            onApply={handleApplyImageProperties}
+            currentData={
+              state.pmImageContext
+                ? {
+                    alt: state.pmImageContext.alt ?? undefined,
+                    borderWidth: state.pmImageContext.borderWidth ?? undefined,
+                    borderColor: state.pmImageContext.borderColor ?? undefined,
+                    borderKind: state.pmImageContext.borderKind ?? undefined,
+                  }
+                : undefined
+            }
+          />
+          <FootnotePropertiesDialog
+            isOpen={footnotePropsOpen}
+            onClose={() => setFootnotePropsOpen(false)}
+            onApply={handleApplyFootnoteProperties}
+            footnotePr={history.state?.package.document?.finalSectionProperties?.footnotePr}
+            endnotePr={history.state?.package.document?.finalSectionProperties?.endnotePr}
+          />
+          {/* Header/Footer editor overlay */}
+          {hfEditPosition && (headerContent || footerContent) && (
+            <HeaderFooterEditor
+              headerFooter={
+                (hfEditPosition === 'header' ? headerContent : footerContent) as HeaderFooter
+              }
+              position={hfEditPosition}
+              styles={history.state?.package.styles}
+              widthPx={
+                history.state?.package.document?.finalSectionProperties
+                  ? Math.round(
+                      ((history.state.package.document.finalSectionProperties.pageWidth ?? 12240) -
+                        (history.state.package.document.finalSectionProperties.marginLeft ?? 1440) -
+                        (history.state.package.document.finalSectionProperties.marginRight ??
+                          1440)) /
+                        15
+                    )
+                  : 612
+              }
+              onSave={handleHeaderFooterSave}
+              onClose={() => setHfEditPosition(null)}
+            />
+          )}
+          {/* Hidden file input for image insertion */}
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: 'none' }}
+            onChange={handleImageFileChange}
           />
         </div>
       </ErrorBoundary>

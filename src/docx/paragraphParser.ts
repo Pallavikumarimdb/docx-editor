@@ -32,6 +32,12 @@ import type {
   ParagraphAlignment,
   RelationshipMap,
   MediaFile,
+  InlineSdt,
+  SdtProperties,
+  Insertion,
+  Deletion,
+  TrackedChangeInfo,
+  MathEquation,
 } from '../types/document';
 import type { StyleMap } from './styleParser';
 import type { NumberingMap } from './numberingParser';
@@ -42,6 +48,7 @@ import {
   getChildElements,
   parseBooleanElement,
   parseNumericAttribute,
+  elementToXml,
   type XmlElement,
 } from './xmlParser';
 import { parseRun, parseRunProperties } from './runParser';
@@ -52,6 +59,122 @@ import {
 } from './bookmarkParser';
 import { parseSectionProperties } from './sectionParser';
 import { consolidateParagraphContent } from './runConsolidator';
+
+// ============================================================================
+// SDT PROPERTIES PARSER
+// ============================================================================
+
+/**
+ * Parse SDT properties (w:sdtPr) element
+ */
+function parseSdtProperties(sdtPr: XmlElement | null): SdtProperties {
+  const props: SdtProperties = { sdtType: 'richText' };
+  if (!sdtPr || !sdtPr.elements) return props;
+
+  for (const el of sdtPr.elements) {
+    if (el.type !== 'element') continue;
+    const name = el.name?.replace(/^w:/, '') ?? '';
+
+    switch (name) {
+      case 'alias':
+        props.alias = getAttribute(el, 'w', 'val') ?? undefined;
+        break;
+      case 'tag':
+        props.tag = getAttribute(el, 'w', 'val') ?? undefined;
+        break;
+      case 'lock':
+        props.lock = (getAttribute(el, 'w', 'val') ?? 'unlocked') as SdtProperties['lock'];
+        break;
+      case 'placeholder': {
+        const docPart = findChild(el, 'w', 'docPart');
+        if (docPart) {
+          const valEl = findChild(docPart, 'w', 'val');
+          props.placeholder = valEl ? (getAttribute(valEl, 'w', 'val') ?? undefined) : undefined;
+        }
+        break;
+      }
+      case 'showingPlcHdr':
+        props.showingPlaceholder = true;
+        break;
+      case 'text':
+        props.sdtType = 'plainText';
+        break;
+      case 'date':
+        props.sdtType = 'date';
+        props.dateFormat = getAttribute(el, 'w', 'fullDate') ?? undefined;
+        break;
+      case 'dropDownList':
+        props.sdtType = 'dropdown';
+        props.listItems = parseListItems(el);
+        break;
+      case 'comboBox':
+        props.sdtType = 'comboBox';
+        props.listItems = parseListItems(el);
+        break;
+      case 'checkbox': {
+        props.sdtType = 'checkbox';
+        const checked = findChild(el, 'w14', 'checked') ?? findChild(el, 'w', 'checked');
+        props.checked = checked
+          ? getAttribute(checked, 'w14', 'val') === '1' || getAttribute(checked, 'w', 'val') === '1'
+          : false;
+        break;
+      }
+      case 'picture':
+        props.sdtType = 'picture';
+        break;
+      case 'docPartObj':
+        props.sdtType = 'buildingBlockGallery';
+        break;
+      case 'group':
+        props.sdtType = 'group';
+        break;
+    }
+  }
+
+  return props;
+}
+
+function parseListItems(el: XmlElement): { displayText: string; value: string }[] {
+  const items: { displayText: string; value: string }[] = [];
+  for (const child of el.elements ?? []) {
+    if (
+      child.type === 'element' &&
+      (child.name === 'w:listItem' || child.name?.endsWith(':listItem'))
+    ) {
+      items.push({
+        displayText: getAttribute(child, 'w', 'displayText') ?? '',
+        value: getAttribute(child, 'w', 'value') ?? '',
+      });
+    }
+  }
+  return items;
+}
+
+/**
+ * Extract plain text from a math element (recursive text content extraction)
+ */
+function extractMathText(el: XmlElement): string {
+  let text = '';
+  if (el.type === 'text' && typeof el.text === 'string') {
+    return el.text;
+  }
+  if (el.elements) {
+    for (const child of el.elements) {
+      // m:t elements contain the actual math text
+      const childName = child.name?.replace(/^.*:/, '') ?? '';
+      if (childName === 't' && child.elements) {
+        for (const t of child.elements) {
+          if (t.type === 'text' && typeof t.text === 'string') {
+            text += t.text;
+          }
+        }
+      } else {
+        text += extractMathText(child);
+      }
+    }
+  }
+  return text;
+}
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -774,37 +897,99 @@ function parseParagraphContents(
         break;
 
       case 'sdt': {
-        // Structured document tag - extract content from sdtContent
-        const sdtContent = (child.elements ?? []).find(
+        // Structured document tag - extract properties and content
+        const sdtPr = (child.elements ?? []).find(
+          (el: XmlElement) =>
+            el.type === 'element' && (el.name === 'w:sdtPr' || el.name?.endsWith(':sdtPr'))
+        );
+        const sdtContentEl = (child.elements ?? []).find(
           (el: XmlElement) =>
             el.type === 'element' &&
             (el.name === 'w:sdtContent' || el.name?.endsWith(':sdtContent'))
         );
-        if (sdtContent) {
-          // Recursively parse the content inside SDT
-          const sdtParsed = parseParagraphContents(sdtContent, styles, theme, null, rels, media);
-          contents.push(...sdtParsed);
+        if (sdtContentEl) {
+          const sdtParsed = parseParagraphContents(sdtContentEl, styles, theme, null, rels, media);
+          const properties = parseSdtProperties(sdtPr ?? null);
+          const inlineSdt: InlineSdt = {
+            type: 'inlineSdt',
+            properties,
+            content: sdtParsed.filter(
+              (c): c is Run | Hyperlink => c.type === 'run' || c.type === 'hyperlink'
+            ),
+          };
+          contents.push(inlineSdt);
         }
         break;
       }
 
+      case 'ins': {
+        // Track change: insertion — parse content and wrap
+        const insInfo: TrackedChangeInfo = {
+          id: parseInt(getAttribute(child, 'w', 'id') ?? '0', 10),
+          author: getAttribute(child, 'w', 'author') ?? 'Unknown',
+          date: getAttribute(child, 'w', 'date') ?? undefined,
+        };
+        const insContent = parseParagraphContents(child, styles, theme, null, rels, media);
+        const insertion: Insertion = {
+          type: 'insertion',
+          info: insInfo,
+          content: insContent.filter(
+            (c): c is Run | Hyperlink => c.type === 'run' || c.type === 'hyperlink'
+          ),
+        };
+        contents.push(insertion);
+        break;
+      }
+      case 'del': {
+        // Track change: deletion — parse content and wrap
+        const delInfo: TrackedChangeInfo = {
+          id: parseInt(getAttribute(child, 'w', 'id') ?? '0', 10),
+          author: getAttribute(child, 'w', 'author') ?? 'Unknown',
+          date: getAttribute(child, 'w', 'date') ?? undefined,
+        };
+        const delContent = parseParagraphContents(child, styles, theme, null, rels, media);
+        const deletion: Deletion = {
+          type: 'deletion',
+          info: delInfo,
+          content: delContent.filter(
+            (c): c is Run | Hyperlink => c.type === 'run' || c.type === 'hyperlink'
+          ),
+        };
+        contents.push(deletion);
+        break;
+      }
       case 'smartTag':
-      case 'del':
-      case 'ins':
       case 'moveTo':
       case 'moveFrom':
-        // Track changes - skip for now (would need revision mode)
+        // Other track changes - skip for now
         break;
 
-      case 'commentRangeStart':
-      case 'commentRangeEnd':
-        // Comments - skip for now
+      case 'commentRangeStart': {
+        const commentId = parseInt(getAttribute(child, 'w', 'id') ?? '0', 10);
+        contents.push({ type: 'commentRangeStart', id: commentId });
         break;
+      }
+      case 'commentRangeEnd': {
+        const commentId = parseInt(getAttribute(child, 'w', 'id') ?? '0', 10);
+        contents.push({ type: 'commentRangeEnd', id: commentId });
+        break;
+      }
 
       case 'oMath':
-      case 'oMathPara':
-        // Math content - skip for now (would need math parser)
+      case 'oMathPara': {
+        // Math equations — store raw OMML XML and extract text fallback
+        const isBlock = localName === 'oMathPara';
+        const ommlXml = elementToXml(child);
+        const plainText = extractMathText(child);
+        const mathEq: MathEquation = {
+          type: 'mathEquation',
+          display: isBlock ? 'block' : 'inline',
+          ommlXml,
+          plainText: plainText || undefined,
+        };
+        contents.push(mathEq);
         break;
+      }
 
       default:
         // Unknown element - skip

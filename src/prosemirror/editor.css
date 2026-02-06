@@ -325,12 +325,45 @@
 .prosemirror-editor .ProseMirror img.docx-image.ProseMirror-selectednode {
   outline: 2px solid var(--doc-primary, #4285f4);
   outline-offset: 2px;
+  cursor: grab;
+}
+
+/* Image dragging state */
+.prosemirror-editor .ProseMirror.pm-image-dragging img.docx-image.ProseMirror-selectednode {
+  opacity: 0.4;
+  outline: 2px dashed var(--doc-primary, #4285f4);
+  cursor: grabbing;
 }
 
 /* Fallback for images without docx-image class */
 .prosemirror-editor .ProseMirror img:not(.docx-image) {
   max-width: 100%;
   height: auto;
+}
+
+/* Shapes */
+.prosemirror-editor .ProseMirror .docx-shape {
+  display: inline-block;
+  vertical-align: middle;
+  line-height: 0;
+  cursor: pointer;
+}
+
+.prosemirror-editor .ProseMirror .docx-shape.ProseMirror-selectednode {
+  outline: 2px solid var(--doc-primary, #4285f4);
+  outline-offset: 2px;
+}
+
+/* Text boxes */
+.prosemirror-editor .ProseMirror .docx-textbox {
+  border-radius: 2px;
+  margin: 4px 0;
+  cursor: text;
+}
+
+.prosemirror-editor .ProseMirror .docx-textbox.ProseMirror-selectednode {
+  outline: 2px solid var(--doc-primary, #4285f4);
+  outline-offset: 2px;
 }
 
 /* Links */
@@ -373,12 +406,15 @@
 .prosemirror-editor .ProseMirror table.docx-table {
   border-collapse: collapse;
   margin: 12pt 0;
-  /* Use auto layout to allow cells to expand for content (like Word) */
-  table-layout: auto;
   /* Constrain table to fit within the page - prevent overflow */
   max-width: 100%;
   /* Allow table to shrink if needed */
   width: auto;
+}
+
+/* When prosemirror-tables columnResizing sets explicit widths, use fixed layout */
+.prosemirror-editor .ProseMirror table.docx-table[style*='width'] {
+  table-layout: fixed;
 }
 
 /* Table cells */
@@ -528,4 +564,62 @@
 /* Small caps (w:smallCaps) - displays lowercase as smaller capitals */
 .prosemirror-editor .ProseMirror .docx-run-small-caps {
   font-variant: small-caps;
+}
+
+/* Section break indicator */
+.docx-section-break {
+  position: relative;
+}
+.docx-section-break::after {
+  content: 'Section Break (' attr(data-section-break) ')';
+  display: block;
+  text-align: center;
+  font-size: 9px;
+  color: var(--doc-text-muted, #9ca3af);
+  border-top: 1px dashed var(--doc-border, #d1d5db);
+  margin-top: 4px;
+  padding-top: 2px;
+  pointer-events: none;
+}
+
+/* ============================================================================
+   IMAGE DROP INDICATOR - Shows where a dragged image will land
+   ============================================================================ */
+
+/* Custom drop indicator (from ImageDragExtension) */
+.prosemirror-editor .ProseMirror .pm-drop-indicator {
+  position: absolute;
+  width: 2px;
+  background: var(--doc-primary, #4285f4);
+  pointer-events: none;
+  z-index: 50;
+}
+
+/* prosemirror-dropcursor styling */
+.prosemirror-editor .ProseMirror .ProseMirror-dropcursor {
+  z-index: 50;
+}
+
+/* Header/footer areas — double-click hint */
+.layout-page-header,
+.layout-page-footer {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.layout-page-header:hover,
+.layout-page-footer:hover {
+  background-color: rgba(37, 99, 235, 0.04);
+}
+
+/* Header/footer editor ProseMirror styles */
+.hf-editor-pm .ProseMirror {
+  outline: none;
+  min-height: 40px;
+  padding: 4px;
+  border: 1px solid var(--doc-border, #e5e7eb);
+  border-radius: 4px;
+}
+.hf-editor-pm .ProseMirror:focus {
+  border-color: var(--doc-primary, #2563eb);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
 }

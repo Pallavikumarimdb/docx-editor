@@ -421,6 +421,8 @@ export interface Image {
   padding?: ImagePadding;
   /** Whether this is a decorative image */
   decorative?: boolean;
+  /** Image outline/border */
+  outline?: ShapeOutline;
   /** Image effects */
   effects?: {
     brightness?: number;
@@ -790,6 +792,166 @@ export interface Table {
 }
 
 // ============================================================================
+// COMMENTS
+// ============================================================================
+
+/**
+ * A comment (w:comment) from comments.xml
+ */
+export interface Comment {
+  /** Comment ID (matches commentRangeStart/End) */
+  id: number;
+  /** Author name */
+  author: string;
+  /** Author initials */
+  initials?: string;
+  /** Date */
+  date?: string;
+  /** Comment content (paragraphs) */
+  content: Paragraph[];
+  /** Parent comment ID (for replies) */
+  parentId?: number;
+  /** Whether the comment is resolved/done */
+  done?: boolean;
+}
+
+/**
+ * Comment range start marker in paragraph content
+ */
+export interface CommentRangeStart {
+  type: 'commentRangeStart';
+  id: number;
+}
+
+/**
+ * Comment range end marker in paragraph content
+ */
+export interface CommentRangeEnd {
+  type: 'commentRangeEnd';
+  id: number;
+}
+
+// ============================================================================
+// MATH EQUATIONS
+// ============================================================================
+
+/**
+ * Math equation content (m:oMath or m:oMathPara)
+ */
+export interface MathEquation {
+  type: 'mathEquation';
+  /** Whether this is a block (oMathPara) or inline (oMath) equation */
+  display: 'inline' | 'block';
+  /** Raw OMML XML for round-trip preservation */
+  ommlXml: string;
+  /** Plain text representation for accessibility/fallback */
+  plainText?: string;
+}
+
+// ============================================================================
+// TRACKED CHANGES
+// ============================================================================
+
+/**
+ * Tracked change metadata (w:ins, w:del attributes)
+ */
+export interface TrackedChangeInfo {
+  /** Revision ID */
+  id: number;
+  /** Author who made the change */
+  author: string;
+  /** Date of the change */
+  date?: string;
+}
+
+/**
+ * Insertion wrapper (w:ins) — runs inserted by tracked changes
+ */
+export interface Insertion {
+  type: 'insertion';
+  /** Tracked change metadata */
+  info: TrackedChangeInfo;
+  /** Inserted content */
+  content: (Run | Hyperlink)[];
+}
+
+/**
+ * Deletion wrapper (w:del) — runs deleted by tracked changes
+ */
+export interface Deletion {
+  type: 'deletion';
+  /** Tracked change metadata */
+  info: TrackedChangeInfo;
+  /** Deleted content */
+  content: (Run | Hyperlink)[];
+}
+
+// ============================================================================
+// STRUCTURED DOCUMENT TAGS (SDT / Content Controls)
+// ============================================================================
+
+/**
+ * SDT type (content control type)
+ */
+export type SdtType =
+  | 'richText'
+  | 'plainText'
+  | 'date'
+  | 'dropdown'
+  | 'comboBox'
+  | 'checkbox'
+  | 'picture'
+  | 'buildingBlockGallery'
+  | 'group'
+  | 'unknown';
+
+/**
+ * SDT properties (w:sdtPr)
+ */
+export interface SdtProperties {
+  /** SDT type */
+  sdtType: SdtType;
+  /** Alias (friendly name) */
+  alias?: string;
+  /** Tag (developer identifier) */
+  tag?: string;
+  /** Lock content editing */
+  lock?: 'sdtLocked' | 'contentLocked' | 'sdtContentLocked' | 'unlocked';
+  /** Placeholder text */
+  placeholder?: string;
+  /** Whether showing placeholder */
+  showingPlaceholder?: boolean;
+  /** Date format for date controls */
+  dateFormat?: string;
+  /** Dropdown/combobox list items */
+  listItems?: { displayText: string; value: string }[];
+  /** Checkbox checked state */
+  checked?: boolean;
+}
+
+/**
+ * Inline SDT (content control within a paragraph)
+ */
+export interface InlineSdt {
+  type: 'inlineSdt';
+  /** SDT properties */
+  properties: SdtProperties;
+  /** Content runs inside the control */
+  content: (Run | Hyperlink)[];
+}
+
+/**
+ * Block-level SDT (content control wrapping paragraphs/tables)
+ */
+export interface BlockSdt {
+  type: 'blockSdt';
+  /** SDT properties */
+  properties: SdtProperties;
+  /** Block content inside the control */
+  content: (Paragraph | Table)[];
+}
+
+// ============================================================================
 // PARAGRAPH
 // ============================================================================
 
@@ -802,7 +964,13 @@ export type ParagraphContent =
   | BookmarkStart
   | BookmarkEnd
   | SimpleField
-  | ComplexField;
+  | ComplexField
+  | InlineSdt
+  | CommentRangeStart
+  | CommentRangeEnd
+  | Insertion
+  | Deletion
+  | MathEquation;
 
 /**
  * Paragraph (w:p)
@@ -1074,7 +1242,7 @@ export interface SectionProperties {
 /**
  * Block-level content types
  */
-export type BlockContent = Paragraph | Table;
+export type BlockContent = Paragraph | Table | BlockSdt;
 
 /**
  * Section (implicit or explicit based on sectPr)
@@ -1100,4 +1268,6 @@ export interface DocumentBody {
   sections?: Section[];
   /** Final section properties (from body's sectPr) */
   finalSectionProperties?: SectionProperties;
+  /** Comments from comments.xml */
+  comments?: Comment[];
 }

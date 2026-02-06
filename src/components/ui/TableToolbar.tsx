@@ -42,7 +42,35 @@ export type TableAction =
   | 'borderLeft'
   | 'borderRight'
   | { type: 'cellFillColor'; color: string | null }
-  | { type: 'borderColor'; color: string };
+  | { type: 'borderColor'; color: string }
+  | {
+      type: 'cellBorder';
+      side: 'top' | 'bottom' | 'left' | 'right' | 'all';
+      style: string;
+      size: number;
+      color: string;
+    }
+  | { type: 'cellVerticalAlign'; align: 'top' | 'center' | 'bottom' }
+  | {
+      type: 'cellMargins';
+      margins: { top?: number; bottom?: number; left?: number; right?: number };
+    }
+  | { type: 'cellTextDirection'; direction: string | null }
+  | { type: 'toggleNoWrap' }
+  | { type: 'rowHeight'; height: number | null; rule?: 'auto' | 'atLeast' | 'exact' }
+  | { type: 'toggleHeaderRow' }
+  | { type: 'distributeColumns' }
+  | { type: 'autoFitContents' }
+  | {
+      type: 'tableProperties';
+      props: {
+        width?: number | null;
+        widthType?: string | null;
+        justification?: 'left' | 'center' | 'right' | null;
+      };
+    }
+  | { type: 'openTableProperties' }
+  | { type: 'applyTableStyle'; styleId: string };
 
 /**
  * Border style preset
