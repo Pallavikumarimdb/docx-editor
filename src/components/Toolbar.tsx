@@ -712,7 +712,7 @@ export function Toolbar({
             styles={documentStyles}
             theme={theme}
             disabled={disabled}
-            width={90}
+            width={75}
             placeholder="Normal"
             showPreview={true}
             quickFormatOnly={true}
@@ -728,7 +728,7 @@ export function Toolbar({
               value={currentFormatting.fontFamily || 'Arial'}
               onChange={handleFontFamilyChange}
               disabled={disabled}
-              width={85}
+              width={70}
               placeholder="Arial"
             />
           )}
@@ -867,7 +867,7 @@ export function Toolbar({
               value={currentFormatting.lineSpacing}
               onChange={handleLineSpacingChange}
               disabled={disabled}
-              width={80}
+              width={65}
             />
           )}
         </ToolbarGroup>

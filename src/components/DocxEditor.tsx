@@ -39,7 +39,7 @@ import {
 } from './ui/PageNavigator';
 import { HorizontalRuler } from './ui/HorizontalRuler';
 import { VerticalRuler } from './ui/VerticalRuler';
-import { PrintPreview, type PrintOptions } from './ui/PrintPreview';
+import { type PrintOptions } from './ui/PrintPreview';
 import {
   FindReplaceDialog,
   useFindReplace,
@@ -251,8 +251,6 @@ interface EditorState {
   currentPage: number;
   /** Total page count */
   totalPages: number;
-  /** Whether print preview is open */
-  isPrintPreviewOpen: boolean;
   /** ProseMirror table context (for showing table toolbar) */
   pmTableContext: TableContextInfo | null;
 }
@@ -295,7 +293,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     placeholder,
     loadingIndicator,
     showPrintButton = true,
-    printOptions,
+    printOptions: _printOptions,
     onPrint,
     onCopy: _onCopy,
     onCut: _onCut,
@@ -317,7 +315,6 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     selectionFormatting: {},
     currentPage: 1,
     totalPages: 1,
-    isPrintPreviewOpen: false,
     pmTableContext: null,
   });
 
@@ -973,49 +970,75 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     [onError]
   );
 
-  // Handle opening print preview
-  const handleOpenPrintPreview = useCallback(() => {
-    setState((prev) => ({ ...prev, isPrintPreviewOpen: true }));
-  }, []);
+  const handleDirectPrint = useCallback(() => {
+    // Find the pages container and clone its content into a clean print window
+    const pagesEl = containerRef.current?.querySelector('.paged-editor__pages');
+    if (!pagesEl) {
+      window.print();
+      onPrint?.();
+      return;
+    }
 
-  // Handle closing print preview
-  const handleClosePrintPreview = useCallback(() => {
-    setState((prev) => ({ ...prev, isPrintPreviewOpen: false }));
-  }, []);
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      // Popup blocked — fall back to window.print()
+      window.print();
+      onPrint?.();
+      return;
+    }
 
-  // Handle print action
-  const handlePrint = useCallback(() => {
+    // Collect all @font-face rules from the current page
+    const fontFaceRules: string[] = [];
+    for (const sheet of Array.from(document.styleSheets)) {
+      try {
+        for (const rule of Array.from(sheet.cssRules)) {
+          if (rule instanceof CSSFontFaceRule) {
+            fontFaceRules.push(rule.cssText);
+          }
+        }
+      } catch {
+        // Cross-origin stylesheets can't be read — skip
+      }
+    }
+
+    // Clone pages and remove transforms/shadows
+    const pagesClone = pagesEl.cloneNode(true) as HTMLElement;
+    pagesClone.style.cssText = 'display: block; margin: 0; padding: 0;';
+    for (const page of Array.from(pagesClone.querySelectorAll('.layout-page'))) {
+      const el = page as HTMLElement;
+      el.style.boxShadow = 'none';
+      el.style.margin = '0';
+    }
+
+    printWindow.document.write(`<!DOCTYPE html>
+<html><head><title>Print</title>
+<style>
+${fontFaceRules.join('\n')}
+* { margin: 0; padding: 0; }
+body { background: white; }
+.layout-page { break-after: page; }
+.layout-page:last-child { break-after: auto; }
+@page { margin: 0; size: auto; }
+</style>
+</head><body>${pagesClone.outerHTML}</body></html>`);
+    printWindow.document.close();
+
+    // Wait for fonts/images then print
+    printWindow.onload = () => {
+      printWindow.print();
+      printWindow.close();
+    };
+
+    // Fallback if onload doesn't fire (some browsers)
+    setTimeout(() => {
+      if (!printWindow.closed) {
+        printWindow.print();
+        printWindow.close();
+      }
+    }, 1000);
+
     onPrint?.();
   }, [onPrint]);
-
-  // Handle direct print - saves DOCX for printing in Word
-  const handleDirectPrint = useCallback(async () => {
-    if (!agentRef.current) return;
-
-    try {
-      // Generate DOCX buffer
-      const buffer = await agentRef.current.toBuffer();
-
-      // Create blob and download link
-      const blob = new Blob([buffer], {
-        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'print-document.docx';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      onPrint?.();
-    } catch (error) {
-      onError?.(
-        error instanceof Error ? error : new Error('Failed to prepare document for printing')
-      );
-    }
-  }, [onPrint, onError]);
 
   // ============================================================================
   // FIND/REPLACE HANDLERS
@@ -1191,18 +1214,10 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
       scrollToPage: (_pageNumber: number) => {
         // TODO: Implement page navigation in ProseMirror
       },
-      openPrintPreview: handleOpenPrintPreview,
+      openPrintPreview: handleDirectPrint,
       print: handleDirectPrint,
     }),
-    [
-      history.state,
-      state.zoom,
-      state.currentPage,
-      state.totalPages,
-      handleSave,
-      handleOpenPrintPreview,
-      handleDirectPrint,
-    ]
+    [history.state, state.zoom, state.currentPage, state.totalPages, handleSave, handleDirectPrint]
   );
 
   // Get detected variables from document
@@ -1476,18 +1491,6 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
               </div>
             )}
           </div>
-
-          {/* Print Preview Modal */}
-          {state.isPrintPreviewOpen && (
-            <PrintPreview
-              document={history.state}
-              theme={history.state?.package.theme || theme}
-              options={printOptions}
-              isOpen={state.isPrintPreviewOpen}
-              onClose={handleClosePrintPreview}
-              onPrint={handlePrint}
-            />
-          )}
 
           {/* Find/Replace Dialog */}
           <FindReplaceDialog

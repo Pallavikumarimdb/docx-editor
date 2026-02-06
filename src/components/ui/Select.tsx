@@ -88,9 +88,19 @@ interface SelectProps {
   onValueChange?: (value: string) => void;
   disabled?: boolean;
   children: React.ReactNode;
+  className?: string;
+  style?: React.CSSProperties;
 }
 
-function Select({ value, defaultValue = '', onValueChange, disabled, children }: SelectProps) {
+function Select({
+  value,
+  defaultValue = '',
+  onValueChange,
+  disabled,
+  children,
+  className: selectClassName,
+  style: selectStyle,
+}: SelectProps) {
   const [internalValue, setInternalValue] = React.useState(defaultValue);
   const currentValue = value ?? internalValue;
 
@@ -125,7 +135,8 @@ function Select({ value, defaultValue = '', onValueChange, disabled, children }:
           'h-8 px-2 py-1 rounded text-sm text-slate-700',
           'bg-transparent hover:bg-slate-100/80 focus:bg-slate-100/80',
           'focus:outline-none cursor-pointer transition-colors duration-150',
-          'disabled:cursor-not-allowed disabled:opacity-50'
+          'disabled:cursor-not-allowed disabled:opacity-50',
+          selectClassName
         )}
         style={{
           // Inline styles for cross-environment compatibility
@@ -137,6 +148,7 @@ function Select({ value, defaultValue = '', onValueChange, disabled, children }:
           backgroundRepeat: 'no-repeat',
           backgroundSize: '1rem',
           backgroundPosition: 'right 0.25rem center',
+          ...selectStyle,
         }}
       >
         {items}

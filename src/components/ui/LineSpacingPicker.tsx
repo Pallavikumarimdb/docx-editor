@@ -6,16 +6,7 @@
  */
 
 import * as React from 'react';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-  SelectSeparator,
-} from './Select';
-import { MaterialSymbol } from './MaterialSymbol';
+import { Select, SelectContent, SelectItem, SelectLabel, SelectSeparator } from './Select';
 import { cn } from '../../lib/utils';
 
 // ============================================================================
@@ -54,14 +45,6 @@ const DEFAULT_OPTIONS: LineSpacingOption[] = [
 ];
 
 // ============================================================================
-// ICONS
-// ============================================================================
-
-const LineSpacingIcon = () => (
-  <MaterialSymbol name="format_line_spacing" size={16} className="text-muted-foreground" />
-);
-
-// ============================================================================
 // COMPONENT
 // ============================================================================
 
@@ -94,21 +77,9 @@ export function LineSpacingPicker({
       value={currentOption.twipsValue.toString()}
       onValueChange={handleValueChange}
       disabled={disabled}
+      className={cn('h-8 text-sm gap-1', className)}
+      style={{ width: typeof width === 'number' ? `${width}px` : width }}
     >
-      <SelectTrigger
-        className={cn('h-8 text-sm gap-1', className)}
-        style={{ minWidth: typeof width === 'number' ? `${width}px` : width }}
-        aria-label="Line spacing"
-      >
-        <LineSpacingIcon />
-        <SelectValue placeholder="Single">
-          {currentOption.value === 1.0
-            ? '1.0'
-            : currentOption.value === 2.0
-              ? '2.0'
-              : currentOption.label}
-        </SelectValue>
-      </SelectTrigger>
       <SelectContent>
         {options.map((option) => (
           <SelectItem key={option.twipsValue} value={option.twipsValue.toString()}>

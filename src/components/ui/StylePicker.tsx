@@ -6,7 +6,7 @@
  */
 
 import * as React from 'react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './Select';
+import { Select, SelectContent, SelectItem } from './Select';
 import { cn } from '../../lib/utils';
 import type { Style, StyleType, Theme } from '../../types/document';
 
@@ -156,7 +156,7 @@ export function StylePicker({
   styles,
   disabled = false,
   className,
-  placeholder = 'Normal text',
+  placeholder: _placeholder = 'Normal text',
   width = 120,
   quickFormatOnly = true,
 }: StylePickerProps) {
@@ -202,13 +202,6 @@ export function StylePicker({
     return merged.sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99));
   }, [styles, quickFormatOnly]);
 
-  // Find current style name for display
-  const displayValue = React.useMemo(() => {
-    if (!value) return placeholder;
-    const style = styleOptions.find((s) => s.styleId === value);
-    return style?.name || value;
-  }, [value, styleOptions, placeholder]);
-
   const handleValueChange = React.useCallback(
     (newValue: string) => {
       onChange?.(newValue);
@@ -217,14 +210,13 @@ export function StylePicker({
   );
 
   return (
-    <Select value={value || 'Normal'} onValueChange={handleValueChange} disabled={disabled}>
-      <SelectTrigger
-        className={cn('h-8 text-sm', className)}
-        style={{ minWidth: typeof width === 'number' ? `${width}px` : width }}
-        aria-label="Select paragraph style"
-      >
-        <SelectValue placeholder={placeholder}>{displayValue}</SelectValue>
-      </SelectTrigger>
+    <Select
+      value={value || 'Normal'}
+      onValueChange={handleValueChange}
+      disabled={disabled}
+      className={cn('h-8 text-sm', className)}
+      style={{ width: typeof width === 'number' ? `${width}px` : width }}
+    >
       <SelectContent className="min-w-[200px]">
         {styleOptions.map((style) => (
           <SelectItem key={style.styleId} value={style.styleId} className="py-2">
