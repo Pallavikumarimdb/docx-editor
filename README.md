@@ -1,3 +1,15 @@
+<p align="center">
+  <a href="https://github.com/eigenpal/docx-js-editor">
+    <img src="./assets/logo.png" alt="DOCX JS Editor" width="600" />
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/@eigenpal/docx-js-editor"><img src="https://img.shields.io/npm/v/@eigenpal/docx-js-editor.svg?style=flat-square&color=00C853" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/@eigenpal/docx-js-editor"><img src="https://img.shields.io/npm/dm/@eigenpal/docx-js-editor.svg?style=flat-square&color=00C853" alt="npm downloads" /></a>
+  <a href="https://github.com/eigenpal/docx-js-editor/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square&color=00C853" alt="license" /></a>
+</p>
+
 # @eigenpal/docx-js-editor
 
 Open-source WYSIWYG DOCX editor for React. Open, edit, and save `.docx` files entirely in the browser — no server required.
