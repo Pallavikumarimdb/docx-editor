@@ -92,25 +92,52 @@ export async function parseDocx(
   const warnings: string[] = [];
 
   try {
+    const parseStart = performance.now();
+    const stageTimings: Array<{ stage: string; ms: number }> = [];
+
+    function timeStage<T>(name: string, fn: () => T): T {
+      const start = performance.now();
+      const result = fn();
+      const elapsed = performance.now() - start;
+      stageTimings.push({ stage: name, ms: elapsed });
+      if (elapsed > 1000) {
+        console.warn(`[parseDocx] ${name} took ${Math.round(elapsed)}ms`);
+      }
+      return result;
+    }
+
+    async function timeStageAsync<T>(name: string, fn: () => Promise<T>): Promise<T> {
+      const start = performance.now();
+      const result = await fn();
+      const elapsed = performance.now() - start;
+      stageTimings.push({ stage: name, ms: elapsed });
+      if (elapsed > 1000) {
+        console.warn(`[parseDocx] ${name} took ${Math.round(elapsed)}ms`);
+      }
+      return result;
+    }
+
     // ========================================================================
     // STAGE 1: Unzip DOCX package (0-10%)
     // ========================================================================
     onProgress('Extracting DOCX...', 0);
-    const raw = await unzipDocx(buffer);
+    const raw = await timeStageAsync('unzip', () => unzipDocx(buffer));
     onProgress('Extracted DOCX', 10);
 
     // ========================================================================
     // STAGE 2: Parse relationships (10-15%)
     // ========================================================================
     onProgress('Parsing relationships...', 10);
-    const rels = raw.documentRels ? parseRelationships(raw.documentRels) : new Map();
+    const rels = timeStage('relationships', () =>
+      raw.documentRels ? parseRelationships(raw.documentRels) : new Map()
+    );
     onProgress('Parsed relationships', 15);
 
     // ========================================================================
     // STAGE 3: Parse theme (15-20%)
     // ========================================================================
     onProgress('Parsing theme...', 15);
-    const theme = parseTheme(raw.themeXml);
+    const theme = timeStage('theme', () => parseTheme(raw.themeXml));
     onProgress('Parsed theme', 20);
 
     // ========================================================================
@@ -120,24 +147,26 @@ export async function parseDocx(
     let styles: StyleMap | null = null;
     let styleDefinitions: StyleDefinitions | undefined;
 
-    if (raw.stylesXml) {
-      styles = parseStyles(raw.stylesXml, theme);
-      styleDefinitions = parseStyleDefinitions(raw.stylesXml, theme);
-    }
+    timeStage('styles', () => {
+      if (raw.stylesXml) {
+        styles = parseStyles(raw.stylesXml, theme);
+        styleDefinitions = parseStyleDefinitions(raw.stylesXml, theme);
+      }
+    });
     onProgress('Parsed styles', 30);
 
     // ========================================================================
     // STAGE 5: Parse numbering (30-35%)
     // ========================================================================
     onProgress('Parsing numbering...', 30);
-    const numbering = parseNumbering(raw.numberingXml);
+    const numbering = timeStage('numbering', () => parseNumbering(raw.numberingXml));
     onProgress('Parsed numbering', 35);
 
     // ========================================================================
     // STAGE 6: Build media file map (35-40%)
     // ========================================================================
     onProgress('Processing media files...', 35);
-    const media = buildMediaMap(raw, rels);
+    const media = timeStage('media', () => buildMediaMap(raw, rels));
     onProgress('Processed media', 40);
 
     // ========================================================================
@@ -146,11 +175,13 @@ export async function parseDocx(
     onProgress('Parsing document body...', 40);
     let documentBody: DocumentBody = { content: [] };
 
-    if (raw.documentXml) {
-      documentBody = parseDocumentBody(raw.documentXml, styles, theme, numbering, rels, media);
-    } else {
-      warnings.push('No document.xml found in DOCX');
-    }
+    timeStage('documentBody', () => {
+      if (raw.documentXml) {
+        documentBody = parseDocumentBody(raw.documentXml, styles, theme, numbering, rels, media);
+      } else {
+        warnings.push('No document.xml found in DOCX');
+      }
+    });
     onProgress('Parsed document body', 55);
 
     // ========================================================================
@@ -161,16 +192,11 @@ export async function parseDocx(
 
     if (parseHeadersFooters) {
       onProgress('Parsing headers/footers...', 55);
-      const { headers: h, footers: f } = parseHeadersAndFooters(
-        raw,
-        styles,
-        theme,
-        numbering,
-        rels,
-        media
+      const hf = timeStage('headersFooters', () =>
+        parseHeadersAndFooters(raw, styles, theme, numbering, rels, media)
       );
-      headers = h;
-      footers = f;
+      headers = hf.headers;
+      footers = hf.footers;
       onProgress('Parsed headers/footers', 65);
     } else {
       onProgress('Skipping headers/footers', 65);
@@ -184,16 +210,11 @@ export async function parseDocx(
 
     if (parseNotes) {
       onProgress('Parsing footnotes/endnotes...', 65);
-      const { footnotes: fn, endnotes: en } = parseNotesContent(
-        raw,
-        styles,
-        theme,
-        numbering,
-        rels,
-        media
+      const notes = timeStage('footnotesEndnotes', () =>
+        parseNotesContent(raw, styles, theme, numbering, rels, media)
       );
-      footnotes = fn;
-      endnotes = en;
+      footnotes = notes.footnotes;
+      endnotes = notes.endnotes;
       onProgress('Parsed footnotes/endnotes', 75);
     } else {
       onProgress('Skipping footnotes/endnotes', 75);
@@ -206,7 +227,9 @@ export async function parseDocx(
 
     if (detectVariables) {
       onProgress('Detecting template variables...', 75);
-      templateVariables = extractAllTemplateVariables(documentBody.content);
+      templateVariables = timeStage('variables', () =>
+        extractAllTemplateVariables(documentBody.content)
+      );
       onProgress('Detected variables', 80);
     } else {
       onProgress('Skipping variable detection', 80);
@@ -217,7 +240,7 @@ export async function parseDocx(
     // ========================================================================
     if (preloadFonts) {
       onProgress('Loading fonts...', 80);
-      await loadDocumentFonts(theme, styleDefinitions, documentBody);
+      await timeStageAsync('fonts', () => loadDocumentFonts(theme, styleDefinitions, documentBody));
       onProgress('Loaded fonts', 95);
     } else {
       onProgress('Skipping font loading', 95);
@@ -248,10 +271,22 @@ export async function parseDocx(
       warnings: warnings.length > 0 ? warnings : undefined,
     };
 
+    const totalTime = performance.now() - parseStart;
+    if (totalTime > 2000) {
+      const breakdown = stageTimings
+        .filter((s) => s.ms > 100)
+        .map((s) => `${s.stage}: ${Math.round(s.ms)}ms`)
+        .join(', ');
+      console.warn(
+        `[parseDocx] Total: ${Math.round(totalTime)}ms` + (breakdown ? ` (${breakdown})` : '')
+      );
+    }
+
     onProgress('Complete', 100);
     return document;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    console.error('[parseDocx] Failed to parse DOCX:', message, error);
     throw new Error(`Failed to parse DOCX: ${message}`);
   }
 }
