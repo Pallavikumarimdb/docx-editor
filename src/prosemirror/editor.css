@@ -408,13 +408,6 @@
   margin: 12pt 0;
   /* Constrain table to fit within the page - prevent overflow */
   max-width: 100%;
-  /* Allow table to shrink if needed */
-  width: auto;
-}
-
-/* When prosemirror-tables columnResizing sets explicit widths, use fixed layout */
-.prosemirror-editor .ProseMirror table.docx-table[style*='width'] {
-  table-layout: fixed;
 }
 
 /* Table cells */

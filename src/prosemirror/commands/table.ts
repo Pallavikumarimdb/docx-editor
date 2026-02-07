@@ -54,6 +54,17 @@ export function deleteTable(state: EditorState, dispatch?: (tr: Transaction) => 
   return cmds.deleteTable()(state, dispatch);
 }
 
+// Table selection
+export function selectTable(state: EditorState, dispatch?: (tr: Transaction) => void): boolean {
+  return cmds.selectTable()(state, dispatch);
+}
+export function selectRow(state: EditorState, dispatch?: (tr: Transaction) => void): boolean {
+  return cmds.selectRow()(state, dispatch);
+}
+export function selectColumn(state: EditorState, dispatch?: (tr: Transaction) => void): boolean {
+  return cmds.selectColumn()(state, dispatch);
+}
+
 // Merge/Split — delegated to prosemirror-tables via singleton extension manager
 export function mergeCells(state: EditorState, dispatch?: (tr: Transaction) => void): boolean {
   return cmds.mergeCells()(state, dispatch);

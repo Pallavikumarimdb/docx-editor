@@ -55,13 +55,19 @@ const tableSpec: NodeSpec = {
       domAttrs['data-style-id'] = attrs.styleId;
     }
 
-    const styles: string[] = ['border-collapse: collapse', 'table-layout: auto'];
+    const styles: string[] = ['border-collapse: collapse'];
 
     if (attrs.width && attrs.widthType === 'pct') {
       styles.push(`width: ${attrs.width / 50}%`);
+      styles.push('table-layout: fixed');
     } else if (attrs.width && attrs.widthType === 'dxa') {
       const widthPx = Math.round((attrs.width / 20) * 1.333);
       styles.push(`width: ${widthPx}px`);
+      styles.push('table-layout: fixed');
+    } else {
+      // Default: fill available width so tables aren't collapsed to content
+      styles.push('width: 100%');
+      styles.push('table-layout: fixed');
     }
 
     if (attrs.justification === 'center') {
@@ -631,7 +637,14 @@ export const TablePluginExtension = createExtension({
       }
 
       const columnWidths = Array(cols).fill(colWidthTwips);
-      return schema.nodes.table.create({ columnWidths }, tableRows);
+      return schema.nodes.table.create(
+        {
+          columnWidths,
+          width: defaultContentWidthTwips,
+          widthType: 'dxa',
+        },
+        tableRows
+      );
     }
 
     function insertTable(rows: number, cols: number): Command {
@@ -1009,6 +1022,129 @@ export const TablePluginExtension = createExtension({
       return true;
     }
 
+    function selectTable(state: EditorState, dispatch?: (tr: Transaction) => void): boolean {
+      const context = getTableContext(state);
+      if (!context.isInTable || context.tablePos === undefined || !context.table) return false;
+
+      if (dispatch) {
+        const tableStart = context.tablePos + 1;
+        // Find first and last cell in the table
+        const $first = state.doc.resolve(tableStart);
+        const $last = state.doc.resolve(context.tablePos + context.table.nodeSize - 2);
+        const cellSel = CellSelection.create(state.doc, $first.pos, $last.pos);
+        dispatch(state.tr.setSelection(cellSel));
+      }
+      return true;
+    }
+
+    function selectRow(state: EditorState, dispatch?: (tr: Transaction) => void): boolean {
+      const context = getTableContext(state);
+      if (
+        !context.isInTable ||
+        context.tablePos === undefined ||
+        !context.table ||
+        context.rowIndex === undefined
+      )
+        return false;
+
+      if (dispatch) {
+        const tableStart = context.tablePos + 1;
+        // Navigate to the target row
+        let rowPos = tableStart;
+        for (let r = 0; r < context.rowIndex; r++) {
+          const row = context.table.child(r);
+          rowPos += row.nodeSize;
+        }
+        const row = context.table.child(context.rowIndex);
+        const firstCellPos = rowPos + 1; // inside the row
+        const lastCellPos = rowPos + row.nodeSize - 2;
+        const cellSel = CellSelection.create(state.doc, firstCellPos, lastCellPos);
+        dispatch(state.tr.setSelection(cellSel));
+      }
+      return true;
+    }
+
+    function selectColumn(state: EditorState, dispatch?: (tr: Transaction) => void): boolean {
+      const context = getTableContext(state);
+      if (
+        !context.isInTable ||
+        context.tablePos === undefined ||
+        !context.table ||
+        context.columnIndex === undefined
+      )
+        return false;
+
+      if (dispatch) {
+        const tableStart = context.tablePos + 1;
+        // Find the cell at columnIndex in first and last row
+        const firstRow = context.table.child(0);
+        const lastRow = context.table.child(context.table.childCount - 1);
+
+        let firstCellPos = tableStart + 1; // inside first row
+        for (let c = 0; c < context.columnIndex && c < firstRow.childCount; c++) {
+          firstCellPos += firstRow.child(c).nodeSize;
+        }
+
+        let lastRowPos = tableStart;
+        for (let r = 0; r < context.table.childCount - 1; r++) {
+          lastRowPos += context.table.child(r).nodeSize;
+        }
+        let lastCellPos = lastRowPos + 1; // inside last row
+        for (let c = 0; c < context.columnIndex && c < lastRow.childCount; c++) {
+          lastCellPos += lastRow.child(c).nodeSize;
+        }
+
+        const cellSel = CellSelection.create(state.doc, firstCellPos, lastCellPos);
+        dispatch(state.tr.setSelection(cellSel));
+      }
+      return true;
+    }
+
+    /**
+     * Get cell positions to operate on: all cells from CellSelection, or
+     * all cells in the table if a single cursor is inside a cell.
+     */
+    function getTargetCellPositions(state: EditorState): { pos: number; node: PMNode }[] {
+      const sel = state.selection;
+      const cells: { pos: number; node: PMNode }[] = [];
+
+      // If we have a CellSelection, use its cells
+      if (sel instanceof CellSelection) {
+        sel.forEachCell((node, pos) => {
+          cells.push({ pos, node });
+        });
+        return cells;
+      }
+
+      // Otherwise fall back to single cell at cursor
+      const { $from } = sel;
+      for (let d = $from.depth; d > 0; d--) {
+        const node = $from.node(d);
+        if (node.type.name === 'tableCell' || node.type.name === 'tableHeader') {
+          cells.push({ pos: $from.before(d), node });
+          break;
+        }
+      }
+      return cells;
+    }
+
+    /**
+     * Get ALL cell positions in the table (regardless of selection).
+     */
+    function getAllTableCellPositions(state: EditorState): { pos: number; node: PMNode }[] {
+      const context = getTableContext(state);
+      if (!context.isInTable || context.tablePos === undefined || !context.table) return [];
+
+      const cells: { pos: number; node: PMNode }[] = [];
+      const tableStart = context.tablePos;
+      context.table.descendants((node, pos) => {
+        if (node.type.name === 'tableCell' || node.type.name === 'tableHeader') {
+          cells.push({ pos: tableStart + pos + 1, node });
+        }
+      });
+      return cells;
+    }
+
     function setTableBorders(preset: BorderPreset): Command {
       return (state, dispatch) => {
         const context = getTableContext(state);
@@ -1016,39 +1152,32 @@ export const TablePluginExtension = createExtension({
 
         if (dispatch) {
           const tr = state.tr;
-          const { $from } = state.selection;
+          // Borders always apply to ALL cells in the table
+          const cells = getAllTableCellPositions(state);
 
-          for (let d = $from.depth; d > 0; d--) {
-            const node = $from.node(d);
-            if (node.type.name === 'tableCell' || node.type.name === 'tableHeader') {
-              const pos = $from.before(d);
+          const solidBorder = { style: 'single', size: 4, color: { rgb: '000000' } };
+          const noBorder = { style: 'none' as const };
 
-              const solidBorder = { style: 'single', size: 4, color: { rgb: '000000' } };
-              const noBorder = { style: 'none' as const };
-              let borders;
-
-              switch (preset) {
-                case 'all':
-                case 'outside':
-                  borders = {
-                    top: solidBorder,
-                    bottom: solidBorder,
-                    left: solidBorder,
-                    right: solidBorder,
-                  };
-                  break;
-                case 'inside':
-                case 'none':
-                  borders = { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder };
-                  break;
-              }
-
-              const newAttrs = { ...node.attrs, borders };
-              tr.setNodeMarkup(pos, undefined, newAttrs);
-              dispatch(tr.scrollIntoView());
-              return true;
+          for (const { pos, node } of cells) {
+            let borders;
+            switch (preset) {
+              case 'all':
+              case 'outside':
+                borders = {
+                  top: solidBorder,
+                  bottom: solidBorder,
+                  left: solidBorder,
+                  right: solidBorder,
+                };
+                break;
+              case 'inside':
+              case 'none':
+                borders = { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder };
+                break;
             }
+            tr.setNodeMarkup(tr.mapping.map(pos), undefined, { ...node.attrs, borders });
           }
+          dispatch(tr.scrollIntoView());
         }
 
         return true;
@@ -1062,19 +1191,16 @@ export const TablePluginExtension = createExtension({
 
         if (dispatch) {
           const tr = state.tr;
-          const { $from } = state.selection;
+          const cells = getTargetCellPositions(state);
+          const bgColor = color ? color.replace(/^#/, '') : null;
 
-          for (let d = $from.depth; d > 0; d--) {
-            const node = $from.node(d);
-            if (node.type.name === 'tableCell' || node.type.name === 'tableHeader') {
-              const pos = $from.before(d);
-              const bgColor = color ? color.replace(/^#/, '') : null;
-              const newAttrs = { ...node.attrs, backgroundColor: bgColor };
-              tr.setNodeMarkup(pos, undefined, newAttrs);
-              dispatch(tr.scrollIntoView());
-              return true;
-            }
+          for (const { pos, node } of cells) {
+            tr.setNodeMarkup(tr.mapping.map(pos), undefined, {
+              ...node.attrs,
+              backgroundColor: bgColor,
+            });
           }
+          dispatch(tr.scrollIntoView());
         }
 
         return true;
@@ -1091,33 +1217,28 @@ export const TablePluginExtension = createExtension({
 
         if (dispatch) {
           const tr = state.tr;
-          const { $from } = state.selection;
+          const cells = getTargetCellPositions(state);
+          const borderValue = spec || { style: 'none' };
 
-          for (let d = $from.depth; d > 0; d--) {
-            const node = $from.node(d);
-            if (node.type.name === 'tableCell' || node.type.name === 'tableHeader') {
-              const pos = $from.before(d);
-              const currentBorders = node.attrs.borders || {};
-              const borderValue = spec || { style: 'none' };
-
-              let newBorders;
-              if (side === 'all') {
-                newBorders = {
-                  top: borderValue,
-                  bottom: borderValue,
-                  left: borderValue,
-                  right: borderValue,
-                };
-              } else {
-                newBorders = { ...currentBorders, [side]: borderValue };
-              }
-
-              const newAttrs = { ...node.attrs, borders: newBorders };
-              tr.setNodeMarkup(pos, undefined, newAttrs);
-              dispatch(tr.scrollIntoView());
-              return true;
+          for (const { pos, node } of cells) {
+            const currentBorders = node.attrs.borders || {};
+            let newBorders;
+            if (side === 'all') {
+              newBorders = {
+                top: borderValue,
+                bottom: borderValue,
+                left: borderValue,
+                right: borderValue,
+              };
+            } else {
+              newBorders = { ...currentBorders, [side]: borderValue };
             }
+            tr.setNodeMarkup(tr.mapping.map(pos), undefined, {
+              ...node.attrs,
+              borders: newBorders,
+            });
           }
+          dispatch(tr.scrollIntoView());
         }
 
         return true;
@@ -1131,18 +1252,14 @@ export const TablePluginExtension = createExtension({
 
         if (dispatch) {
           const tr = state.tr;
-          const { $from } = state.selection;
-
-          for (let d = $from.depth; d > 0; d--) {
-            const node = $from.node(d);
-            if (node.type.name === 'tableCell' || node.type.name === 'tableHeader') {
-              const pos = $from.before(d);
-              const newAttrs = { ...node.attrs, verticalAlign: align };
-              tr.setNodeMarkup(pos, undefined, newAttrs);
-              dispatch(tr.scrollIntoView());
-              return true;
-            }
+          const cells = getTargetCellPositions(state);
+          for (const { pos, node } of cells) {
+            tr.setNodeMarkup(tr.mapping.map(pos), undefined, {
+              ...node.attrs,
+              verticalAlign: align,
+            });
           }
+          dispatch(tr.scrollIntoView());
         }
 
         return true;
@@ -1161,20 +1278,16 @@ export const TablePluginExtension = createExtension({
 
         if (dispatch) {
           const tr = state.tr;
-          const { $from } = state.selection;
-
-          for (let d = $from.depth; d > 0; d--) {
-            const node = $from.node(d);
-            if (node.type.name === 'tableCell' || node.type.name === 'tableHeader') {
-              const pos = $from.before(d);
-              const currentMargins = node.attrs.margins || {};
-              const newMargins = { ...currentMargins, ...margins };
-              const newAttrs = { ...node.attrs, margins: newMargins };
-              tr.setNodeMarkup(pos, undefined, newAttrs);
-              dispatch(tr.scrollIntoView());
-              return true;
-            }
+          const cells = getTargetCellPositions(state);
+          for (const { pos, node } of cells) {
+            const currentMargins = node.attrs.margins || {};
+            const newMargins = { ...currentMargins, ...margins };
+            tr.setNodeMarkup(tr.mapping.map(pos), undefined, {
+              ...node.attrs,
+              margins: newMargins,
+            });
           }
+          dispatch(tr.scrollIntoView());
         }
 
         return true;
@@ -1188,18 +1301,14 @@ export const TablePluginExtension = createExtension({
 
         if (dispatch) {
           const tr = state.tr;
-          const { $from } = state.selection;
-
-          for (let d = $from.depth; d > 0; d--) {
-            const node = $from.node(d);
-            if (node.type.name === 'tableCell' || node.type.name === 'tableHeader') {
-              const pos = $from.before(d);
-              const newAttrs = { ...node.attrs, textDirection: direction };
-              tr.setNodeMarkup(pos, undefined, newAttrs);
-              dispatch(tr.scrollIntoView());
-              return true;
-            }
+          const cells = getTargetCellPositions(state);
+          for (const { pos, node } of cells) {
+            tr.setNodeMarkup(tr.mapping.map(pos), undefined, {
+              ...node.attrs,
+              textDirection: direction,
+            });
           }
+          dispatch(tr.scrollIntoView());
         }
 
         return true;
@@ -1213,18 +1322,14 @@ export const TablePluginExtension = createExtension({
 
         if (dispatch) {
           const tr = state.tr;
-          const { $from } = state.selection;
-
-          for (let d = $from.depth; d > 0; d--) {
-            const node = $from.node(d);
-            if (node.type.name === 'tableCell' || node.type.name === 'tableHeader') {
-              const pos = $from.before(d);
-              const newAttrs = { ...node.attrs, noWrap: !node.attrs.noWrap };
-              tr.setNodeMarkup(pos, undefined, newAttrs);
-              dispatch(tr.scrollIntoView());
-              return true;
-            }
+          const cells = getTargetCellPositions(state);
+          for (const { pos, node } of cells) {
+            tr.setNodeMarkup(tr.mapping.map(pos), undefined, {
+              ...node.attrs,
+              noWrap: !node.attrs.noWrap,
+            });
           }
+          dispatch(tr.scrollIntoView());
         }
 
         return true;
@@ -1583,27 +1688,25 @@ export const TablePluginExtension = createExtension({
 
         if (dispatch) {
           const tr = state.tr;
-          const { $from } = state.selection;
+          // Border color applies to all cells in the table
+          const cells = getAllTableCellPositions(state);
+          const rgb = color.replace(/^#/, '');
+          const defaultBorder = { style: 'single', size: 4 };
 
-          for (let d = $from.depth; d > 0; d--) {
-            const node = $from.node(d);
-            if (node.type.name === 'tableCell' || node.type.name === 'tableHeader') {
-              const pos = $from.before(d);
-              const rgb = color.replace(/^#/, '');
-              const currentBorders = node.attrs.borders || {};
-              const defaultBorder = { style: 'single', size: 4 };
-              const newBorders = {
-                top: { ...defaultBorder, ...currentBorders.top, color: { rgb } },
-                bottom: { ...defaultBorder, ...currentBorders.bottom, color: { rgb } },
-                left: { ...defaultBorder, ...currentBorders.left, color: { rgb } },
-                right: { ...defaultBorder, ...currentBorders.right, color: { rgb } },
-              };
-              const newAttrs = { ...node.attrs, borders: newBorders };
-              tr.setNodeMarkup(pos, undefined, newAttrs);
-              dispatch(tr.scrollIntoView());
-              return true;
-            }
+          for (const { pos, node } of cells) {
+            const currentBorders = node.attrs.borders || {};
+            const newBorders = {
+              top: { ...defaultBorder, ...currentBorders.top, color: { rgb } },
+              bottom: { ...defaultBorder, ...currentBorders.bottom, color: { rgb } },
+              left: { ...defaultBorder, ...currentBorders.left, color: { rgb } },
+              right: { ...defaultBorder, ...currentBorders.right, color: { rgb } },
+            };
+            tr.setNodeMarkup(tr.mapping.map(pos), undefined, {
+              ...node.attrs,
+              borders: newBorders,
+            });
           }
+          dispatch(tr.scrollIntoView());
         }
 
         return true;
@@ -1628,6 +1731,9 @@ export const TablePluginExtension = createExtension({
         addColumnRight: () => addColumnRight,
         deleteColumn: () => deleteColumn,
         deleteTable: () => deleteTable,
+        selectTable: () => selectTable,
+        selectRow: () => selectRow,
+        selectColumn: () => selectColumn,
         mergeCells: () => pmMergeCells,
         splitCell: () => pmSplitCell,
         setCellBorder: (

@@ -27,6 +27,7 @@ import { pointsToHalfPoints } from './ui/FontSizePicker';
 import { VariablePanel } from './VariablePanel';
 import { ErrorBoundary, ErrorProvider } from './ErrorBoundary';
 import type { TableAction } from './ui/TableToolbar';
+import { mapHexToHighlightName } from './toolbarUtils';
 import {
   PageNumberIndicator,
   type PageIndicatorPosition,
@@ -116,6 +117,9 @@ import {
   addColumnRight,
   deleteColumn as pmDeleteColumn,
   deleteTable as pmDeleteTable,
+  selectTable as pmSelectTable,
+  selectRow as pmSelectRow,
+  selectColumn as pmSelectColumn,
   mergeCells as pmMergeCells,
   splitCell as pmSplitCell,
   setCellBorder,
@@ -736,55 +740,6 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   );
 
   // Handle shape insertion
-  const handleInsertShape = useCallback(
-    (data: {
-      shapeType: string;
-      width: number;
-      height: number;
-      fillColor?: string;
-      fillType?: string;
-      outlineWidth?: number;
-      outlineColor?: string;
-    }) => {
-      const view = getActiveEditorView();
-      if (!view) return;
-
-      const { state: editorState } = view;
-
-      if (data.shapeType === 'textBox') {
-        // Insert a text box node (block-level)
-        const textBoxNode = editorState.schema.nodes.textBox.create(
-          {
-            width: data.width,
-            height: data.height,
-            outlineWidth: 1,
-            outlineColor: '#d1d5db',
-            outlineStyle: 'solid',
-          },
-          editorState.schema.nodes.paragraph.create()
-        );
-        const tr = editorState.tr.replaceSelectionWith(textBoxNode);
-        view.dispatch(tr.scrollIntoView());
-      } else {
-        // Insert a shape node (inline)
-        const shapeNode = editorState.schema.nodes.shape.create({
-          shapeType: data.shapeType,
-          width: data.width,
-          height: data.height,
-          fillColor: data.fillColor,
-          fillType: data.fillType,
-          outlineWidth: data.outlineWidth,
-          outlineColor: data.outlineColor,
-          outlineStyle: 'solid',
-        });
-        const tr = editorState.tr.replaceSelectionWith(shapeNode);
-        view.dispatch(tr.scrollIntoView());
-      }
-      focusActiveEditor();
-    },
-    [getActiveEditorView, focusActiveEditor]
-  );
-
   // Handle image wrap type change
   const handleImageWrapType = useCallback(
     (wrapType: string) => {
@@ -1006,6 +961,15 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
           break;
         case 'deleteTable':
           pmDeleteTable(view.state, view.dispatch);
+          break;
+        case 'selectTable':
+          pmSelectTable(view.state, view.dispatch);
+          break;
+        case 'selectRow':
+          pmSelectRow(view.state, view.dispatch);
+          break;
+        case 'selectColumn':
+          pmSelectColumn(view.state, view.dispatch);
           break;
         case 'mergeCells':
           pmMergeCells(view.state, view.dispatch);
@@ -1267,9 +1231,12 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
           // action.value can be a string like "#FF0000" or a color name
           setTextColor({ rgb: action.value.replace('#', '') })(view.state, view.dispatch);
           break;
-        case 'highlightColor':
-          setHighlight(action.value)(view.state, view.dispatch);
+        case 'highlightColor': {
+          // Convert hex to OOXML named highlight value (e.g., 'FFFF00' → 'yellow')
+          const highlightName = action.value ? mapHexToHighlightName(action.value) : '';
+          setHighlight(highlightName || action.value)(view.state, view.dispatch);
           break;
+        }
         case 'fontSize':
           // Convert points to half-points (OOXML uses half-points for font sizes)
           setFontSize(pointsToHalfPoints(action.value))(view.state, view.dispatch);
@@ -1890,7 +1857,6 @@ body { background: white; }
                     onInsertTable={handleInsertTable}
                     showTableInsert={true}
                     onInsertImage={handleInsertImageClick}
-                    onInsertShape={handleInsertShape}
                     imageContext={state.pmImageContext}
                     onImageWrapType={handleImageWrapType}
                     onImageTransform={handleImageTransform}

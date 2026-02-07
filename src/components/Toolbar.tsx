@@ -1055,7 +1055,6 @@ export function Toolbar({
             disabled={disabled}
             tableContext={tableContext}
             tooltip="Table options"
-            documentStyles={documentStyles}
           />
         </ToolbarGroup>
       )}

@@ -33,6 +33,9 @@ export type TableAction =
   | 'mergeCells'
   | 'splitCell'
   | 'deleteTable'
+  | 'selectTable'
+  | 'selectRow'
+  | 'selectColumn'
   | 'borderAll'
   | 'borderOutside'
   | 'borderInside'
@@ -1020,6 +1023,9 @@ export function getActionLabel(action: TableAction): string {
     mergeCells: 'Merge Cells',
     splitCell: 'Split Cell',
     deleteTable: 'Delete Table',
+    selectTable: 'Select Table',
+    selectRow: 'Select Row',
+    selectColumn: 'Select Column',
     borderAll: 'All Borders',
     borderOutside: 'Outside Borders',
     borderInside: 'Inside Borders',
