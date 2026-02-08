@@ -66,6 +66,7 @@ import {
   extractVariables,
 } from './DocxEditorHelpers';
 import { parseDocx } from '../docx/parser';
+import { type DocxInput } from '../utils/docxInput';
 import { onFontsLoaded, loadDocumentFonts } from '../utils/fontLoader';
 import { executeCommand } from '../agent/executor';
 import { useTableSelection } from '../hooks/useTableSelection';
@@ -156,8 +157,8 @@ import type { RenderedDomContext } from '../plugin-api/types';
  * DocxEditor props
  */
 export interface DocxEditorProps {
-  /** Document buffer (ArrayBuffer from file read) */
-  documentBuffer?: ArrayBuffer | null;
+  /** Document data — ArrayBuffer, Uint8Array, Blob, or File */
+  documentBuffer?: DocxInput | null;
   /** Pre-parsed document (alternative to documentBuffer) */
   document?: Document | null;
   /** Callback when document is saved */

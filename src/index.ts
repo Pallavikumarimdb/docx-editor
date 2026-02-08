@@ -32,6 +32,8 @@ export const VERSION = '0.0.2';
 
 export { DocxEditor, type DocxEditorProps, type DocxEditorRef } from './components/DocxEditor';
 export { default } from './components/DocxEditor';
+export { renderAsync, type RenderAsyncOptions, type DocxEditorHandle } from './renderAsync';
+export { type DocxInput, toArrayBuffer } from './utils/docxInput';
 
 // ============================================================================
 // AGENT API

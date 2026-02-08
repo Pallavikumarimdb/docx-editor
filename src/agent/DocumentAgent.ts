@@ -39,6 +39,7 @@ import { repackDocx, createDocx } from '../docx/rezip';
 import { detectVariables } from '../utils/variableDetector';
 import { processTemplate } from '../utils/processTemplate';
 import { parseDocx } from '../docx/parser';
+import type { DocxInput } from '../utils/docxInput';
 
 // ============================================================================
 // TYPES
@@ -148,12 +149,12 @@ export class DocumentAgent {
   }
 
   /**
-   * Create a DocumentAgent from an ArrayBuffer (async)
+   * Create a DocumentAgent from a DOCX buffer (async)
    *
-   * @param buffer - DOCX file as ArrayBuffer
+   * @param buffer - DOCX file as ArrayBuffer, Uint8Array, Blob, or File
    * @returns Promise resolving to DocumentAgent
    */
-  static async fromBuffer(buffer: ArrayBuffer): Promise<DocumentAgent> {
+  static async fromBuffer(buffer: DocxInput): Promise<DocumentAgent> {
     const document = await parseDocx(buffer);
     return new DocumentAgent(document);
   }

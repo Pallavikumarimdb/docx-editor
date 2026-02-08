@@ -40,6 +40,7 @@ import { parseHeader, parseFooter } from './headerFooterParser';
 import { parseFootnotes, parseEndnotes } from './footnoteParser';
 import { parseComments } from './commentParser';
 import { loadFontsWithMapping } from '../utils/fontLoader';
+import { type DocxInput, toArrayBuffer } from '../utils/docxInput';
 
 // ============================================================================
 // PROGRESS CALLBACK
@@ -73,15 +74,14 @@ export interface ParseOptions {
 /**
  * Parse a DOCX file into a complete Document model
  *
- * @param buffer - DOCX file as ArrayBuffer
+ * @param input - DOCX file as ArrayBuffer, Uint8Array, Blob, or File
  * @param options - Parsing options
  * @returns Promise resolving to Document
  * @throws Error if parsing fails
  */
-export async function parseDocx(
-  buffer: ArrayBuffer,
-  options: ParseOptions = {}
-): Promise<Document> {
+export async function parseDocx(input: DocxInput, options: ParseOptions = {}): Promise<Document> {
+  // Normalize any supported input type to ArrayBuffer
+  const buffer = input instanceof ArrayBuffer ? input : await toArrayBuffer(input);
   const {
     onProgress = () => {},
     preloadFonts = true,
