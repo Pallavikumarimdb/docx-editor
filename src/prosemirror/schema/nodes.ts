@@ -15,6 +15,7 @@ import type {
   TextFormatting,
   NumberFormat,
 } from '../../types/document';
+import type { FloatingTableProperties } from '../../types';
 
 /**
  * Paragraph node attributes - maps to ParagraphFormatting
@@ -154,6 +155,8 @@ export interface TableAttrs {
   justification?: 'left' | 'center' | 'right';
   /** Column widths (in twips) from w:tblGrid */
   columnWidths?: number[];
+  /** Floating table properties (w:tblpPr) */
+  floating?: FloatingTableProperties;
 }
 
 /**

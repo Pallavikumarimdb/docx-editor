@@ -61,7 +61,7 @@ function Editor({ file }: { file: ArrayBuffer }) {
 | ------------------- | ------------------------------- | ------- | ------------------------------------------- |
 | `documentBuffer`    | `ArrayBuffer`                   | —       | `.docx` file contents to load               |
 | `document`          | `Document`                      | —       | Pre-parsed document (alternative to buffer) |
-| `readOnly`          | `boolean`                       | `false` | Disable editing                             |
+| `readOnly`          | `boolean`                       | `false` | Read-only preview (no caret/selection)      |
 | `showToolbar`       | `boolean`                       | `true`  | Show formatting toolbar                     |
 | `showRuler`         | `boolean`                       | `false` | Show horizontal ruler                       |
 | `showZoomControl`   | `boolean`                       | `true`  | Show zoom controls                          |
@@ -82,6 +82,14 @@ ref.current.setZoom(1.5); // Set zoom to 150%
 ref.current.focus(); // Focus the editor
 ref.current.scrollToPage(3); // Scroll to page 3
 ref.current.print(); // Print the document
+```
+
+## Read-Only Preview
+
+Use `readOnly` for a preview-only viewer. This disables editing, caret, and selection UI.
+
+```tsx
+<DocxEditor documentBuffer={file} readOnly />
 ```
 
 ## Plugins

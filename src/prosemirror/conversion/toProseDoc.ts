@@ -388,6 +388,7 @@ function convertTable(table: Table, styleResolver: StyleResolver | null): PMNode
     widthType: table.formatting?.width?.type,
     justification: table.formatting?.justification,
     columnWidths: columnWidths,
+    floating: table.formatting?.floating,
   };
 
   // Calculate total width from columnWidths if available (for percentage calculation)

@@ -948,7 +948,7 @@ function convertPMTable(node: PMNode): Table {
  * Convert ProseMirror table attrs to TableFormatting
  */
 function tableAttrsToFormatting(attrs: TableAttrs): TableFormatting | undefined {
-  const hasFormatting = attrs.styleId || attrs.width || attrs.justification;
+  const hasFormatting = attrs.styleId || attrs.width || attrs.justification || attrs.floating;
 
   if (!hasFormatting) {
     return undefined;
@@ -963,6 +963,7 @@ function tableAttrsToFormatting(attrs: TableAttrs): TableFormatting | undefined 
         }
       : undefined,
     justification: attrs.justification || undefined,
+    floating: attrs.floating || undefined,
   };
 }
 

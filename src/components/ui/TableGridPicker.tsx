@@ -77,7 +77,7 @@ const cellStyle: CSSProperties = {
 const cellSelectedStyle: CSSProperties = {
   ...cellStyle,
   backgroundColor: 'var(--doc-primary)',
-  borderColor: 'var(--doc-primary)',
+  border: '1px solid var(--doc-primary)',
 };
 
 const labelStyle: CSSProperties = {

@@ -34,6 +34,7 @@ const tableSpec: NodeSpec = {
     widthType: { default: null },
     justification: { default: null },
     columnWidths: { default: null },
+    floating: { default: null },
   },
   parseDOM: [
     {
@@ -164,7 +165,11 @@ function buildCellBorderKinds(attrs: TableCellAttrs): string[] {
 // Convert cell margins (twips) to CSS padding
 function buildCellPaddingStyles(attrs: TableCellAttrs): string[] {
   const margins = attrs.margins;
-  if (!margins) return ['padding: 4px 8px'];
+  // Word default cell margins: 108 twips (top/bottom), 108 twips (left/right)
+  if (!margins) {
+    const px = Math.round((108 / 20) * 1.333);
+    return [`padding: ${px}px ${px}px`];
+  }
 
   const toPixels = (twips?: number) => (twips ? Math.round((twips / 20) * 1.333) : 0);
   const top = toPixels(margins.top);
@@ -607,6 +612,17 @@ export const TablePluginExtension = createExtension({
 
     // ---- Commands ----
 
+    function chainCommands(...commands: Command[]): Command {
+      return (state, dispatch, view) => {
+        for (const cmd of commands) {
+          if (cmd(state, dispatch, view)) {
+            return true;
+          }
+        }
+        return false;
+      };
+    }
+
     function buildCellAttrsFromTemplate(
       templateCell: PMNode | null,
       overrides: Record<string, unknown> = {}
@@ -706,8 +722,20 @@ export const TablePluginExtension = createExtension({
         if (dispatch) {
           const table = createTable(rows, cols, borderColor);
           const emptyParagraph = schema.nodes.paragraph.create();
-          const tr = state.tr.insert(insertPos, [table, emptyParagraph]);
-          const tableStartPos = insertPos + 1;
+
+          const $insert = state.doc.resolve(insertPos);
+          const needsLeadingParagraph = $insert.nodeBefore?.type.name === 'table';
+          const insertContent = needsLeadingParagraph
+            ? [emptyParagraph, table, emptyParagraph]
+            : [table, emptyParagraph];
+
+          const tr = state.tr.insert(insertPos, insertContent);
+
+          let tableStartPos = insertPos + 1;
+          if (needsLeadingParagraph) {
+            tableStartPos += emptyParagraph.nodeSize;
+          }
+
           const firstCellPos = tableStartPos + 1;
           const firstCellContentPos = firstCellPos + 1;
           tr.setSelection(TextSelection.create(tr.doc, firstCellContentPos));
@@ -894,6 +922,15 @@ export const TablePluginExtension = createExtension({
               cellPos += cell.nodeSize;
             });
           }
+
+          // Update table columnWidths so full-width tables resize correctly.
+          const colCount = firstRow?.childCount ?? newColumnCount;
+          const tableWidthTwips = (updatedTable.attrs.width as number) || 9360;
+          const colWidthTwips = Math.floor(tableWidthTwips / Math.max(1, colCount));
+          tr = tr.setNodeMarkup(context.tablePos, undefined, {
+            ...updatedTable.attrs,
+            columnWidths: Array(colCount).fill(colWidthTwips),
+          });
         }
 
         dispatch(tr.scrollIntoView());
@@ -980,6 +1017,15 @@ export const TablePluginExtension = createExtension({
               cellPos += cell.nodeSize;
             });
           }
+
+          // Update table columnWidths so full-width tables resize correctly.
+          const colCount = firstRow?.childCount ?? newColumnCount;
+          const tableWidthTwips = (updatedTable.attrs.width as number) || 9360;
+          const colWidthTwips = Math.floor(tableWidthTwips / Math.max(1, colCount));
+          tr = tr.setNodeMarkup(context.tablePos, undefined, {
+            ...updatedTable.attrs,
+            columnWidths: Array(colCount).fill(colWidthTwips),
+          });
         }
 
         dispatch(tr.scrollIntoView());
@@ -1047,6 +1093,15 @@ export const TablePluginExtension = createExtension({
               cellPos += cell.nodeSize;
             });
           }
+
+          // Update table columnWidths to match new column count.
+          const colCount = firstRow?.childCount ?? newColumnCount;
+          const tableWidthTwips = (updatedTable.attrs.width as number) || 9360;
+          const colWidthTwips = Math.floor(tableWidthTwips / Math.max(1, colCount));
+          tr = tr.setNodeMarkup(context.tablePos, undefined, {
+            ...updatedTable.attrs,
+            columnWidths: Array(colCount).fill(colWidthTwips),
+          });
         }
 
         dispatch(tr.scrollIntoView());
@@ -1757,6 +1812,65 @@ export const TablePluginExtension = createExtension({
       };
     }
 
+    function deleteTableIfSelected(): Command {
+      return (state, dispatch) => {
+        const selection = state.selection as CellSelection;
+        const isCellSel = '$anchorCell' in selection && typeof selection.forEachCell === 'function';
+        if (!isCellSel) return false;
+
+        const context = getTableContext(state);
+        if (!context.isInTable || context.tablePos === undefined || !context.table) return false;
+
+        let totalCells = 0;
+        context.table.descendants((node) => {
+          if (node.type.name === 'tableCell' || node.type.name === 'tableHeader') {
+            totalCells += 1;
+          }
+        });
+
+        let selectedCells = 0;
+        selection.forEachCell(() => {
+          selectedCells += 1;
+        });
+
+        const isFullTable = totalCells > 0 && selectedCells >= totalCells;
+
+        if (!isFullTable) return false;
+
+        if (dispatch) {
+          const tr = state.tr.delete(context.tablePos, context.tablePos + context.table.nodeSize);
+          dispatch(tr.scrollIntoView());
+        }
+        return true;
+      };
+    }
+
+    function preventTableMergeAtGap(): Command {
+      return (state) => {
+        const { $from, empty } = state.selection;
+        if (!empty) return false;
+
+        const parent = $from.parent;
+        if (parent.type.name !== 'paragraph') return false;
+        if (parent.textContent.length > 0) return false;
+
+        const depth = $from.depth;
+        if (depth < 1) return false;
+        const container = $from.node(depth - 1);
+        const index = $from.index(depth - 1);
+        const before = index > 0 ? container.child(index - 1) : null;
+        const after = index + 1 < container.childCount ? container.child(index + 1) : null;
+        const beforeIsTable = before?.type.name === 'table';
+        const afterIsTable = after?.type.name === 'table';
+        if (beforeIsTable || afterIsTable) {
+          // Keep the spacer paragraph adjacent to tables so they can't visually merge.
+          return true;
+        }
+
+        return false;
+      };
+    }
+
     return {
       plugins: [
         columnResizing({
@@ -1766,6 +1880,10 @@ export const TablePluginExtension = createExtension({
         }),
         tableEditing(),
       ],
+      keyboardShortcuts: {
+        Backspace: chainCommands(deleteTableIfSelected(), preventTableMergeAtGap()),
+        Delete: chainCommands(deleteTableIfSelected(), preventTableMergeAtGap()),
+      },
       commands: {
         insertTable: (rows: number, cols: number) => insertTable(rows, cols),
         addRowAbove: () => addRowAbove,

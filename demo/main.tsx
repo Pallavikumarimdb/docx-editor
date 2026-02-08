@@ -440,7 +440,7 @@ function BaseDemo({ title, badge, withTemplatePlugin = false, initialDocument }:
   }, [fileName]);
 
   const handleDocumentChange = useCallback((_doc: Document) => {
-    console.log('Document changed');
+    // no-op (disable noisy logging)
   }, []);
 
   const handleError = useCallback((error: Error) => {

@@ -500,53 +500,6 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     return cleanup;
   }, [onFontsLoadedCallback]);
 
-  // Keyboard shortcuts for Find/Replace (Ctrl+F, Ctrl+H)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Check for Ctrl+F (Find) or Ctrl+H (Replace)
-      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-      const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
-
-      if (cmdOrCtrl && !e.shiftKey && !e.altKey) {
-        if (e.key.toLowerCase() === 'f') {
-          e.preventDefault();
-          // Get selected text if any
-          const selection = window.getSelection();
-          const selectedText = selection && !selection.isCollapsed ? selection.toString() : '';
-          findReplace.openFind(selectedText);
-        } else if (e.key.toLowerCase() === 'h') {
-          e.preventDefault();
-          // Get selected text if any
-          const selection = window.getSelection();
-          const selectedText = selection && !selection.isCollapsed ? selection.toString() : '';
-          findReplace.openReplace(selectedText);
-        } else if (e.key.toLowerCase() === 'k') {
-          e.preventDefault();
-          // Open hyperlink dialog
-          const view = pagedEditorRef.current?.getView();
-          if (view) {
-            const selectedText = getSelectedText(view.state);
-            const existingLink = getHyperlinkAttrs(view.state);
-            if (existingLink) {
-              hyperlinkDialog.openEdit({
-                url: existingLink.href,
-                displayText: selectedText,
-                tooltip: existingLink.tooltip,
-              });
-            } else {
-              hyperlinkDialog.openInsert(selectedText);
-            }
-          }
-        }
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [findReplace, hyperlinkDialog]);
-
   // Handle document change
   const handleDocumentChange = useCallback(
     (newDocument: Document) => {
@@ -669,6 +622,91 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
       // Could notify parent of table selection changes
     },
   });
+
+  // Keyboard shortcuts for Find/Replace (Ctrl+F, Ctrl+H) and delete table selection
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check for Ctrl+F (Find) or Ctrl+H (Replace)
+      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+      const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
+
+      // Delete selected table from layout selection (non-ProseMirror selection)
+      if (!cmdOrCtrl && !e.shiftKey && !e.altKey) {
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          // If full table is selected via ProseMirror CellSelection, delete it.
+          const view = pagedEditorRef.current?.getView();
+          if (view) {
+            const sel = view.state.selection as { $anchorCell?: unknown; forEachCell?: unknown };
+            const isCellSel = '$anchorCell' in sel && typeof sel.forEachCell === 'function';
+            if (isCellSel) {
+              const context = getTableContext(view.state);
+              if (context.isInTable && context.table) {
+                let totalCells = 0;
+                context.table.descendants((node) => {
+                  if (node.type.name === 'tableCell' || node.type.name === 'tableHeader') {
+                    totalCells += 1;
+                  }
+                });
+                let selectedCells = 0;
+                (sel as { forEachCell: (fn: () => void) => void }).forEachCell(() => {
+                  selectedCells += 1;
+                });
+                if (totalCells > 0 && selectedCells >= totalCells) {
+                  e.preventDefault();
+                  pmDeleteTable(view.state, view.dispatch);
+                  return;
+                }
+              }
+            }
+          }
+
+          if (tableSelection.state.tableIndex !== null) {
+            e.preventDefault();
+            tableSelection.handleAction('deleteTable');
+            return;
+          }
+        }
+      }
+
+      if (cmdOrCtrl && !e.shiftKey && !e.altKey) {
+        if (e.key.toLowerCase() === 'f') {
+          e.preventDefault();
+          // Get selected text if any
+          const selection = window.getSelection();
+          const selectedText = selection && !selection.isCollapsed ? selection.toString() : '';
+          findReplace.openFind(selectedText);
+        } else if (e.key.toLowerCase() === 'h') {
+          e.preventDefault();
+          // Get selected text if any
+          const selection = window.getSelection();
+          const selectedText = selection && !selection.isCollapsed ? selection.toString() : '';
+          findReplace.openReplace(selectedText);
+        } else if (e.key.toLowerCase() === 'k') {
+          e.preventDefault();
+          // Open hyperlink dialog
+          const view = pagedEditorRef.current?.getView();
+          if (view) {
+            const selectedText = getSelectedText(view.state);
+            const existingLink = getHyperlinkAttrs(view.state);
+            if (existingLink) {
+              hyperlinkDialog.openEdit({
+                url: existingLink.href,
+                displayText: selectedText,
+                tooltip: existingLink.tooltip,
+              });
+            } else {
+              hyperlinkDialog.openInsert(selectedText);
+            }
+          }
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [findReplace, hyperlinkDialog, tableSelection]);
 
   // Handle table insert from toolbar
   const handleInsertTable = useCallback(
