@@ -477,15 +477,6 @@ function convertTable(table: Table, styleResolver: StyleResolver | null): PMNode
   // Get column widths from table grid
   const columnWidths = table.columnWidths;
 
-  const attrs: TableAttrs = {
-    styleId: table.formatting?.styleId,
-    width: table.formatting?.width?.value,
-    widthType: table.formatting?.width?.type,
-    justification: table.formatting?.justification,
-    columnWidths: columnWidths,
-    floating: table.formatting?.floating,
-  };
-
   // Calculate total width from columnWidths if available (for percentage calculation)
   const totalWidth = columnWidths?.reduce((sum, w) => sum + w, 0) ?? 0;
 
@@ -496,6 +487,28 @@ function convertTable(table: Table, styleResolver: StyleResolver | null): PMNode
   // Resolve table borders: prefer table's own borders, fall back to table style's borders
   const tableStyle = tableStyleId ? styleResolver?.getStyle(tableStyleId) : undefined;
   const resolvedTableBorders = table.formatting?.borders ?? tableStyle?.tblPr?.borders;
+
+  // Resolve default cell margins: table's own cellMargins > table style's cellMargins
+  const tableCellMargins =
+    table.formatting?.cellMargins ?? tableStyle?.tblPr?.cellMargins ?? undefined;
+  const cellMarginsAttr = tableCellMargins
+    ? {
+        top: tableCellMargins.top?.value,
+        bottom: tableCellMargins.bottom?.value,
+        left: tableCellMargins.left?.value,
+        right: tableCellMargins.right?.value,
+      }
+    : undefined;
+
+  const attrs: TableAttrs = {
+    styleId: table.formatting?.styleId,
+    width: table.formatting?.width?.value,
+    widthType: table.formatting?.width?.type,
+    justification: table.formatting?.justification,
+    columnWidths: columnWidths,
+    floating: table.formatting?.floating,
+    cellMargins: cellMarginsAttr,
+  };
 
   const conditionalStyles = {
     wholeTable: resolveTableStyleConditional(styleResolver, tableStyleId, 'wholeTable'),
@@ -551,7 +564,8 @@ function convertTable(table: Table, styleResolver: StyleResolver | null): PMNode
       rowIndex,
       totalRows,
       totalColumns,
-      rowSpanMap
+      rowSpanMap,
+      cellMarginsAttr
     );
   });
 
@@ -589,7 +603,8 @@ function convertTableRow(
   rowIndex?: number,
   totalRows?: number,
   totalColumns?: number,
-  rowSpanMap?: Map<string, { rowSpan: number; skip: boolean }>
+  rowSpanMap?: Map<string, { rowSpan: number; skip: boolean }>,
+  defaultCellMargins?: { top?: number; bottom?: number; left?: number; right?: number }
 ): PMNode {
   const attrs: TableRowAttrs = {
     height: row.formatting?.height?.value,
@@ -764,7 +779,8 @@ function convertTableRow(
         isLastRow,
         isFirstCol,
         isLastCol,
-        calculatedRowSpan
+        calculatedRowSpan,
+        defaultCellMargins
       )
     );
   }
@@ -786,7 +802,8 @@ function convertTableCell(
   isLastRow?: boolean,
   isFirstCol?: boolean,
   isLastCol?: boolean,
-  calculatedRowSpan?: number
+  calculatedRowSpan?: number,
+  defaultCellMargins?: { top?: number; bottom?: number; left?: number; right?: number }
 ): PMNode {
   const formatting = cell.formatting;
 
@@ -847,7 +864,14 @@ function convertTableCell(
           left: formatting.margins.left?.value,
           right: formatting.margins.right?.value,
         }
-      : undefined,
+      : conditionalStyle?.tcPr?.margins
+        ? {
+            top: conditionalStyle.tcPr.margins.top?.value,
+            bottom: conditionalStyle.tcPr.margins.bottom?.value,
+            left: conditionalStyle.tcPr.margins.left?.value,
+            right: conditionalStyle.tcPr.margins.right?.value,
+          }
+        : defaultCellMargins,
   };
 
   // Convert cell content (paragraphs and nested tables)

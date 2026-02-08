@@ -948,11 +948,34 @@ function convertPMTable(node: PMNode): Table {
  * Convert ProseMirror table attrs to TableFormatting
  */
 function tableAttrsToFormatting(attrs: TableAttrs): TableFormatting | undefined {
-  const hasFormatting = attrs.styleId || attrs.width || attrs.justification || attrs.floating;
+  const hasFormatting =
+    attrs.styleId || attrs.width || attrs.justification || attrs.floating || attrs.cellMargins;
 
   if (!hasFormatting) {
     return undefined;
   }
+
+  // Convert cellMargins back to CellMargins format (twips → TableMeasurement)
+  const cellMargins = attrs.cellMargins
+    ? {
+        top:
+          attrs.cellMargins.top != null
+            ? { value: attrs.cellMargins.top, type: 'dxa' as const }
+            : undefined,
+        bottom:
+          attrs.cellMargins.bottom != null
+            ? { value: attrs.cellMargins.bottom, type: 'dxa' as const }
+            : undefined,
+        left:
+          attrs.cellMargins.left != null
+            ? { value: attrs.cellMargins.left, type: 'dxa' as const }
+            : undefined,
+        right:
+          attrs.cellMargins.right != null
+            ? { value: attrs.cellMargins.right, type: 'dxa' as const }
+            : undefined,
+      }
+    : undefined;
 
   return {
     styleId: attrs.styleId || undefined,
@@ -964,6 +987,7 @@ function tableAttrsToFormatting(attrs: TableAttrs): TableFormatting | undefined 
       : undefined,
     justification: attrs.justification || undefined,
     floating: attrs.floating || undefined,
+    cellMargins,
   };
 }
 

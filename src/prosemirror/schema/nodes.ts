@@ -157,6 +157,8 @@ export interface TableAttrs {
   columnWidths?: number[];
   /** Floating table properties (w:tblpPr) */
   floating?: FloatingTableProperties;
+  /** Default cell margins for the table (w:tblCellMar), in twips */
+  cellMargins?: { top?: number; bottom?: number; left?: number; right?: number };
 }
 
 /**

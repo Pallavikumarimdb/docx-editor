@@ -35,6 +35,7 @@ const tableSpec: NodeSpec = {
     justification: { default: null },
     columnWidths: { default: null },
     floating: { default: null },
+    cellMargins: { default: null },
   },
   parseDOM: [
     {
