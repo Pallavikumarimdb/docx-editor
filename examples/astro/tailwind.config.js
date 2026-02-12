@@ -1,7 +1,11 @@
+const path = require('path');
+const monorepoRoot = path.resolve(__dirname, '../..');
+
 /** @type {import('tailwindcss').Config} */
-export default {
+module.exports = {
   darkMode: ['class'],
-  content: ['./src/**/*.{ts,tsx}', './examples/**/*.{ts,tsx}'],
+  important: '.ep-root',
+  content: [path.join(monorepoRoot, 'src/**/*.{ts,tsx}')],
   theme: {
     extend: {
       colors: {
@@ -38,7 +42,6 @@ export default {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
-        // Document editor color system
         'doc-bg': 'var(--doc-bg)',
         'doc-primary': 'var(--doc-primary)',
         'doc-primary-hover': 'var(--doc-primary-hover)',
@@ -69,5 +72,5 @@ export default {
       },
     },
   },
-  plugins: [require('tailwindcss-animate')],
+  plugins: [],
 };

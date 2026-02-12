@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>docx-js-editor</title>
+  <title>docx-js-editor — Vite Example</title>
+  <link rel="icon" href="/favicon.ico">
 
   <!-- Preconnect to Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -49,7 +50,6 @@
       direction: ltr;
       -webkit-font-feature-settings: 'liga';
       -webkit-font-smoothing: antialiased;
-      /* Hide text until font loads */
       visibility: hidden;
     }
 
@@ -65,12 +65,10 @@
       document.fonts.ready.then(function() {
         document.documentElement.classList.add('fonts-loaded');
       });
-      // Also check specifically for Material Symbols
       document.fonts.load('24px "Material Symbols Outlined"').then(function() {
         document.documentElement.classList.add('fonts-loaded');
       });
     } else {
-      // Fallback: add class after a short delay
       setTimeout(function() {
         document.documentElement.classList.add('fonts-loaded');
       }, 500);
@@ -81,6 +79,6 @@
   <div id="app">
     <div class="loading">Loading DOCX Editor...</div>
   </div>
-  <script type="module" src="./main.tsx"></script>
+  <script type="module" src="./src/main.tsx"></script>
 </body>
 </html>

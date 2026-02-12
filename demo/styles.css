@@ -1,6 +1,0 @@
-/* Import editor styles first */
-@import '../src/styles/editor.css';
-
-@tailwind base;
-@tailwind components;
-@tailwind utilities;

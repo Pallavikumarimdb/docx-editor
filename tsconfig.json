@@ -19,9 +19,10 @@
     "declarationMap": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@eigenpal/docx-js-editor": ["./src/index.ts"]
     }
   },
-  "include": ["src", "demo"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src", "examples/shared", "examples/vite", "examples/plugins"],
+  "exclude": ["node_modules", "dist", "examples/nextjs", "examples/remix", "examples/astro"]
 }
