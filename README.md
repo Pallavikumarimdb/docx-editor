@@ -8,7 +8,7 @@
   <a href="https://www.npmjs.com/package/@eigenpal/docx-js-editor"><img src="https://img.shields.io/npm/v/@eigenpal/docx-js-editor.svg?style=flat-square&color=00C853" alt="npm version" /></a>
   <a href="https://www.npmjs.com/package/@eigenpal/docx-js-editor"><img src="https://img.shields.io/npm/dm/@eigenpal/docx-js-editor.svg?style=flat-square&color=00C853" alt="npm downloads" /></a>
   <a href="https://github.com/eigenpal/docx-js-editor/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square&color=00C853" alt="license" /></a>
-  <a href="https://docx-editor-vite.vercel.app/"><img src="https://img.shields.io/badge/Live_Demo-00C853?style=flat-square&logo=vercel&logoColor=white" alt="Live Demo" /></a>
+  <a href="https://docx-js-editor.vercel.app/"><img src="https://img.shields.io/badge/Live_Demo-00C853?style=flat-square&logo=vercel&logoColor=white" alt="Live Demo" /></a>
 </p>
 
 # @eigenpal/docx-js-editor
@@ -16,7 +16,7 @@
 Open-source WYSIWYG DOCX editor for React. Open, edit, and save `.docx` files entirely in the browser — no server required. [Try the live demo.](https://docx-editor-vite.vercel.app/)
 
 <p align="center">
-  <a href="https://docx-editor-vite.vercel.app/">
+  <a href="https://docx-js-editor.vercel.app/">
     <img src="./assets/editor.png" alt="DOCX JS Editor screenshot" width="500" />
   </a>
 </p>
@@ -25,7 +25,7 @@ Open-source WYSIWYG DOCX editor for React. Open, edit, and save `.docx` files en
 
 | Framework                                                                                                           | Example                                                                        |
 | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| <img src="https://vite.dev/logo.svg" width="14" /> Vite + React                                                     | [`examples/vite`](examples/vite) ([demo](https://docx-editor-vite.vercel.app)) |
+| <img src="https://vite.dev/logo.svg" width="14" /> Vite + React                                                     | [`examples/vite`](examples/vite) ([demo](https://docx-js-editor.vercel.app/)) |
 | <img src="https://assets.vercel.com/image/upload/v1662130559/nextjs/Icon_dark_background.png" width="14" /> Next.js | [`examples/nextjs`](examples/nextjs)                                           |
 | <img src="https://remix.run/favicon-192.png" width="14" /> Remix                                                    | [`examples/remix`](examples/remix)                                             |
 | <img src="https://astro.build/favicon.svg" width="14" /> Astro                                                      | [`examples/astro`](examples/astro)                                             |
