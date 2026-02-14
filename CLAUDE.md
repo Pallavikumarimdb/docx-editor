@@ -167,80 +167,107 @@ This is a WYSIWYG editor. Output must look identical to Microsoft Word.
 
 ---
 
-## ProseMirror Editor Architecture
+## Editor Architecture — Dual Rendering System
 
-The editor uses **ProseMirror** as the editing core.
+**CRITICAL: This editor has TWO separate rendering systems. You MUST understand which one you're working with or you will fix the wrong thing.**
 
-### Key Files
+### The Two Renderers
 
 ```
-src/prosemirror/
-├── schema/
-│   ├── nodes.ts          # paragraph, table, image, hardBreak, tab nodes
-│   ├── marks.ts          # bold, italic, underline, color, font, hyperlink
-│   └── index.ts          # Schema export
-├── conversion/
-│   ├── toProseDoc.ts     # Document → ProseMirror (with style resolution)
-│   └── fromProseDoc.ts   # ProseMirror → Document (round-trip)
-├── plugins/
-│   ├── keymap.ts         # Keyboard shortcuts (Enter, Backspace, Tab, etc.)
-│   └── selectionTracker.ts # Emits selection context for toolbar
-├── commands/
-│   ├── formatting.ts     # toggleBold, setFontSize, setTextColor, etc.
-│   ├── paragraph.ts      # setAlignment, setLineSpacing, applyStyle
-│   └── lists.ts          # toggleBulletList, indent/outdent
-├── styles/
-│   ├── styleResolver.ts  # OOXML style chain resolution
-│   └── index.ts          # Exports createStyleResolver
-├── utils/
-│   └── tabMetrics.ts  # Tab width calculation utilities
-├── ProseMirrorEditor.tsx # React wrapper component
-└── editor.css            # Editor styling
+┌──────────────────────────────────────────────────────────────┐
+│  HIDDEN ProseMirror (left: -9999px)                          │
+│  - Real editing state (selection, undo/redo, commands)       │
+│  - Receives keyboard input                                   │
+│  - Has its own DOM via NodeSpec.toDOM / MarkSpec.toDOM       │
+│  - CSS class: .paged-editor__hidden-pm                       │
+│  - Component: src/paged-editor/OffscreenEditorHost.tsx         │
+└──────────────────────────────────────────────────────────────┘
+        │ state changes trigger re-render ↓
+┌──────────────────────────────────────────────────────────────┐
+│  VISIBLE Pages (layout-painter)                              │
+│  - What the user actually sees                               │
+│  - Static DOM, re-built from PM state on every change        │
+│  - Has its own rendering logic (NOT toDOM)                   │
+│  - CSS class: .paged-editor__pages                           │
+│  - Entry: src/layout-painter/paintPage.ts                   │
+│  - Text: src/layout-painter/renderParagraph.ts               │
+│  - Images: src/layout-painter/renderImage.ts                 │
+│  - Tables: src/layout-painter/renderTable.ts                 │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-### Supported Features
+### Data Flow
 
-| Feature                 | Status | Notes                         |
-| ----------------------- | ------ | ----------------------------- |
-| Bold/Italic/Underline   | ✅     | Marks with proper toDOM       |
-| Strikethrough           | ✅     | Single and double strike      |
-| Superscript/Subscript   | ✅     | Mutually exclusive            |
-| Text color              | ✅     | RGB and theme colors          |
-| Highlight               | ✅     | Word highlight colors         |
-| Font size               | ✅     | Half-points to pt conversion  |
-| Font family             | ✅     | ASCII and hAnsi fonts         |
-| Paragraph alignment     | ✅     | Left, center, right, justify  |
-| Line spacing            | ✅     | Single, 1.5, double, exact    |
-| Indentation             | ✅     | Left, right, first-line       |
-| Lists (bullet/numbered) | ✅     | With indent levels            |
-| Paragraph styles        | ✅     | Style resolution from OOXML   |
-| Tables                  | ✅     | Basic editing, Tab navigation |
-| Images                  | ✅     | Inline images                 |
-| Hyperlinks              | ✅     | With href and tooltip         |
-| Undo/Redo               | ✅     | ProseMirror history           |
+```
+DOCX file
+  → unzip.ts (extract XML parts)
+  → parser.ts (orchestrator)
+    → paragraphParser.ts, tableParser.ts, etc. → Document model (types/)
+  → toProseDoc.ts → ProseMirror document
+  → OffscreenEditorHost renders off-screen
+  → PagedEditor.tsx reads PM state → layout-painter renders visible pages
+  → User edits → PM state updates → layout-painter re-renders
 
-### Known Limitations
+Saving:
+  PM state → fromProseDoc.ts → Document model → serializer/ → XML → rezip.ts → DOCX
+```
 
-- **Tab stops**: Uses fixed 0.5 inch width (full dynamic positioning deferred)
-- **Table editing**: Basic navigation only (no row/column insert/delete yet)
-- **Headers/Footers**: Rendered but not editable
-- **Cut/Paste**: Some edge cases with cross-browser clipboard
+### Click/Selection Flow
 
----
+User clicks on visible page → `PagedEditor.handlePagesMouseDown()` → `getPositionFromMouse(clientX, clientY)` maps pixel coordinates to a PM document position → `hiddenPMRef.current.setSelection(pos)` → PM state update → visible pages re-render with selection overlay.
 
-## Known Issues (Current)
+### Debugging Checklist — Ask Yourself First
 
-### 1. End Key Navigation
+1. **Is this a visual rendering bug or an editing/data bug?**
+   - Visual only (wrong color, position, size) → fix in `layout-painter/`
+   - Editing behavior (wrong content, commands) → fix in `prosemirror/extensions/`
+   - Both → likely need changes in both systems
 
-The End key doesn't always move to the end of the line in all scenarios.
+2. **Which renderer owns the output?**
+   - The visible pages are rendered by `layout-painter/`, NOT by ProseMirror's `toDOM`
+   - `toDOM` in extensions only affects the hidden off-screen ProseMirror
+   - If you fix `toDOM` for a visual bug, **the user won't see the change**
+   - Exception: inline styles in `toDOM` affect the hidden PM's text metrics, which can affect line breaking
 
-### 2. Cut/Paste Edge Cases
+3. **Where does the data come from?**
+   - DOCX XML → parsed by `src/docx/` parsers → `Document` model types in `src/types/`
+   - `toProseDoc.ts` converts Document → PM nodes (this is where paragraph attrs, marks are set)
+   - `fromProseDoc.ts` converts PM → Document (round-trip for saving)
 
-Some clipboard operations may not work correctly in all browsers.
+### Key File Map
 
-### 3. Complex Table Operations
+| What you're debugging                | Look here                                                                |
+| ------------------------------------ | ------------------------------------------------------------------------ |
+| How text/paragraphs appear on screen | `layout-painter/renderParagraph.ts`                                      |
+| How images appear on screen          | `layout-painter/renderImage.ts`, `renderParagraph.ts:renderBlockImage()` |
+| How tables appear on screen          | `layout-painter/renderTable.ts`                                          |
+| How pages are composed               | `layout-painter/paintPage.ts`                                           |
+| How a formatting command works       | `prosemirror/extensions/` (marks/ and nodes/)                            |
+| How keyboard shortcuts work          | `prosemirror/extensions/features/BaseKeymapExtension.ts`                 |
+| How toolbar reflects selection       | `prosemirror/plugins/selectionTracker.ts`                                |
+| How DOCX XML is parsed               | `docx/paragraphParser.ts`, `docx/tableParser.ts`, etc.                   |
+| How PM doc is built from parsed data | `prosemirror/conversion/toProseDoc.ts`                                   |
+| Schema (node/mark definitions)       | `prosemirror/extensions/nodes/`, `marks/`                                |
+| Table toolbar/dropdown               | `components/ui/TableOptionsDropdown.tsx`                                 |
+| Main toolbar                         | `components/Toolbar.tsx`                                                 |
+| CSS for editor                       | `prosemirror/editor.css`                                                 |
 
-Row/column insertion, cell merging, and table deletion require prosemirror-tables integration.
+### Extension System
+
+Extensions live in `src/prosemirror/extensions/`:
+
+- `nodes/` — ParagraphExtension, TableExtension, ImageExtension, etc.
+- `marks/` — BoldExtension, ColorExtension, FontExtension, etc.
+- `features/` — BaseKeymapExtension, ListExtension, HistoryExtension, etc.
+- `StarterKit.ts` bundles all extensions; `ExtensionManager` builds schema + runtime
+- Commands are defined inside extensions and exported via `singletonManager`
+
+### Common Pitfalls
+
+- **Tailwind CSS conflicts**: Consumer apps may include Tailwind's preflight reset (`img { display: block }`, etc.). Library CSS is scoped via `.ep-root` but layout-painter output isn't always protected. Use explicit inline styles on painted elements.
+- **ProseMirror focus stealing**: Any mousedown that propagates to the PM view will move the cursor. Dropdown/dialog elements need `onMouseDown` with `stopPropagation()`.
+- **Two-phase extension init**: `ExtensionManager.buildSchema()` (sync, before EditorState) → `initializeRuntime()` (after EditorState exists). Never access runtime before init.
+- **Never use `require()`** in extension files — Vite/ESM only.
 
 ---
 
