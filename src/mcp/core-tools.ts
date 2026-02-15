@@ -856,5 +856,3 @@ export const coreMcpTools: McpToolDefinition[] = [
   formatTextTool,
   applyStyleTool,
 ];
-
-export default coreMcpTools;

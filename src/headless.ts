@@ -313,9 +313,3 @@ export {
   createCommand,
   DEFAULT_AI_ACTIONS,
 } from './types/agentApi';
-
-// ============================================================================
-// DEFAULT EXPORT
-// ============================================================================
-
-export { DocumentAgent as default } from './agent/DocumentAgent';

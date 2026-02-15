@@ -82,9 +82,3 @@ export { PluginRegistry, pluginRegistry, registerPlugins, createPluginRegistrar 
 // ============================================================================
 
 export { docxtemplaterPlugin } from './docxtemplater';
-
-// ============================================================================
-// DEFAULT EXPORT
-// ============================================================================
-
-export { pluginRegistry as default } from './registry';

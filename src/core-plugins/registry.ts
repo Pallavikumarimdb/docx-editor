@@ -419,9 +419,3 @@ export function registerPlugins(
 export function createPluginRegistrar(options: PluginOptions) {
   return (plugin: CorePlugin) => pluginRegistry.register(plugin, options);
 }
-
-// ============================================================================
-// EXPORTS
-// ============================================================================
-
-export default pluginRegistry;

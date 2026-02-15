@@ -1059,9 +1059,3 @@ function executeApplyVariables(doc: Document, command: ApplyVariablesCommand): D
 
   return newDoc;
 }
-
-// ============================================================================
-// EXPORTS
-// ============================================================================
-
-export default executeCommand;

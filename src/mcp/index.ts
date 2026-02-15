@@ -48,9 +48,3 @@ export {
   formatTextTool,
   applyStyleTool,
 } from './core-tools';
-
-// ============================================================================
-// DEFAULT EXPORT
-// ============================================================================
-
-export { createMcpServer as default } from './server';

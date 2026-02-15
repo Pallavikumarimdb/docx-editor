@@ -431,5 +431,3 @@ export const docxtemplaterMcpTools: McpToolDefinition[] = [
   applyTemplateTool,
   validateTemplateTool,
 ];
-
-export default docxtemplaterMcpTools;

@@ -90,6 +90,3 @@ export {
   applyTemplateTool,
   validateTemplateTool,
 } from './mcp-tools';
-
-// Default export is the plugin
-export default docxtemplaterPlugin;
