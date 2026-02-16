@@ -425,3 +425,18 @@
 .layout-table-edge-handle-right.dragging {
   background-color: rgba(66, 133, 244, 0.6);
 }
+
+/* ============================================================================
+ * RESPONSIVE: Hide document outline on small screens
+ * ============================================================================ */
+
+/* Outline heading hover */
+.docx-outline-heading-btn:hover {
+  background-color: #f1f3f4;
+}
+
+@media (max-width: 1280px) {
+  .docx-outline-nav {
+    display: none !important;
+  }
+}
