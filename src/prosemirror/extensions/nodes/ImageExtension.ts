@@ -31,6 +31,7 @@ export const ImageExtension = createNodeExtension({
       borderWidth: { default: null },
       borderColor: { default: null },
       borderKind: { default: null },
+      wrapText: { default: null },
     },
     parseDOM: [
       {
