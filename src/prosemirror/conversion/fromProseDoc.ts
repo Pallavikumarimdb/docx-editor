@@ -11,6 +11,7 @@
  */
 
 import type { Node as PMNode, Mark } from 'prosemirror-model';
+import { pixelsToEmu } from '../../docx/imageParser';
 import type {
   Document,
   DocumentBody,
@@ -747,8 +748,8 @@ function createImageRun(node: PMNode): Run {
     alt: attrs.alt || undefined,
     title: attrs.title || undefined,
     size: {
-      width: attrs.width || 0,
-      height: attrs.height || 0,
+      width: pixelsToEmu(attrs.width || 0),
+      height: pixelsToEmu(attrs.height || 0),
     },
     wrap,
   };
@@ -1066,6 +1067,7 @@ function convertPMTable(node: PMNode): Table {
         // so borders persist on round-trip.
         return {
           type: 'table',
+          columnWidths: attrs.columnWidths || undefined,
           formatting: { borders: inferredBorders },
           rows,
         };
@@ -1075,6 +1077,7 @@ function convertPMTable(node: PMNode): Table {
 
   return {
     type: 'table',
+    columnWidths: attrs.columnWidths || undefined,
     formatting,
     rows,
   };
@@ -1085,7 +1088,13 @@ function convertPMTable(node: PMNode): Table {
  */
 function tableAttrsToFormatting(attrs: TableAttrs): TableFormatting | undefined {
   const hasFormatting =
-    attrs.styleId || attrs.width || attrs.justification || attrs.floating || attrs.cellMargins;
+    attrs.styleId ||
+    attrs.width != null ||
+    attrs.widthType ||
+    attrs.justification ||
+    attrs.floating ||
+    attrs.cellMargins ||
+    attrs.look;
 
   if (!hasFormatting) {
     return undefined;
@@ -1113,17 +1122,22 @@ function tableAttrsToFormatting(attrs: TableAttrs): TableFormatting | undefined 
       }
     : undefined;
 
+  // Restore width — handle width=0 with type="auto" (common OOXML pattern)
+  let width: TableFormatting['width'];
+  if (attrs.width != null || attrs.widthType) {
+    width = {
+      value: attrs.width ?? 0,
+      type: (attrs.widthType as 'auto' | 'dxa' | 'pct' | 'nil') || 'dxa',
+    };
+  }
+
   return {
     styleId: attrs.styleId || undefined,
-    width: attrs.width
-      ? {
-          value: attrs.width,
-          type: (attrs.widthType as 'auto' | 'dxa' | 'pct' | 'nil') || 'dxa',
-        }
-      : undefined,
+    width,
     justification: attrs.justification || undefined,
     floating: attrs.floating || undefined,
     cellMargins,
+    look: attrs.look || undefined,
   };
 }
 
