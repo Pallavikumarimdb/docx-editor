@@ -220,5 +220,5 @@ gh issue view <N> --repo eigenpal/docx-js-editor
 ## Rules
 
 - Client-side only. No backend.
-- No collaboration, comments, tracked changes, or PDF export
+- Toolbar icons are Material Symbol fonts (same as Google Docs), saved locally as SVGs.
 - Save screenshots to `screenshots/` folder
