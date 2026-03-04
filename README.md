@@ -72,7 +72,7 @@ function Editor({ file }: { file: ArrayBuffer }) {
 | ---------------------- | ------------------------------------------- | ----------------- | ------------------------------------------------- |
 | `documentBuffer`       | `ArrayBuffer \| Uint8Array \| Blob \| File` | —                 | `.docx` file contents to load                     |
 | `document`             | `Document`                                  | —                 | Pre-parsed document (alternative to buffer)       |
-| `trackChanges`         | `TrackChangesExportOptions`                 | —                 | Default tracked export config used by `save()`    |
+| `trackChanges`         | `TrackChangesExportOptions`                 | —                 | Embed revision markup in saved DOCX (export-only) |
 | `readOnly`             | `boolean`                                   | `false`           | Read-only preview (hides toolbar, rulers, panel)  |
 | `showToolbar`          | `boolean`                                   | `true`            | Show formatting toolbar                           |
 | `showRuler`            | `boolean`                                   | `false`           | Show horizontal & vertical rulers                 |
@@ -115,9 +115,9 @@ ref.current.scrollToPage(3); // Scroll to page 3
 ref.current.print(); // Print the document
 ```
 
-## Track Changes Export
+## Revision Markup Export
 
-Track Changes export is opt-in and disabled by default. Configure it on the component via the `trackChanges` prop.
+When enabled, `save()` diffs the current document against the originally loaded version and embeds Word-compatible revision markup (`w:ins`/`w:del`) in the exported DOCX. The recipient can then accept or reject changes in Word. This is export-time only — there is no inline visual tracking or accept/reject UI in the editor itself. See [#81](https://github.com/eigenpal/docx-js-editor/issues/81) for planned full Track Changes support.
 
 ```tsx
 <DocxEditor
@@ -130,28 +130,22 @@ Track Changes export is opt-in and disabled by default. Configure it on the comp
   }}
 />;
 
+// Saved DOCX will contain revision markup
 const buffer = await ref.current?.save();
 ```
 
-Headless/API usage:
+Headless usage:
 
 ```ts
 import { DocumentAgent } from '@eigenpal/docx-js-editor';
 
 const agent = await DocumentAgent.fromBuffer(buffer);
 const trackedBuffer = await agent.toBuffer({
-  trackChanges: {
-    enabled: true,
-    author: 'John Doe',
-  },
+  trackChanges: { enabled: true, author: 'John Doe' },
 });
 ```
 
-Notes:
-
-- Tracked export currently generates insertion/deletion revisions from export-time diffing.
-- If no baseline snapshot is available, export falls back to normal (non-tracked) output.
-- See [`docs/TRACK_CHANGES_EXPORT.md`](docs/TRACK_CHANGES_EXPORT.md) for full workflow details.
+See [`docs/TRACK_CHANGES_EXPORT.md`](docs/TRACK_CHANGES_EXPORT.md) for details.
 
 ## Read-Only Preview
 
@@ -188,7 +182,7 @@ See [docs/PLUGINS.md](docs/PLUGINS.md) for the full plugin API, including how to
 - Full WYSIWYG editing with Microsoft Word fidelity
 - Text and paragraph formatting (bold, italic, fonts, colors, alignment, spacing)
 - Tables, images, hyperlinks
-- Optional Track Changes export during save
+- Revision markup export (diff-on-save for Word Track Changes compatibility)
 - Extensible plugin architecture
 - Undo/redo, find & replace, keyboard shortcuts
 - Print preview

@@ -1,46 +1,16 @@
-# Track Changes Export Workflow
+# Revision Markup Export
 
-This project supports opt-in DOCX export with Word Track Changes markup.
+Opt-in DOCX export that embeds Word-compatible revision markup (`w:ins`/`w:del`) by diffing the current document against the originally loaded baseline.
 
-Default behavior is unchanged:
+**This is export-time only.** There is no inline visual tracking, accept/reject UI, or commenting in the editor. The saved DOCX can be opened in Word where reviewers can accept or reject changes. For full Track Changes support, see [#81](https://github.com/eigenpal/docx-js-editor/issues/81).
 
-- `DocxEditorRef.save()` produces normal non-tracked output unless `DocxEditor` is configured with `trackChanges.enabled: true`.
-- `DocumentAgent.toBuffer()` / `toBlob()` without `trackChanges.enabled: true` produces normal non-tracked output.
-- Tracked export only runs when explicitly enabled.
-
-## API Surface
-
-`TrackChangesExportOptions`:
+## API
 
 ```ts
 interface TrackChangesExportOptions {
   enabled?: boolean;
   author?: string;
-  date?: string; // ISO 8601 recommended
-}
-```
-
-React API:
-
-```ts
-interface DocxEditorProps {
-  trackChanges?: TrackChangesExportOptions;
-}
-
-interface DocxEditorRef {
-  save(): Promise<ArrayBuffer | null>;
-}
-```
-
-Headless/API options:
-
-```ts
-interface SaveDocxOptions {
-  trackChanges?: {
-    enabled?: boolean;
-    author?: string;
-    date?: string; // ISO 8601 recommended
-  };
+  date?: string; // ISO 8601
 }
 ```
 
@@ -74,29 +44,23 @@ import { DocumentAgent } from '@eigenpal/docx-js-editor/headless';
 
 const agent = await DocumentAgent.fromBuffer(originalBuffer);
 const trackedBuffer = await agent.toBuffer({
-  trackChanges: {
-    enabled: true,
-    author: 'John Doe',
-  },
+  trackChanges: { enabled: true, author: 'John Doe' },
 });
 ```
 
-## Current Export Behavior
+## How It Works
 
-When tracked export is enabled, the export pipeline compares the current document against the baseline snapshot and emits tracked insertion/deletion wrappers in WordprocessingML.
+On save, the export pipeline compares the current document against a baseline snapshot (captured when the document was first loaded) and emits `w:ins`/`w:del` wrappers in the WordprocessingML output.
 
-Current guarantees:
+- Disabled by default. Normal saves are unaffected.
+- If no baseline snapshot exists, falls back to normal (non-tracked) output.
+- Author and date metadata are attached to each revision element.
 
-- Standard save output remains non-tracked unless explicitly enabled.
-- Author/date metadata is attached to generated revisions.
-- If no baseline snapshot exists, export safely falls back to normal non-tracked output.
+## Supported Revision Types
 
-## Advanced Revision Primitives
+The codebase includes parser/serializer support for:
 
-The codebase also includes parser/serializer and helper support for:
-
-- Move wrappers (`w:moveFrom` / `w:moveTo`)
-- Run/paragraph property changes (`w:rPrChange` / `w:pPrChange`)
-- Table property and structural revision elements (`w:tblPrChange`, `w:trPrChange`, `w:tcPrChange`, row/cell structural markers)
-
-These primitives round-trip through parsing/serialization and can be applied programmatically via revision helper modules under `src/docx/revisions/`.
+- Insertion/deletion wrappers (`w:ins`/`w:del`)
+- Move wrappers (`w:moveFrom`/`w:moveTo`) with range markers
+- Run/paragraph property changes (`w:rPrChange`/`w:pPrChange`)
+- Table structural revisions (`w:tblPrChange`, `w:trPrChange`, `w:tcPrChange`)
