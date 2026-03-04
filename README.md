@@ -68,38 +68,39 @@ function Editor({ file }: { file: ArrayBuffer }) {
 
 ## Props
 
-| Prop                    | Type                                        | Default           | Description                                       |
-| ----------------------- | ------------------------------------------- | ----------------- | ------------------------------------------------- |
-| `documentBuffer`        | `ArrayBuffer \| Uint8Array \| Blob \| File` | —                 | `.docx` file contents to load                     |
-| `document`              | `Document`                                  | —                 | Pre-parsed document (alternative to buffer)       |
-| `readOnly`              | `boolean`                                   | `false`           | Read-only preview (hides toolbar, rulers, panel)  |
-| `showToolbar`           | `boolean`                                   | `true`            | Show formatting toolbar                           |
-| `showRuler`             | `boolean`                                   | `false`           | Show horizontal & vertical rulers                 |
-| `rulerUnit`             | `'inch' \| 'cm'`                            | `'inch'`          | Unit for ruler display                            |
-| `showZoomControl`       | `boolean`                                   | `true`            | Show zoom controls in toolbar                     |
-| `showPrintButton`       | `boolean`                                   | `true`            | Show print button in toolbar                      |
-| `showPageNumbers`       | `boolean`                                   | `true`            | Show page number indicator                        |
-| `enablePageNavigation`  | `boolean`                                   | `true`            | Enable interactive page navigation                |
-| `pageNumberPosition`    | `string`                                    | `'bottom-center'` | Position of page number indicator                 |
-| `showOutline`           | `boolean`                                   | `false`           | Show document outline sidebar (table of contents) |
-| `showMarginGuides`      | `boolean`                                   | `false`           | Show page margin guide boundaries                 |
-| `marginGuideColor`      | `string`                                    | `'#c0c0c0'`       | Color for margin guides                           |
-| `initialZoom`           | `number`                                    | `1.0`             | Initial zoom level                                |
-| `theme`                 | `Theme \| null`                             | —                 | Theme for styling                                 |
-| `toolbarExtra`          | `ReactNode`                                 | —                 | Custom toolbar items appended to the toolbar      |
-| `placeholder`           | `ReactNode`                                 | —                 | Placeholder when no document is loaded            |
-| `loadingIndicator`      | `ReactNode`                                 | —                 | Custom loading indicator                          |
-| `className`             | `string`                                    | —                 | Additional CSS class name                         |
-| `style`                 | `CSSProperties`                             | —                 | Additional inline styles                          |
-| `onChange`              | `(doc: Document) => void`                   | —                 | Called on document change                         |
-| `onSave`                | `(buffer: ArrayBuffer) => void`             | —                 | Called on save                                    |
-| `onError`               | `(error: Error) => void`                    | —                 | Called on error                                   |
-| `onSelectionChange`     | `(state: SelectionState \| null) => void`   | —                 | Called on selection change                        |
-| `onFontsLoaded`         | `() => void`                                | —                 | Called when fonts finish loading                  |
-| `onPrint`               | `() => void`                                | —                 | Called when print is triggered                    |
-| `onCopy`                | `() => void`                                | —                 | Called when content is copied                     |
-| `onCut`                 | `() => void`                                | —                 | Called when content is cut                        |
-| `onPaste`               | `() => void`                                | —                 | Called when content is pasted                     |
+| Prop                   | Type                                        | Default           | Description                                       |
+| ---------------------- | ------------------------------------------- | ----------------- | ------------------------------------------------- |
+| `documentBuffer`       | `ArrayBuffer \| Uint8Array \| Blob \| File` | —                 | `.docx` file contents to load                     |
+| `document`             | `Document`                                  | —                 | Pre-parsed document (alternative to buffer)       |
+| `trackChanges`         | `TrackChangesExportOptions`                 | —                 | Default tracked export config used by `save()`    |
+| `readOnly`             | `boolean`                                   | `false`           | Read-only preview (hides toolbar, rulers, panel)  |
+| `showToolbar`          | `boolean`                                   | `true`            | Show formatting toolbar                           |
+| `showRuler`            | `boolean`                                   | `false`           | Show horizontal & vertical rulers                 |
+| `rulerUnit`            | `'inch' \| 'cm'`                            | `'inch'`          | Unit for ruler display                            |
+| `showZoomControl`      | `boolean`                                   | `true`            | Show zoom controls in toolbar                     |
+| `showPrintButton`      | `boolean`                                   | `true`            | Show print button in toolbar                      |
+| `showPageNumbers`      | `boolean`                                   | `true`            | Show page number indicator                        |
+| `enablePageNavigation` | `boolean`                                   | `true`            | Enable interactive page navigation                |
+| `pageNumberPosition`   | `string`                                    | `'bottom-center'` | Position of page number indicator                 |
+| `showOutline`          | `boolean`                                   | `false`           | Show document outline sidebar (table of contents) |
+| `showMarginGuides`     | `boolean`                                   | `false`           | Show page margin guide boundaries                 |
+| `marginGuideColor`     | `string`                                    | `'#c0c0c0'`       | Color for margin guides                           |
+| `initialZoom`          | `number`                                    | `1.0`             | Initial zoom level                                |
+| `theme`                | `Theme \| null`                             | —                 | Theme for styling                                 |
+| `toolbarExtra`         | `ReactNode`                                 | —                 | Custom toolbar items appended to the toolbar      |
+| `placeholder`          | `ReactNode`                                 | —                 | Placeholder when no document is loaded            |
+| `loadingIndicator`     | `ReactNode`                                 | —                 | Custom loading indicator                          |
+| `className`            | `string`                                    | —                 | Additional CSS class name                         |
+| `style`                | `CSSProperties`                             | —                 | Additional inline styles                          |
+| `onChange`             | `(doc: Document) => void`                   | —                 | Called on document change                         |
+| `onSave`               | `(buffer: ArrayBuffer) => void`             | —                 | Called on save                                    |
+| `onError`              | `(error: Error) => void`                    | —                 | Called on error                                   |
+| `onSelectionChange`    | `(state: SelectionState \| null) => void`   | —                 | Called on selection change                        |
+| `onFontsLoaded`        | `() => void`                                | —                 | Called when fonts finish loading                  |
+| `onPrint`              | `() => void`                                | —                 | Called when print is triggered                    |
+| `onCopy`               | `() => void`                                | —                 | Called when content is copied                     |
+| `onCut`                | `() => void`                                | —                 | Called when content is cut                        |
+| `onPaste`              | `() => void`                                | —                 | Called when content is pasted                     |
 
 ## Ref Methods
 
@@ -113,6 +114,44 @@ ref.current.focus(); // Focus the editor
 ref.current.scrollToPage(3); // Scroll to page 3
 ref.current.print(); // Print the document
 ```
+
+## Track Changes Export
+
+Track Changes export is opt-in and disabled by default. Configure it on the component via the `trackChanges` prop.
+
+```tsx
+<DocxEditor
+  ref={ref}
+  documentBuffer={file}
+  trackChanges={{
+    enabled: true,
+    author: 'John Doe',
+    date: new Date().toISOString(),
+  }}
+/>;
+
+const buffer = await ref.current?.save();
+```
+
+Headless/API usage:
+
+```ts
+import { DocumentAgent } from '@eigenpal/docx-js-editor';
+
+const agent = await DocumentAgent.fromBuffer(buffer);
+const trackedBuffer = await agent.toBuffer({
+  trackChanges: {
+    enabled: true,
+    author: 'John Doe',
+  },
+});
+```
+
+Notes:
+
+- Tracked export currently generates insertion/deletion revisions from export-time diffing.
+- If no baseline snapshot is available, export falls back to normal (non-tracked) output.
+- See [`docs/TRACK_CHANGES_EXPORT.md`](docs/TRACK_CHANGES_EXPORT.md) for full workflow details.
 
 ## Read-Only Preview
 
@@ -149,6 +188,7 @@ See [docs/PLUGINS.md](docs/PLUGINS.md) for the full plugin API, including how to
 - Full WYSIWYG editing with Microsoft Word fidelity
 - Text and paragraph formatting (bold, italic, fonts, colors, alignment, spacing)
 - Tables, images, hyperlinks
+- Optional Track Changes export during save
 - Extensible plugin architecture
 - Undo/redo, find & replace, keyboard shortcuts
 - Print preview
