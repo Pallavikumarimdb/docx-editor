@@ -2199,28 +2199,6 @@ body { background: white; }
                   </div>
                 )}
 
-                {/* Vertical Ruler - fixed on left edge (hidden in read-only mode) */}
-                {showRuler && !readOnly && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: 0,
-                      top: 0,
-                      paddingTop: 20,
-                      zIndex: 10,
-                    }}
-                  >
-                    <VerticalRuler
-                      sectionProps={history.state?.package.document?.finalSectionProperties}
-                      zoom={state.zoom}
-                      unit={rulerUnit}
-                      editable={!readOnly}
-                      onTopMarginChange={handleTopMarginChange}
-                      onBottomMarginChange={handleBottomMarginChange}
-                    />
-                  </div>
-                )}
-
                 {/* Editor content wrapper */}
                 <div style={{ display: 'flex', flex: 1, minHeight: 0, position: 'relative' }}>
                   {/* Editor content area */}
@@ -2236,6 +2214,27 @@ body { background: white; }
                       }
                     }}
                   >
+                    {/* Vertical Ruler - fixed on left edge (hidden in read-only mode) */}
+                    {showRuler && !readOnly && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          left: 0,
+                          top: 0,
+                          zIndex: 10,
+                          paddingTop: 48, // paged-editor__pages and layout padding-top
+                        }}
+                      >
+                        <VerticalRuler
+                          sectionProps={history.state?.package.document?.finalSectionProperties}
+                          zoom={state.zoom}
+                          unit={rulerUnit}
+                          editable={!readOnly}
+                          onTopMarginChange={handleTopMarginChange}
+                          onBottomMarginChange={handleBottomMarginChange}
+                        />
+                      </div>
+                    )}
                     <PagedEditor
                       ref={pagedEditorRef}
                       document={history.state}
