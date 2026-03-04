@@ -13,7 +13,19 @@
 
 # @eigenpal/docx-js-editor
 
-Open-source WYSIWYG DOCX editor for React. Open, edit, and save `.docx` files entirely in the browser — no server required. [Try the live demo.](https://docx-js-editor.vercel.app/)
+Open-source WYSIWYG DOCX editor. Open, edit, and save `.docx` files entirely in the browser — no server required. [Try the live demo.](https://docx-js-editor.vercel.app/)
+
+## Packages
+
+This is a monorepo with three packages:
+
+| Package                                      | Description                                                               | npm                                                                                                                                                        |
+| -------------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`@eigenpal/docx-core`](packages/core)       | Framework-agnostic core — DOCX parsing, ProseMirror schema, layout engine | [![npm](https://img.shields.io/npm/v/@eigenpal/docx-core.svg?style=flat-square&color=00C853)](https://www.npmjs.com/package/@eigenpal/docx-core)           |
+| [`@eigenpal/docx-js-editor`](packages/react) | React UI — toolbar, paged editor, plugin host                             | [![npm](https://img.shields.io/npm/v/@eigenpal/docx-js-editor.svg?style=flat-square&color=00C853)](https://www.npmjs.com/package/@eigenpal/docx-js-editor) |
+| [`@eigenpal/docx-editor-vue`](packages/vue)  | Vue.js UI (scaffold — community contribution welcome)                     | —                                                                                                                                                          |
+
+For most users, install `@eigenpal/docx-js-editor` — it includes everything. Use `@eigenpal/docx-core` directly for headless/server-side use or to build a custom UI in any framework.
 
 <p align="center">
   <a href="https://docx-js-editor.vercel.app/">
@@ -31,6 +43,7 @@ We built it for ourselves in [eigenpal.com](https://eigenpal.com) in order to ha
 | <img src="https://assets.vercel.com/image/upload/v1662130559/nextjs/Icon_dark_background.png" width="14" /> Next.js | [`examples/nextjs`](examples/nextjs)                                          |
 | <img src="https://remix.run/favicon-192.png" width="14" /> Remix                                                    | [`examples/remix`](examples/remix)                                            |
 | <img src="https://astro.build/favicon.svg" width="14" /> Astro                                                      | [`examples/astro`](examples/astro)                                            |
+| <img src="https://vuejs.org/logo.svg" width="14" /> Vue.js (scaffold)                                               | [`examples/vue`](examples/vue)                                                |
 
 ## Installation
 
@@ -72,7 +85,6 @@ function Editor({ file }: { file: ArrayBuffer }) {
 | ---------------------- | ------------------------------------------- | ----------------- | ------------------------------------------------- |
 | `documentBuffer`       | `ArrayBuffer \| Uint8Array \| Blob \| File` | —                 | `.docx` file contents to load                     |
 | `document`             | `Document`                                  | —                 | Pre-parsed document (alternative to buffer)       |
-| `trackChanges`         | `TrackChangesExportOptions`                 | —                 | Embed revision markup in saved DOCX (export-only) |
 | `readOnly`             | `boolean`                                   | `false`           | Read-only preview (hides toolbar, rulers, panel)  |
 | `showToolbar`          | `boolean`                                   | `true`            | Show formatting toolbar                           |
 | `showRuler`            | `boolean`                                   | `false`           | Show horizontal & vertical rulers                 |
@@ -115,38 +127,6 @@ ref.current.scrollToPage(3); // Scroll to page 3
 ref.current.print(); // Print the document
 ```
 
-## Revision Markup Export
-
-When enabled, `save()` diffs the current document against the originally loaded version and embeds Word-compatible revision markup (`w:ins`/`w:del`) in the exported DOCX. The recipient can then accept or reject changes in Word. This is export-time only — there is no inline visual tracking or accept/reject UI in the editor itself. See [#81](https://github.com/eigenpal/docx-js-editor/issues/81) for planned full Track Changes support.
-
-```tsx
-<DocxEditor
-  ref={ref}
-  documentBuffer={file}
-  trackChanges={{
-    enabled: true,
-    author: 'John Doe',
-    date: new Date().toISOString(),
-  }}
-/>;
-
-// Saved DOCX will contain revision markup
-const buffer = await ref.current?.save();
-```
-
-Headless usage:
-
-```ts
-import { DocumentAgent } from '@eigenpal/docx-js-editor';
-
-const agent = await DocumentAgent.fromBuffer(buffer);
-const trackedBuffer = await agent.toBuffer({
-  trackChanges: { enabled: true, author: 'John Doe' },
-});
-```
-
-See [`docs/TRACK_CHANGES_EXPORT.md`](docs/TRACK_CHANGES_EXPORT.md) for details.
-
 ## Read-Only Preview
 
 Use `readOnly` for a preview-only viewer. This disables editing, caret, and selection UI.
@@ -171,9 +151,9 @@ function Editor({ file }: { file: ArrayBuffer }) {
 }
 ```
 
-| Plugin                                 | Description                                                                                  |
-| -------------------------------------- | -------------------------------------------------------------------------------------------- |
-| [Docxtemplater](src/plugins/template/) | Syntax highlighting and annotation panel for [docxtemplater](https://docxtemplater.com) tags |
+| Plugin                                                | Description                                                                                  |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| [Docxtemplater](packages/react/src/plugins/template/) | Syntax highlighting and annotation panel for [docxtemplater](https://docxtemplater.com) tags |
 
 See [docs/PLUGINS.md](docs/PLUGINS.md) for the full plugin API, including how to create custom plugins with panels, overlays, and ProseMirror integrations.
 
@@ -182,7 +162,6 @@ See [docs/PLUGINS.md](docs/PLUGINS.md) for the full plugin API, including how to
 - Full WYSIWYG editing with Microsoft Word fidelity
 - Text and paragraph formatting (bold, italic, fonts, colors, alignment, spacing)
 - Tables, images, hyperlinks
-- Revision markup export (diff-on-save for Word Track Changes compatibility)
 - Extensible plugin architecture
 - Undo/redo, find & replace, keyboard shortcuts
 - Print preview
@@ -192,10 +171,32 @@ See [docs/PLUGINS.md](docs/PLUGINS.md) for the full plugin API, including how to
 
 ```bash
 bun install
-bun run dev          # Vite example on localhost:5173
+bun run dev          # Vite + React example on localhost:5173
 bun run dev:nextjs   # Next.js example on localhost:3000
 bun run dev:remix    # Remix example on localhost:3001
 bun run dev:astro    # Astro example on localhost:4321
+```
+
+### Monorepo Structure
+
+```
+packages/
+  core/     — @eigenpal/docx-core (DOCX parsing, ProseMirror, layout engine)
+  react/    — @eigenpal/docx-js-editor (React components, toolbar, plugins)
+  vue/      — @eigenpal/docx-editor-vue (scaffold for Vue.js integration)
+examples/
+  vite/     — Vite + React demo app
+  vue/      — Vue.js demo app (scaffold)
+  nextjs/   — Next.js example
+  remix/    — Remix example
+  astro/    — Astro example
+```
+
+### Building
+
+```bash
+bun run build        # Build core first, then react
+bun run typecheck    # Typecheck all packages
 ```
 
 Each example is independently deployable. Copy any `examples/<framework>/` directory to start your own project — just `npm install` and go.

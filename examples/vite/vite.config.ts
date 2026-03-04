@@ -3,23 +3,44 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from 'tailwindcss';
 import autoprefixer from 'autoprefixer';
 import path from 'path';
-import fs from 'fs';
 
-// Detect monorepo: resolve to source when developing locally
 const monorepoRoot = path.resolve(__dirname, '../..');
-const isMonorepo = fs.existsSync(path.join(monorepoRoot, 'src/index.ts'));
 
 export default defineConfig({
   plugins: [react()],
   root: __dirname,
   resolve: {
-    alias: {
-      // In monorepo, alias to source for live development
-      ...(isMonorepo
-        ? { '@eigenpal/docx-js-editor': path.join(monorepoRoot, 'src/index.ts') }
-        : {}),
-      '@': path.join(monorepoRoot, 'src'),
-    },
+    alias: [
+      // Resolve package imports to source for live development
+      // Order matters: more-specific prefixes before less-specific ones
+      {
+        find: '@eigenpal/docx-js-editor',
+        replacement: path.join(monorepoRoot, 'packages/react/src/index.ts'),
+      },
+      {
+        find: '@eigenpal/docx-core/headless',
+        replacement: path.join(monorepoRoot, 'packages/core/src/headless.ts'),
+      },
+      {
+        find: '@eigenpal/docx-core/core-plugins',
+        replacement: path.join(monorepoRoot, 'packages/core/src/core-plugins/index.ts'),
+      },
+      {
+        find: '@eigenpal/docx-core/mcp',
+        replacement: path.join(monorepoRoot, 'packages/core/src/mcp/index.ts'),
+      },
+      // Wildcard alias for deep core imports (e.g. @eigenpal/docx-core/utils/docxInput)
+      {
+        find: /^@eigenpal\/docx-core\/(.+)/,
+        replacement: path.join(monorepoRoot, 'packages/core/src/$1'),
+      },
+      // Exact match for bare @eigenpal/docx-core (must come AFTER the prefix match above)
+      {
+        find: /^@eigenpal\/docx-core$/,
+        replacement: path.join(monorepoRoot, 'packages/core/src/core.ts'),
+      },
+      { find: '@', replacement: path.join(monorepoRoot, 'packages/react/src') },
+    ],
   },
   css: {
     postcss: {
