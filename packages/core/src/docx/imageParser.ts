@@ -44,6 +44,7 @@ import {
   type XmlElement,
 } from './xmlParser';
 import { resolveTarget } from './relsParser';
+import { isTextBoxDrawing } from './textBoxParser';
 
 // ============================================================================
 // EMU CONVERSIONS
@@ -797,17 +798,18 @@ export function parseDrawing(
   rels: RelationshipMap | undefined,
   media: Map<string, MediaFile> | undefined
 ): Image | null {
+  // Skip text box shapes — they are handled by textBoxParser, not as images
+  if (isTextBoxDrawing(drawingEl)) return null;
+
   const children = getChildElements(drawingEl);
 
   for (const child of children) {
     const name = child.name || '';
 
-    if (name === 'wp:inline') {
-      return parseInline(child, rels, media);
-    }
-
-    if (name === 'wp:anchor') {
-      return parseAnchor(child, rels, media);
+    if (name === 'wp:inline' || name === 'wp:anchor') {
+      return name === 'wp:inline'
+        ? parseInline(child, rels, media)
+        : parseAnchor(child, rels, media);
     }
   }
 
