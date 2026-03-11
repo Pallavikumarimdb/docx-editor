@@ -1346,6 +1346,7 @@ function convertImage(image: Image): PMNode {
     borderColor: borderColor,
     borderKind: borderKind,
     wrapText: wrapText,
+    hlinkHref: image.hlinkHref,
   });
 }
 

@@ -157,6 +157,8 @@ export interface ImageAttrs {
   borderKind?: string;
   /** Wrap text setting from DOCX (left, right, bothSides, largest) for round-trip */
   wrapText?: string;
+  /** Hyperlink URL for clickable image */
+  hlinkHref?: string;
 }
 
 /**
