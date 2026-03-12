@@ -69,6 +69,88 @@ export const CLIPBOARD_TYPES = {
   PLAIN: 'text/plain',
 } as const;
 
+/**
+ * Extract image files from clipboard data (if present).
+ */
+export function getClipboardImageFiles(clipboardData: DataTransfer | null): File[] {
+  if (!clipboardData) return [];
+
+  const collectFromItems = (): File[] => {
+    if (!clipboardData.items || clipboardData.items.length === 0) return [];
+    const files: File[] = [];
+    for (const item of Array.from(clipboardData.items)) {
+      if (item.kind !== 'file') continue;
+      if (!item.type.startsWith('image/')) continue;
+      const file = item.getAsFile();
+      if (file) files.push(file);
+    }
+    return files;
+  };
+
+  const collectFromFiles = (): File[] => {
+    if (!clipboardData.files || clipboardData.files.length === 0) return [];
+    return Array.from(clipboardData.files).filter((file) => file.type.startsWith('image/'));
+  };
+
+  // Prefer items when available to avoid duplicate representations between items and files.
+  const candidates = collectFromItems();
+  const files = candidates.length ? candidates : collectFromFiles();
+  if (files.length <= 1) return files;
+
+  const preferredTypes = [
+    'image/png',
+    'image/jpeg',
+    'image/webp',
+    'image/gif',
+    'image/svg+xml',
+    'image/bmp',
+    'image/tiff',
+  ];
+
+  const pickBest = (group: File[]): File => {
+    let best = group[0];
+    let bestRank = preferredTypes.indexOf(best.type);
+    if (bestRank < 0) bestRank = Number.MAX_SAFE_INTEGER;
+
+    for (const file of group.slice(1)) {
+      let rank = preferredTypes.indexOf(file.type);
+      if (rank < 0) rank = Number.MAX_SAFE_INTEGER;
+
+      if (rank < bestRank) {
+        best = file;
+        bestRank = rank;
+        continue;
+      }
+
+      if (rank === bestRank && file.size > best.size) {
+        best = file;
+      }
+    }
+
+    return best;
+  };
+
+  const groups = new Map<string, File[]>();
+  for (const file of files) {
+    const rawName = file.name?.trim() ?? '';
+    const baseName = rawName ? rawName.replace(/\.[^/.]+$/, '').toLowerCase() : '';
+    const key = baseName || `size:${file.size}`;
+    const bucket = groups.get(key);
+    if (bucket) {
+      bucket.push(file);
+    } else {
+      groups.set(key, [file]);
+    }
+  }
+
+  const deduped: File[] = [];
+  for (const group of groups.values()) {
+    deduped.push(pickBest(group));
+  }
+
+  return deduped;
+}
+
 // ============================================================================
 // COPY FUNCTIONS
 // ============================================================================
