@@ -55,6 +55,12 @@ export interface ParagraphAttrs {
   listIsBullet?: boolean;
   /** Computed list marker text (e.g., "1.", "1.1.", "•") */
   listMarker?: string;
+  /** Whether the list marker is hidden (w:vanish on numbering level rPr) */
+  listMarkerHidden?: boolean;
+  /** Marker font family from numbering level rPr */
+  listMarkerFontFamily?: string;
+  /** Marker font size from numbering level rPr, in points */
+  listMarkerFontSize?: number;
 
   // Style reference
   styleId?: string;

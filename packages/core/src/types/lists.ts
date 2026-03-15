@@ -160,6 +160,12 @@ export interface ListRendering {
   isBullet: boolean;
   /** Number format type (decimal, lowerRoman, upperRoman, etc.) */
   numFmt?: NumberFormat;
+  /** Whether the list marker is hidden (w:vanish on level rPr) */
+  markerHidden?: boolean;
+  /** Marker font family from numbering level rPr (ascii name) */
+  markerFontFamily?: string;
+  /** Marker font size from numbering level rPr, in points */
+  markerFontSize?: number;
 }
 
 /**

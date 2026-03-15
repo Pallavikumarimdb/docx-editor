@@ -1241,6 +1241,11 @@ export function parseParagraph(
           marker: level.lvlText,
           isBullet: level.numFmt === 'bullet',
           numFmt: level.numFmt,
+          markerHidden: level.rPr?.hidden || undefined,
+          markerFontFamily:
+            level.rPr?.fontFamily?.ascii || level.rPr?.fontFamily?.hAnsi || undefined,
+          // w:sz is in half-points; convert to points for downstream use
+          markerFontSize: level.rPr?.fontSize ? level.rPr.fontSize / 2 : undefined,
         };
 
         // Apply level's paragraph properties (indentation) as defaults.
