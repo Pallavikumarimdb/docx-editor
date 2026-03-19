@@ -2,6 +2,7 @@
   "name": "@eigenpal/docx-core",
   "version": "0.0.28",
   "private": true,
+  "sideEffects": false,
   "description": "Framework-agnostic core for DOCX parsing, editing, and rendering",
   "main": "./dist/core.js",
   "module": "./dist/core.mjs",
