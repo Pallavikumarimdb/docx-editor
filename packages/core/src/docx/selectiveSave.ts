@@ -10,7 +10,12 @@
 
 import type { Document, BlockContent } from '../types/document';
 import { serializeDocument } from './serializer/documentSerializer';
-import { serializeComments } from './serializer/commentSerializer';
+import {
+  serializeCommentsWithInfo,
+  serializeCommentsExtended,
+  serializeCommentsIds,
+  serializeCommentsExtensible,
+} from './serializer/commentSerializer';
 import { buildPatchedDocumentXml } from './selectiveXmlPatch';
 import {
   applyUpdatesToZip,
@@ -18,6 +23,9 @@ import {
   updateCoreProperties,
   collectHeaderFooterUpdates,
   COMMENTS_CONTENT_TYPE,
+  COMMENTS_EXTENDED_CONTENT_TYPE,
+  COMMENTS_IDS_CONTENT_TYPE,
+  COMMENTS_EXTENSIBLE_CONTENT_TYPE,
 } from './rezip';
 import { RELATIONSHIP_TYPES } from './relsParser';
 
@@ -109,40 +117,75 @@ export async function attemptSelectiveSave(
       updates.set('word/document.xml', patchedDocXml);
     }
 
-    // Always serialize comments.xml when the document has comments
+    // Always serialize comments.xml + commentsExtended.xml when the document has comments
     if (hasComments) {
-      updates.set('word/comments.xml', serializeComments(comments));
+      const { xml: commentsXml, paraInfos } = serializeCommentsWithInfo(comments);
+      updates.set('word/comments.xml', commentsXml);
 
-      // Ensure [Content_Types].xml has an Override for comments.xml
-      const ctFile = zip.file('[Content_Types].xml');
-      if (ctFile) {
-        const ctXml = await ctFile.async('text');
-        if (!ctXml.includes('/word/comments.xml')) {
-          updates.set(
-            '[Content_Types].xml',
-            ctXml.replace(
-              '</Types>',
-              `<Override PartName="/word/comments.xml" ContentType="${COMMENTS_CONTENT_TYPE}"/></Types>`
-            )
-          );
-        }
+      // Write commentsExtended.xml for reply threading (Word/Google Docs interop)
+      const extendedXml = serializeCommentsExtended(paraInfos);
+      if (extendedXml) {
+        updates.set('word/commentsExtended.xml', extendedXml);
       }
 
-      // Ensure word/_rels/document.xml.rels has a Relationship for comments.xml
+      // Write commentsIds.xml for stable IDs (Word Online needs this for replies)
+      const idsXml = serializeCommentsIds(paraInfos);
+      if (idsXml) {
+        updates.set('word/commentsIds.xml', idsXml);
+      }
+
+      // Write commentsExtensible.xml for UTC dates (Pages, Word 2016+)
+      const extensibleXml = serializeCommentsExtensible(paraInfos, comments);
+      if (extensibleXml) {
+        updates.set('word/commentsExtensible.xml', extensibleXml);
+      }
+
+      // Ensure [Content_Types].xml has Overrides for all comment parts
+      const ctFile = zip.file('[Content_Types].xml');
+      if (ctFile) {
+        let ctXml = updates.get('[Content_Types].xml') ?? (await ctFile.async('text'));
+        let ctChanged = false;
+        const ctEntries: [string, string][] = [
+          ['/word/comments.xml', COMMENTS_CONTENT_TYPE],
+          ['/word/commentsExtended.xml', COMMENTS_EXTENDED_CONTENT_TYPE],
+          ['/word/commentsIds.xml', COMMENTS_IDS_CONTENT_TYPE],
+          ['/word/commentsExtensible.xml', COMMENTS_EXTENSIBLE_CONTENT_TYPE],
+        ];
+        for (const [partName, contentType] of ctEntries) {
+          if (!ctXml.includes(partName)) {
+            ctXml = ctXml.replace(
+              '</Types>',
+              `<Override PartName="${partName}" ContentType="${contentType}"/></Types>`
+            );
+            ctChanged = true;
+          }
+        }
+        if (ctChanged) updates.set('[Content_Types].xml', ctXml);
+      }
+
+      // Ensure word/_rels/document.xml.rels has Relationships for all
       const relsPath = 'word/_rels/document.xml.rels';
       const relsFile = zip.file(relsPath);
       if (relsFile) {
-        const relsXml = await relsFile.async('text');
-        if (!relsXml.includes('comments.xml')) {
-          const maxId = findMaxRId(relsXml);
-          updates.set(
-            relsPath,
-            relsXml.replace(
+        let relsXml = updates.get(relsPath) ?? (await relsFile.async('text'));
+        let relsChanged = false;
+        const relEntries: [string, string][] = [
+          ['comments.xml', RELATIONSHIP_TYPES.comments],
+          ['commentsExtended.xml', RELATIONSHIP_TYPES.commentsExtended],
+          ['commentsIds.xml', RELATIONSHIP_TYPES.commentsIds],
+          ['commentsExtensible.xml', RELATIONSHIP_TYPES.commentsExtensible],
+        ];
+        for (const [target, type] of relEntries) {
+          if (!relsXml.includes(target)) {
+            const maxId = findMaxRId(relsXml);
+            relsXml = relsXml.replace(
               '</Relationships>',
-              `<Relationship Id="rId${maxId + 1}" Type="${RELATIONSHIP_TYPES.comments}" Target="comments.xml"/></Relationships>`
-            )
-          );
+              `<Relationship Id="rId${maxId + 1}" Type="${type}" Target="${target}"/></Relationships>`
+            );
+            relsChanged = true;
+          }
         }
+        if (relsChanged) updates.set(relsPath, relsXml);
       }
     }
 
