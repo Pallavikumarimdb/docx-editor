@@ -73,6 +73,13 @@ export function splitCell(state: EditorState, dispatch?: (tr: Transaction) => vo
   return cmds.splitCell()(state, dispatch);
 }
 
+// Dialog-backed split — explicit row/column input
+export {
+  type SplitCellDialogConfig,
+  getSplitCellDialogConfig,
+  splitActiveTableCell,
+} from './tableSplit';
+
 // Per-cell border editing
 export function setCellBorder(
   side: 'top' | 'bottom' | 'left' | 'right' | 'all',
