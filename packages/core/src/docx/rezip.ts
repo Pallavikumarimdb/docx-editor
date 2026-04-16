@@ -31,7 +31,7 @@
 
 import JSZip from 'jszip';
 import type { Document } from '../types/document';
-import type { BlockContent, Image, Hyperlink } from '../types/content';
+import type { BlockContent, HeaderFooter, Image, Hyperlink } from '../types/content';
 import { serializeDocument } from './serializer/documentSerializer';
 import { serializeHeaderFooter } from './serializer/headerFooterSerializer';
 import {
@@ -168,96 +168,170 @@ function decodeDataUrl(dataUrl: string): { data: ArrayBuffer; extension: string 
 }
 
 /**
- * Process newly inserted images: add binary data to ZIP, create relationships,
- * update content types, and rewrite rIds in the document model so the serializer
- * outputs correct references.
- *
- * Mutates the images' rId fields in-place.
+ * A DOCX part (body, header, or footer) that owns a rels file and may contain
+ * newly inserted images/hyperlinks that need to be registered.
  */
-async function processNewImages(
-  newImages: Image[],
+interface Part {
+  /** Path to the rels file for this part, e.g. `word/_rels/header1.xml.rels` */
+  relsPath: string;
+  blocks: BlockContent[];
+}
+
+const EMPTY_RELS_XML =
+  '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+  '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>';
+
+/**
+ * Resolve the on-disk filename of a header/footer part from its relationship entry.
+ * Returns e.g. `word/header1.xml`.
+ */
+function headerFooterFilename(target: string): string {
+  return target.startsWith('/') ? target.slice(1) : `word/${target}`;
+}
+
+/**
+ * Enumerate all parts that may contain newly inserted images/hyperlinks:
+ * the document body plus every header and footer.
+ */
+function collectParts(doc: Document): Part[] {
+  const parts: Part[] = [
+    { relsPath: 'word/_rels/document.xml.rels', blocks: doc.package.document.content },
+  ];
+
+  const rels = doc.package.relationships;
+  if (!rels) return parts;
+
+  const addHeaderFooterParts = (map: Map<string, HeaderFooter> | undefined, type: string) => {
+    if (!map) return;
+    for (const [rId, hf] of map.entries()) {
+      const rel = rels.get(rId);
+      if (!rel || rel.type !== type || !rel.target) continue;
+      const filename = headerFooterFilename(rel.target);
+      const basename = filename.replace(/^word\//, '');
+      parts.push({ relsPath: `word/_rels/${basename}.rels`, blocks: hf.content });
+    }
+  };
+
+  addHeaderFooterParts(doc.package.headers, RELATIONSHIP_TYPES.header);
+  addHeaderFooterParts(doc.package.footers, RELATIONSHIP_TYPES.footer);
+
+  return parts;
+}
+
+/**
+ * Read an existing rels file (or return a minimal stub) and normalize the
+ * self-closing form `<Relationships .../>` — which Word emits for empty parts —
+ * to the open/close form so our `.replace('</Relationships>', ...)` append works.
+ */
+async function readRelsOrStub(zip: JSZip, relsPath: string): Promise<string> {
+  const file = zip.file(relsPath);
+  const xml = file ? await file.async('text') : EMPTY_RELS_XML;
+  return xml.replace(/<Relationships([^>]*)\/>/, '<Relationships$1></Relationships>');
+}
+
+/**
+ * Register new image extensions in [Content_Types].xml (idempotent).
+ */
+async function registerImageExtensions(
   zip: JSZip,
+  extensions: Set<string>,
   compressionLevel: number
 ): Promise<void> {
-  if (newImages.length === 0) return;
+  if (extensions.size === 0) return;
+  const ctFile = zip.file('[Content_Types].xml');
+  if (!ctFile) return;
 
-  // Read existing relationships
-  const relsPath = 'word/_rels/document.xml.rels';
-  const relsFile = zip.file(relsPath);
-  if (!relsFile) return;
-  let relsXml = await relsFile.async('text');
+  let ctXml = await ctFile.async('text');
+  let changed = false;
+  for (const ext of extensions) {
+    if (!ctXml.includes(`Extension="${ext}"`)) {
+      const contentType = getContentTypeForExtension(ext, '');
+      ctXml = ctXml.replace(
+        '</Types>',
+        `<Default Extension="${ext}" ContentType="${contentType}"/></Types>`
+      );
+      changed = true;
+    }
+  }
+  if (changed) {
+    zip.file('[Content_Types].xml', ctXml, {
+      compression: 'DEFLATE',
+      compressionOptions: { level: compressionLevel },
+    });
+  }
+}
 
-  // Find highest existing rId
-  let maxId = findMaxRId(relsXml);
-
-  // Find highest existing image number in word/media/
-  let maxImageNum = 0;
+/**
+ * Find the highest image number currently used in `word/media/`. Media filenames
+ * are a shared package-wide namespace, so a single counter is used across parts.
+ */
+function findMaxImageNum(zip: JSZip): number {
+  let max = 0;
   zip.forEach((relativePath) => {
     const m = relativePath.match(/^word\/media\/image(\d+)\./);
     if (m) {
       const num = parseInt(m[1], 10);
-      if (num > maxImageNum) maxImageNum = num;
+      if (num > max) max = num;
     }
   });
+  return max;
+}
 
-  const relEntries: string[] = [];
+/**
+ * Process newly inserted images across all parts (body, headers, footers):
+ * add binary data to ZIP, create per-part relationships, update content types,
+ * and rewrite rIds so the serializer outputs correct references.
+ *
+ * Mutates each image's rId in-place.
+ */
+async function processNewImages(
+  parts: Part[],
+  zip: JSZip,
+  compressionLevel: number
+): Promise<void> {
+  let maxImageNum = findMaxImageNum(zip);
   const extensionsAdded = new Set<string>();
 
-  for (const image of newImages) {
-    const { data, extension } = decodeDataUrl(image.src!);
+  for (const { relsPath, blocks } of parts) {
+    const images = collectNewImages(blocks);
+    if (images.length === 0) continue;
 
-    maxImageNum++;
-    maxId++;
-    const mediaFilename = `image${maxImageNum}.${extension}`;
-    const mediaPath = `word/media/${mediaFilename}`;
-    const newRId = `rId${maxId}`;
+    const relsXml = await readRelsOrStub(zip, relsPath);
+    let maxId = findMaxRId(relsXml);
+    const relEntries: string[] = [];
 
-    // Add binary to ZIP
-    zip.file(mediaPath, data, {
-      compression: 'DEFLATE',
-      compressionOptions: { level: compressionLevel },
-    });
+    for (const image of images) {
+      const { data, extension } = decodeDataUrl(image.src!);
 
-    // Build relationship entry
-    relEntries.push(
-      `<Relationship Id="${newRId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${mediaFilename}"/>`
-    );
+      maxImageNum++;
+      maxId++;
+      const mediaFilename = `image${maxImageNum}.${extension}`;
+      const newRId = `rId${maxId}`;
 
-    extensionsAdded.add(extension);
-
-    // Rewrite the image's rId so the serializer outputs the correct reference
-    image.rId = newRId;
-  }
-
-  // Update relationships XML
-  if (relEntries.length > 0) {
-    relsXml = relsXml.replace('</Relationships>', relEntries.join('') + '</Relationships>');
-    zip.file(relsPath, relsXml, {
-      compression: 'DEFLATE',
-      compressionOptions: { level: compressionLevel },
-    });
-  }
-
-  // Update [Content_Types].xml if new extensions were added
-  if (extensionsAdded.size > 0) {
-    const ctFile = zip.file('[Content_Types].xml');
-    if (ctFile) {
-      let ctXml = await ctFile.async('text');
-      for (const ext of extensionsAdded) {
-        if (!ctXml.includes(`Extension="${ext}"`)) {
-          const contentType = getContentTypeForExtension(ext, '');
-          ctXml = ctXml.replace(
-            '</Types>',
-            `<Default Extension="${ext}" ContentType="${contentType}"/></Types>`
-          );
-        }
-      }
-      zip.file('[Content_Types].xml', ctXml, {
+      zip.file(`word/media/${mediaFilename}`, data, {
         compression: 'DEFLATE',
         compressionOptions: { level: compressionLevel },
       });
+
+      relEntries.push(
+        `<Relationship Id="${newRId}" Type="${RELATIONSHIP_TYPES.image}" Target="media/${mediaFilename}"/>`
+      );
+
+      extensionsAdded.add(extension);
+      image.rId = newRId;
     }
+
+    const updatedRelsXml = relsXml.replace(
+      '</Relationships>',
+      relEntries.join('') + '</Relationships>'
+    );
+    zip.file(relsPath, updatedRelsXml, {
+      compression: 'DEFLATE',
+      compressionOptions: { level: compressionLevel },
+    });
   }
+
+  await registerImageExtensions(zip, extensionsAdded, compressionLevel);
 }
 
 // ============================================================================
@@ -291,39 +365,40 @@ function collectHyperlinksWithoutRId(blocks: BlockContent[]): Hyperlink[] {
 }
 
 /**
- * Process newly created hyperlinks: assign rIds and add relationship entries.
- * Mutates the hyperlinks' rId fields in-place.
+ * Process newly created hyperlinks across all parts (body, headers, footers):
+ * assign rIds and add relationship entries to the owning part's rels file.
+ *
+ * Mutates each hyperlink's rId in-place.
  */
 async function processNewHyperlinks(
-  newHyperlinks: Hyperlink[],
+  parts: Part[],
   zip: JSZip,
   compressionLevel: number
 ): Promise<void> {
-  if (newHyperlinks.length === 0) return;
+  for (const { relsPath, blocks } of parts) {
+    const hyperlinks = collectHyperlinksWithoutRId(blocks);
+    if (hyperlinks.length === 0) continue;
 
-  const relsPath = 'word/_rels/document.xml.rels';
-  const relsFile = zip.file(relsPath);
-  if (!relsFile) return;
-  let relsXml = await relsFile.async('text');
+    const relsXml = await readRelsOrStub(zip, relsPath);
+    let maxId = findMaxRId(relsXml);
+    const relEntries: string[] = [];
 
-  let maxId = findMaxRId(relsXml);
-  const relEntries: string[] = [];
+    for (const hyperlink of hyperlinks) {
+      maxId++;
+      const newRId = `rId${maxId}`;
 
-  for (const hyperlink of newHyperlinks) {
-    maxId++;
-    const newRId = `rId${maxId}`;
+      relEntries.push(
+        `<Relationship Id="${newRId}" Type="${RELATIONSHIP_TYPES.hyperlink}" Target="${escapeXml(hyperlink.href!)}" TargetMode="External"/>`
+      );
 
-    relEntries.push(
-      `<Relationship Id="${newRId}" Type="${RELATIONSHIP_TYPES.hyperlink}" Target="${escapeXml(hyperlink.href!)}" TargetMode="External"/>`
+      hyperlink.rId = newRId;
+    }
+
+    const updatedRelsXml = relsXml.replace(
+      '</Relationships>',
+      relEntries.join('') + '</Relationships>'
     );
-
-    // Rewrite the hyperlink's rId so the serializer outputs the correct reference
-    hyperlink.rId = newRId;
-  }
-
-  if (relEntries.length > 0) {
-    relsXml = relsXml.replace('</Relationships>', relEntries.join('') + '</Relationships>');
-    zip.file(relsPath, relsXml, {
+    zip.file(relsPath, updatedRelsXml, {
       compression: 'DEFLATE',
       compressionOptions: { level: compressionLevel },
     });
@@ -390,15 +465,11 @@ export async function repackDocx(doc: Document, options: RepackOptions = {}): Pr
     });
   }
 
-  // Process newly inserted images (data URLs → binary media files + relationships).
-  // This mutates image rIds in-place so the serializer outputs correct references.
-  const newImages = collectNewImages(exportDocument.package.document.content);
-  await processNewImages(newImages, newZip, compressionLevel);
-
-  // Process newly created hyperlinks (assign rIds + add relationship entries).
-  // This mutates hyperlink rIds in-place so the serializer outputs correct references.
-  const newHyperlinks = collectHyperlinksWithoutRId(exportDocument.package.document.content);
-  await processNewHyperlinks(newHyperlinks, newZip, compressionLevel);
+  // Process newly inserted images and hyperlinks across body + headers + footers.
+  // Mutates rIds in-place so serializers emit correct references.
+  const parts = collectParts(exportDocument);
+  await processNewImages(parts, newZip, compressionLevel);
+  await processNewHyperlinks(parts, newZip, compressionLevel);
 
   // Serialize and update document.xml (after image/hyperlink rIds have been rewritten)
   const documentXml = serializeDocument(exportDocument);
@@ -479,12 +550,10 @@ export async function repackDocxFromRaw(
     });
   }
 
-  // Serialize and update document.xml
-  const newImages = collectNewImages(exportDocument.package.document.content);
-  await processNewImages(newImages, newZip, compressionLevel);
-
-  const newHyperlinks = collectHyperlinksWithoutRId(exportDocument.package.document.content);
-  await processNewHyperlinks(newHyperlinks, newZip, compressionLevel);
+  // Process newly inserted images and hyperlinks across body + headers + footers.
+  const parts = collectParts(exportDocument);
+  await processNewImages(parts, newZip, compressionLevel);
+  await processNewHyperlinks(parts, newZip, compressionLevel);
 
   const documentXml = serializeDocument(exportDocument);
   newZip.file('word/document.xml', documentXml, {
@@ -876,8 +945,7 @@ export function collectHeaderFooterUpdates(doc: Document): Map<string, string> {
     for (const [rId, headerFooter] of map.entries()) {
       const rel = rels.get(rId);
       if (rel && rel.type === type && rel.target) {
-        const filename = rel.target.startsWith('/') ? rel.target.slice(1) : `word/${rel.target}`;
-        updates.set(filename, serializeHeaderFooter(headerFooter));
+        updates.set(headerFooterFilename(rel.target), serializeHeaderFooter(headerFooter));
       }
     }
   }
