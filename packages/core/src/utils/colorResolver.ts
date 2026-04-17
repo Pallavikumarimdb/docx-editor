@@ -155,83 +155,6 @@ function rgbToHex(r: number, g: number, b: number): string {
 }
 
 /**
- * Convert RGB to HSL
- *
- * @param r - Red 0-255
- * @param g - Green 0-255
- * @param b - Blue 0-255
- * @returns HSL object with h (0-360), s (0-1), l (0-1)
- */
-function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: number } {
-  r /= 255;
-  g /= 255;
-  b /= 255;
-
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const l = (max + min) / 2;
-
-  if (max === min) {
-    return { h: 0, s: 0, l };
-  }
-
-  const d = max - min;
-  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-
-  let h: number;
-  switch (max) {
-    case r:
-      h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
-      break;
-    case g:
-      h = ((b - r) / d + 2) / 6;
-      break;
-    case b:
-      h = ((r - g) / d + 4) / 6;
-      break;
-    default:
-      h = 0;
-  }
-
-  return { h: h * 360, s, l };
-}
-
-/**
- * Convert HSL to RGB
- *
- * @param h - Hue 0-360
- * @param s - Saturation 0-1
- * @param l - Lightness 0-1
- * @returns RGB object with r, g, b values 0-255
- */
-function hslToRgb(h: number, s: number, l: number): { r: number; g: number; b: number } {
-  h = h / 360;
-
-  if (s === 0) {
-    const gray = Math.round(l * 255);
-    return { r: gray, g: gray, b: gray };
-  }
-
-  const hue2rgb = (p: number, q: number, t: number) => {
-    if (t < 0) t += 1;
-    if (t > 1) t -= 1;
-    if (t < 1 / 6) return p + (q - p) * 6 * t;
-    if (t < 1 / 2) return q;
-    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-    return p;
-  };
-
-  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-  const p = 2 * l - q;
-
-  return {
-    r: Math.round(hue2rgb(p, q, h + 1 / 3) * 255),
-    g: Math.round(hue2rgb(p, q, h) * 255),
-    b: Math.round(hue2rgb(p, q, h - 1 / 3) * 255),
-  };
-}
-
-/**
  * Apply tint to a color (make lighter by blending with white)
  *
  * OOXML tint algorithm:
@@ -239,22 +162,22 @@ function hslToRgb(h: number, s: number, l: number): { r: number; g: number; b: n
  * - Adjusts luminance: newLum = lum + (1 - lum) * tint
  *
  * @param hex - 6-character hex color (no #)
- * @param tint - Tint value 0-1 (0 = no change, 1 = fully white)
+ * @param tint - Tint value 0-1: how much of the original color to keep.
+ *   1 = no change, 0 = fully white. Per ECMA-376 §17.3.2.41.
  * @returns Modified hex color
  */
 function applyTint(hex: string, tint: number): string {
-  if (tint <= 0 || tint >= 1) {
-    return tint >= 1 ? 'FFFFFF' : hex;
-  }
+  if (tint >= 1) return hex;
+  if (tint <= 0) return 'FFFFFF';
 
+  // OOXML per-channel linear interpolation toward white:
+  // new_channel = channel * t + 255 * (1 - t)
   const rgb = hexToRgb(hex);
-  const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
-
-  // Apply tint: increase luminance toward white
-  hsl.l = hsl.l + (1 - hsl.l) * tint;
-
-  const newRgb = hslToRgb(hsl.h, hsl.s, hsl.l);
-  return rgbToHex(newRgb.r, newRgb.g, newRgb.b);
+  return rgbToHex(
+    Math.min(255, Math.max(0, Math.round(rgb.r * tint + 255 * (1 - tint)))),
+    Math.min(255, Math.max(0, Math.round(rgb.g * tint + 255 * (1 - tint)))),
+    Math.min(255, Math.max(0, Math.round(rgb.b * tint + 255 * (1 - tint))))
+  );
 }
 
 /**
@@ -265,22 +188,22 @@ function applyTint(hex: string, tint: number): string {
  * - Adjusts luminance: newLum = lum * shade
  *
  * @param hex - 6-character hex color (no #)
- * @param shade - Shade value 0-1 (0 = fully black, 1 = no change)
+ * @param shade - Shade value 0-1: how much of the original color to keep.
+ *   1 = no change, 0 = fully black. Per ECMA-376 §17.3.2.41.
  * @returns Modified hex color
  */
 function applyShade(hex: string, shade: number): string {
-  if (shade <= 0 || shade >= 1) {
-    return shade <= 0 ? '000000' : hex;
-  }
+  if (shade >= 1) return hex;
+  if (shade <= 0) return '000000';
 
+  // OOXML per-channel linear interpolation toward black:
+  // new_channel = channel * s
   const rgb = hexToRgb(hex);
-  const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
-
-  // Apply shade: decrease luminance toward black
-  hsl.l = hsl.l * shade;
-
-  const newRgb = hslToRgb(hsl.h, hsl.s, hsl.l);
-  return rgbToHex(newRgb.r, newRgb.g, newRgb.b);
+  return rgbToHex(
+    Math.min(255, Math.max(0, Math.round(rgb.r * shade))),
+    Math.min(255, Math.max(0, Math.round(rgb.g * shade))),
+    Math.min(255, Math.max(0, Math.round(rgb.b * shade)))
+  );
 }
 
 /**
@@ -604,6 +527,7 @@ export function darkenColor(
 ): string {
   const resolved = resolveColor(color, theme);
   const hex = resolved.replace(/^#/, '');
+  // percent=80 means darken 80% → keep 20% of original
   const shade = 1 - percent / 100;
   return `#${applyShade(hex, shade)}`;
 }
@@ -623,7 +547,8 @@ export function lightenColor(
 ): string {
   const resolved = resolveColor(color, theme);
   const hex = resolved.replace(/^#/, '');
-  const tint = percent / 100;
+  // percent=80 means lighten 80% → keep 20% of original
+  const tint = 1 - percent / 100;
   return `#${applyTint(hex, tint)}`;
 }
 
@@ -745,8 +670,11 @@ export function getThemeTintShadeHex(
   fraction: number
 ): string {
   if (type === 'tint') {
-    return applyTint(baseHex, fraction);
+    // fraction is "how much to lighten" (0 = no change, 1 = fully white)
+    // applyTint wants "how much to keep" (1 = no change, 0 = fully white) → invert
+    return applyTint(baseHex, 1 - fraction);
   }
+  // fraction is "how much to keep" (1 = no change, 0 = fully black) — matches applyShade
   return applyShade(baseHex, fraction);
 }
 
@@ -775,8 +703,11 @@ export function generateThemeTintShadeMatrix(
       if (row.type === 'base') {
         hex = baseHex.toUpperCase();
       } else if (row.type === 'tint') {
-        hex = applyTint(baseHex, row.value);
+        // row.value is "how much to lighten" (0.8 = 80% lighter)
+        // applyTint wants "how much to keep" → invert
+        hex = applyTint(baseHex, 1 - row.value);
       } else {
+        // row.value for shade is "how much to keep" (0.75 = keep 75% = darken 25%)
         hex = applyShade(baseHex, row.value);
       }
 

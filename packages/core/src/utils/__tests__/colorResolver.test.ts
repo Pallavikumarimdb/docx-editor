@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
-import { generateThemeTintShadeMatrix, getThemeTintShadeHex } from '../colorResolver';
-import type { ThemeColorScheme } from '../../types/document';
+import { generateThemeTintShadeMatrix, getThemeTintShadeHex, resolveColor } from '../colorResolver';
+import type { Theme, ThemeColorScheme } from '../../types/document';
 
 const OFFICE_2016_DEFAULTS: ThemeColorScheme = {
   dk1: '000000',
@@ -146,5 +146,85 @@ describe('getThemeTintShadeHex', () => {
   test('shade of 0 returns black', () => {
     const result = getThemeTintShadeHex('FF0000', 'shade', 0);
     expect(result).toBe('000000');
+  });
+});
+
+describe('resolveColor — OOXML theme color resolution', () => {
+  const theme: Theme = {
+    colorScheme: OFFICE_2016_DEFAULTS,
+  };
+
+  test('resolves plain RGB color', () => {
+    const result = resolveColor({ rgb: 'FF0000' }, theme);
+    expect(result).toBe('#FF0000');
+  });
+
+  test('resolves theme color without modifiers', () => {
+    const result = resolveColor({ themeColor: 'accent1' }, theme);
+    expect(result).toBe('#4472C4');
+  });
+
+  // Regression tests for the OOXML tint/shade fix.
+  // Per ECMA-376 §17.3.2.41, the tint/shade byte represents "how much of the
+  // original color to keep": 0xFF = no change, 0x00 = fully white/black.
+
+  test('themeTint "FF" (255) keeps original color', () => {
+    // tintByte/255 = 1.0 → no change
+    const result = resolveColor({ themeColor: 'accent1', themeTint: 'FF' }, theme);
+    expect(result).toBe('#4472C4');
+  });
+
+  test('themeTint "00" (0) produces white', () => {
+    const result = resolveColor({ themeColor: 'accent1', themeTint: '00' }, theme);
+    expect(result).toBe('#FFFFFF');
+  });
+
+  test('themeTint "33" (0x33 = 20%) produces near-white with slight color', () => {
+    // accent1 = #4472C4 → R=0x44(68), G=0x72(114), B=0xC4(196)
+    // t = 51/255 ≈ 0.2; new_r = 68*0.2 + 255*0.8 = 13.6 + 204 = 217.6 ≈ 0xDA
+    // new_g = 114*0.2 + 255*0.8 = 22.8 + 204 = 226.8 ≈ 0xE3
+    // new_b = 196*0.2 + 255*0.8 = 39.2 + 204 = 243.2 ≈ 0xF3
+    const result = resolveColor({ themeColor: 'accent1', themeTint: '33' }, theme);
+    expect(result).toBe('#DAE3F3');
+  });
+
+  test('themeTint "99" (0x99 = 60%) produces medium-light variant', () => {
+    // t = 153/255 ≈ 0.6; keep 60% color, add 40% white
+    // new_r = 68*0.6 + 255*0.4 = 40.8 + 102 = 142.8 ≈ 0x8F
+    // new_g = 114*0.6 + 255*0.4 = 68.4 + 102 = 170.4 ≈ 0xAA
+    // new_b = 196*0.6 + 255*0.4 = 117.6 + 102 = 219.6 ≈ 0xDC
+    const result = resolveColor({ themeColor: 'accent1', themeTint: '99' }, theme);
+    expect(result).toBe('#8FAADC');
+  });
+
+  test('themeShade "FF" (255) keeps original color', () => {
+    const result = resolveColor({ themeColor: 'accent1', themeShade: 'FF' }, theme);
+    expect(result).toBe('#4472C4');
+  });
+
+  test('themeShade "00" (0) produces black', () => {
+    const result = resolveColor({ themeColor: 'accent1', themeShade: '00' }, theme);
+    expect(result).toBe('#000000');
+  });
+
+  test('themeShade "F2" (0x F2 ≈ 95%) slightly darkens color', () => {
+    // accent1 = #4472C4; s = 242/255 ≈ 0.949
+    // new_r = 68*0.949 ≈ 65 = 0x41
+    // new_g = 114*0.949 ≈ 108 = 0x6C
+    // new_b = 196*0.949 ≈ 186 = 0xBA
+    const result = resolveColor({ themeColor: 'accent1', themeShade: 'F2' }, theme);
+    expect(result).toBe('#416CBA');
+  });
+
+  test('background1 with shade "F2" (light gray) — matches Word table row shading', () => {
+    // background1 (lt1) = FFFFFF
+    // s = 242/255 ≈ 0.949; new_r = 255*0.949 ≈ 242 = 0xF2
+    const result = resolveColor({ themeColor: 'background1', themeShade: 'F2' }, theme);
+    expect(result).toBe('#F2F2F2');
+  });
+
+  test('auto color returns default', () => {
+    const result = resolveColor({ auto: true }, theme);
+    expect(result).toBe('#000000');
   });
 });

@@ -44,6 +44,9 @@ import type {
 import { emuToPixels } from '../../docx/imageParser';
 import { createStyleResolver, type StyleResolver } from '../styles';
 import type { TableAttrs, TableRowAttrs, TableCellAttrs } from '../schema/nodes';
+import { resolveColor } from '../../utils/colorResolver';
+import type { Theme } from '../../types/document';
+import type { ColorValue } from '../../types/colors';
 
 /**
  * Options for document conversion
@@ -62,6 +65,7 @@ export interface ToProseDocOptions {
 export function toProseDoc(document: Document, options?: ToProseDocOptions): PMNode {
   const paragraphs = document.package.document.content;
   const nodes: PMNode[] = [];
+  const theme = document.package.theme ?? null;
 
   // Create style resolver if styles are provided
   const styleResolver = options?.styles ? createStyleResolver(options.styles) : null;
@@ -75,7 +79,7 @@ export function toProseDoc(document: Document, options?: ToProseDocOptions): PMN
         nodes.push(schema.node('pageBreak'));
       }
     } else if (block.type === 'table') {
-      const pmTable = convertTable(block, styleResolver);
+      const pmTable = convertTable(block, styleResolver, theme);
       nodes.push(pmTable);
     }
   }
@@ -513,7 +517,11 @@ function calculateRowSpans(table: Table): Map<string, { rowSpan: number; skip: b
   return result;
 }
 
-function convertTable(table: Table, styleResolver: StyleResolver | null): PMNode {
+function convertTable(
+  table: Table,
+  styleResolver: StyleResolver | null,
+  theme?: Theme | null
+): PMNode {
   // Calculate rowSpan values from vMerge
   const rowSpanMap = calculateRowSpans(table);
 
@@ -611,7 +619,8 @@ function convertTable(table: Table, styleResolver: StyleResolver | null): PMNode
       totalRows,
       totalColumns,
       rowSpanMap,
-      cellMarginsAttr
+      cellMarginsAttr,
+      theme
     );
   });
 
@@ -650,7 +659,8 @@ function convertTableRow(
   totalRows?: number,
   totalColumns?: number,
   rowSpanMap?: Map<string, { rowSpan: number; skip: boolean }>,
-  defaultCellMargins?: { top?: number; bottom?: number; left?: number; right?: number }
+  defaultCellMargins?: { top?: number; bottom?: number; left?: number; right?: number },
+  theme?: Theme | null
 ): PMNode {
   const attrs: TableRowAttrs = {
     height: row.formatting?.height?.value,
@@ -830,7 +840,8 @@ function convertTableRow(
         isFirstCol,
         isLastCol,
         calculatedRowSpan,
-        defaultCellMargins
+        defaultCellMargins,
+        theme
       )
     );
   }
@@ -853,7 +864,8 @@ function convertTableCell(
   isFirstCol?: boolean,
   isLastCol?: boolean,
   calculatedRowSpan?: number,
-  defaultCellMargins?: { top?: number; bottom?: number; left?: number; right?: number }
+  defaultCellMargins?: { top?: number; bottom?: number; left?: number; right?: number },
+  theme?: Theme | null
 ): PMNode {
   const formatting = cell.formatting;
 
@@ -870,9 +882,20 @@ function convertTableCell(
     widthType = 'pct';
   }
 
-  // Determine background color: prefer cell's own shading, fall back to conditional style
-  const backgroundColor =
-    formatting?.shading?.fill?.rgb ?? conditionalStyle?.tcPr?.shading?.fill?.rgb;
+  // Determine background color: prefer cell's own shading, fall back to conditional style.
+  // Resolve theme colors to RGB using the document theme.
+  const fillColor: ColorValue | undefined =
+    formatting?.shading?.fill ?? conditionalStyle?.tcPr?.shading?.fill;
+  let backgroundColor: string | undefined;
+  if (fillColor) {
+    if (fillColor.themeColor && theme) {
+      // Theme color takes precedence — resolve with tint/shade modifiers
+      const resolved = resolveColor(fillColor, theme);
+      backgroundColor = resolved.startsWith('#') ? resolved.slice(1) : resolved;
+    } else if (fillColor.rgb) {
+      backgroundColor = fillColor.rgb;
+    }
+  }
 
   // Convert borders — preserve full BorderSpec per side
   // Priority: cell borders > conditional style borders > table borders
