@@ -398,6 +398,7 @@ const tableCellSpec: NodeSpec = {
     textDirection: { default: null },
     noWrap: { default: false },
     _originalFormatting: { default: null },
+    _originalResolvedFill: { default: null },
   },
   parseDOM: [
     {
@@ -456,6 +457,7 @@ const tableHeaderSpec: NodeSpec = {
     textDirection: { default: null },
     noWrap: { default: false },
     _originalFormatting: { default: null },
+    _originalResolvedFill: { default: null },
   },
   parseDOM: [
     {

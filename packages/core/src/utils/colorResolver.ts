@@ -321,6 +321,37 @@ export function resolveColor(
 }
 
 /**
+ * Resolve any ColorValue (text, fill/shading, border, underline) to a 6-char
+ * uppercase hex string — or `undefined` if transparent/unset/unresolvable.
+ *
+ * Shared display-side resolver. Prefer this over reading `.rgb` directly so
+ * that `themeColor` + `themeTint`/`themeShade` are honored consistently across
+ * all render paths (PM attrs, layout-bridge, clipboard HTML, toolbar swatches).
+ *
+ * When a themed color is present but `theme` is null/undefined, falls back to
+ * `color.rgb` if Word wrote one for compat; otherwise returns `undefined`.
+ *
+ * @returns 6-char uppercase hex without `#`, or `undefined`.
+ */
+export function resolveColorToHex(
+  color: ColorValue | undefined | null,
+  theme: Theme | null | undefined
+): string | undefined {
+  if (!color || color.auto) return undefined;
+
+  if (color.themeColor && theme) {
+    // resolveColor always returns `#XXXXXX`; drop the `#`.
+    return resolveColor(color, theme).slice(1);
+  }
+
+  if (color.rgb && color.rgb !== 'auto') {
+    return color.rgb.toUpperCase().replace(/^#/, '');
+  }
+
+  return undefined;
+}
+
+/**
  * Resolve a highlight color name to CSS
  *
  * @param highlight - Highlight color name (e.g., "yellow", "cyan")

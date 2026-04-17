@@ -238,4 +238,11 @@ export interface TableCellAttrs {
   margins?: { top?: number; bottom?: number; left?: number; right?: number };
   /** Original cell formatting from DOCX for lossless round-trip serialization */
   _originalFormatting?: TableCellFormatting;
+  /**
+   * The resolved hex of the original `shading.fill` at parse time. Used by
+   * fromProseDoc to detect whether the user changed `backgroundColor`: if they
+   * didn't, we preserve `_originalFormatting.shading` (keeping themeFill +
+   * tint/shade); if they did, we write plain rgb.
+   */
+  _originalResolvedFill?: string;
 }

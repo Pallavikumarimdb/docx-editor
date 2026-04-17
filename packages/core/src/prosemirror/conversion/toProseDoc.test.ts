@@ -7,6 +7,7 @@
 
 import { describe, test, expect } from 'bun:test';
 import { toProseDoc } from './toProseDoc';
+import { fromProseDoc } from './fromProseDoc';
 import type { Document, Table, TableRow, TableCell, Theme } from '../../types/document';
 
 const OFFICE_THEME: Theme = {
@@ -133,5 +134,61 @@ describe('toProseDoc — table cell theme color resolution', () => {
     expect(cells[0].backgroundColor).toBe('8FAADC');
     // tint=33 (0.2) → near-white
     expect(cells[1].backgroundColor).toBe('DAE3F3');
+  });
+});
+
+describe('toProseDoc ↔ fromProseDoc round-trip — theme shading preservation', () => {
+  function firstCellShading(doc: Document) {
+    const table = doc.package.document.content[0] as Table;
+    return table?.rows[0]?.cells[0]?.formatting?.shading;
+  }
+
+  test('themed cell with tint survives round-trip with theme refs intact', () => {
+    const cell = makeCell({
+      shading: { fill: { themeColor: 'accent1', themeTint: '33' } },
+    });
+    const inDoc = makeDocument(makeTable([cell]), OFFICE_THEME);
+
+    const pmDoc = toProseDoc(inDoc);
+    const outDoc = fromProseDoc(pmDoc, inDoc);
+    const shading = firstCellShading(outDoc);
+
+    expect(shading?.fill?.themeColor).toBe('accent1');
+    expect(shading?.fill?.themeTint).toBe('33');
+    // The resolved rgb is not injected when unchanged — the original shape stays.
+    expect(shading?.fill?.rgb).toBeUndefined();
+  });
+
+  test('themed cell with shade survives round-trip', () => {
+    const cell = makeCell({
+      shading: { fill: { themeColor: 'background1', themeShade: 'F2' } },
+    });
+    const inDoc = makeDocument(makeTable([cell]), OFFICE_THEME);
+    const outDoc = fromProseDoc(toProseDoc(inDoc), inDoc);
+    const shading = firstCellShading(outDoc);
+    expect(shading?.fill?.themeColor).toBe('background1');
+    expect(shading?.fill?.themeShade).toBe('F2');
+  });
+
+  test('user-changed backgroundColor overrides theme refs with rgb', () => {
+    const cell = makeCell({
+      shading: { fill: { themeColor: 'accent1', themeTint: '33' } },
+    });
+    const inDoc = makeDocument(makeTable([cell]), OFFICE_THEME);
+    const pmDoc = toProseDoc(inDoc);
+
+    // Simulate the user picking a new color: swap backgroundColor on every cell.
+    type JsonNode = { type?: string; attrs?: Record<string, unknown>; content?: JsonNode[] };
+    const json = pmDoc.toJSON() as JsonNode;
+    const setBg = (n: JsonNode) => {
+      if (n.type === 'tableCell' && n.attrs) n.attrs.backgroundColor = 'FF00FF';
+      n.content?.forEach(setBg);
+    };
+    setBg(json);
+    const edited = pmDoc.type.schema.nodeFromJSON(json);
+
+    const shading = firstCellShading(fromProseDoc(edited, inDoc));
+    expect(shading?.fill?.rgb).toBe('FF00FF');
+    expect(shading?.fill?.themeColor).toBeUndefined();
   });
 });

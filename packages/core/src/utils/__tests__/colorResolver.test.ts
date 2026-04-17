@@ -1,5 +1,10 @@
 import { describe, test, expect } from 'bun:test';
-import { generateThemeTintShadeMatrix, getThemeTintShadeHex, resolveColor } from '../colorResolver';
+import {
+  generateThemeTintShadeMatrix,
+  getThemeTintShadeHex,
+  resolveColor,
+  resolveColorToHex,
+} from '../colorResolver';
 import type { Theme, ThemeColorScheme } from '../../types/document';
 
 const OFFICE_2016_DEFAULTS: ThemeColorScheme = {
@@ -226,5 +231,58 @@ describe('resolveColor — OOXML theme color resolution', () => {
   test('auto color returns default', () => {
     const result = resolveColor({ auto: true }, theme);
     expect(result).toBe('#000000');
+  });
+});
+
+describe('resolveColorToHex — shared display-side color resolution', () => {
+  const theme: Theme = {
+    colorScheme: OFFICE_2016_DEFAULTS,
+  };
+
+  test('returns undefined for missing fill', () => {
+    expect(resolveColorToHex(undefined, theme)).toBeUndefined();
+    expect(resolveColorToHex(null, theme)).toBeUndefined();
+  });
+
+  test('returns undefined for auto fill (transparent)', () => {
+    expect(resolveColorToHex({ auto: true }, theme)).toBeUndefined();
+  });
+
+  test('returns undefined for rgb="auto"', () => {
+    expect(resolveColorToHex({ rgb: 'auto' }, theme)).toBeUndefined();
+  });
+
+  test('returns 6-char uppercase hex for plain rgb', () => {
+    expect(resolveColorToHex({ rgb: 'ff0000' }, theme)).toBe('FF0000');
+  });
+
+  test('resolves themeColor to rgb via theme', () => {
+    expect(resolveColorToHex({ themeColor: 'accent1' }, theme)).toBe('4472C4');
+  });
+
+  test('applies themeTint correctly', () => {
+    expect(resolveColorToHex({ themeColor: 'accent1', themeTint: '33' }, theme)).toBe('DAE3F3');
+  });
+
+  test('applies themeShade correctly', () => {
+    expect(resolveColorToHex({ themeColor: 'background1', themeShade: 'F2' }, theme)).toBe(
+      'F2F2F2'
+    );
+  });
+
+  test('themeColor without theme falls back to rgb if present', () => {
+    expect(
+      resolveColorToHex({ themeColor: 'accent1', themeTint: '33', rgb: 'DAE3F3' }, undefined)
+    ).toBe('DAE3F3');
+  });
+
+  test('themeColor without theme and no rgb fallback returns undefined', () => {
+    expect(
+      resolveColorToHex({ themeColor: 'accent1', themeTint: '33' }, undefined)
+    ).toBeUndefined();
+  });
+
+  test('strips leading # from rgb', () => {
+    expect(resolveColorToHex({ rgb: '#ABCDEF' }, theme)).toBe('ABCDEF');
   });
 });

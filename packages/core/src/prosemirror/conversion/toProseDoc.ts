@@ -44,9 +44,8 @@ import type {
 import { emuToPixels } from '../../docx/imageParser';
 import { createStyleResolver, type StyleResolver } from '../styles';
 import type { TableAttrs, TableRowAttrs, TableCellAttrs } from '../schema/nodes';
-import { resolveColor } from '../../utils/colorResolver';
+import { resolveColorToHex } from '../../utils/colorResolver';
 import type { Theme } from '../../types/document';
-import type { ColorValue } from '../../types/colors';
 
 /**
  * Options for document conversion
@@ -882,20 +881,11 @@ function convertTableCell(
     widthType = 'pct';
   }
 
-  // Determine background color: prefer cell's own shading, fall back to conditional style.
-  // Resolve theme colors to RGB using the document theme.
-  const fillColor: ColorValue | undefined =
-    formatting?.shading?.fill ?? conditionalStyle?.tcPr?.shading?.fill;
-  let backgroundColor: string | undefined;
-  if (fillColor) {
-    if (fillColor.themeColor && theme) {
-      // Theme color takes precedence — resolve with tint/shade modifiers
-      const resolved = resolveColor(fillColor, theme);
-      backgroundColor = resolved.startsWith('#') ? resolved.slice(1) : resolved;
-    } else if (fillColor.rgb) {
-      backgroundColor = fillColor.rgb;
-    }
-  }
+  // Cell's own shading wins; fall back to the table style's conditional row/col shading.
+  const backgroundColor = resolveColorToHex(
+    formatting?.shading?.fill ?? conditionalStyle?.tcPr?.shading?.fill,
+    theme
+  );
 
   // Convert borders — preserve full BorderSpec per side
   // Priority: cell borders > conditional style borders > table borders
@@ -946,6 +936,7 @@ function convertTableCell(
           }
         : defaultCellMargins,
     _originalFormatting: formatting || undefined,
+    _originalResolvedFill: backgroundColor,
   };
 
   // Convert cell content (paragraphs and nested tables)

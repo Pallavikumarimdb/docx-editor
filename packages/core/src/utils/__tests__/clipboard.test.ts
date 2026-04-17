@@ -1,5 +1,23 @@
 import { describe, expect, test } from 'bun:test';
-import { getClipboardImageFiles } from '../clipboard';
+import { getClipboardImageFiles, runsToClipboardContent } from '../clipboard';
+import type { Run, Theme } from '../../types/document';
+
+const OFFICE_THEME: Theme = {
+  colorScheme: {
+    dk1: '000000',
+    lt1: 'FFFFFF',
+    dk2: '44546A',
+    lt2: 'E7E6E6',
+    accent1: '4472C4',
+    accent2: 'ED7D31',
+    accent3: 'A5A5A5',
+    accent4: 'FFC000',
+    accent5: '5B9BD5',
+    accent6: '70AD47',
+    hlink: '0563C1',
+    folHlink: '954F72',
+  },
+};
 
 describe('getClipboardImageFiles', () => {
   test('returns image files from clipboardData.files', () => {
@@ -98,5 +116,46 @@ describe('getClipboardImageFiles', () => {
 
   test('returns empty array when clipboardData is null', () => {
     expect(getClipboardImageFiles(null)).toEqual([]);
+  });
+});
+
+describe('runsToClipboardContent — themed color resolution in HTML', () => {
+  function textRun(text: string, formatting?: Run['formatting']): Run {
+    return { type: 'run', content: [{ type: 'text', text }], formatting };
+  }
+
+  test('plain rgb text color passes through to HTML', () => {
+    const runs = [textRun('hello', { color: { rgb: 'FF0000' } })];
+    const { html } = runsToClipboardContent(runs, true, OFFICE_THEME);
+    expect(html).toContain('color: #FF0000');
+  });
+
+  test('themed text color resolves via theme', () => {
+    const runs = [textRun('hello', { color: { themeColor: 'accent1' } })];
+    const { html } = runsToClipboardContent(runs, true, OFFICE_THEME);
+    expect(html).toContain('color: #4472C4');
+  });
+
+  test('themed text color with tint resolves via theme', () => {
+    const runs = [textRun('hello', { color: { themeColor: 'accent1', themeTint: '33' } })];
+    const { html } = runsToClipboardContent(runs, true, OFFICE_THEME);
+    expect(html).toContain('color: #DAE3F3');
+  });
+
+  test('themed shading fill resolves via theme', () => {
+    const runs = [
+      textRun('hello', {
+        shading: { fill: { themeColor: 'accent1', themeTint: '33' } },
+      }),
+    ];
+    const { html } = runsToClipboardContent(runs, true, OFFICE_THEME);
+    expect(html).toContain('background-color: #DAE3F3');
+  });
+
+  test('themed color without theme falls back gracefully (no color style)', () => {
+    const runs = [textRun('hello', { color: { themeColor: 'accent1' } })];
+    const { html } = runsToClipboardContent(runs, true); // no theme
+    expect(html).not.toContain('color:');
+    expect(html).toContain('hello');
   });
 });

@@ -1506,8 +1506,15 @@ function tableCellAttrsToFormatting(attrs: TableCellAttrs): TableCellFormatting 
       result.verticalAlign = attrs.verticalAlign || undefined;
     }
     if (attrs.backgroundColor) {
-      result.shading = { fill: { rgb: attrs.backgroundColor } };
-    } else if (!attrs.backgroundColor && orig.shading) {
+      // Preserve themeFill/tint/shade when the user hasn't changed the fill:
+      // _originalResolvedFill is set at parse time to the resolved hex of the
+      // original shading, so matching backgroundColor means nothing changed.
+      if (attrs._originalResolvedFill === attrs.backgroundColor && orig.shading) {
+        result.shading = orig.shading;
+      } else {
+        result.shading = { fill: { rgb: attrs.backgroundColor } };
+      }
+    } else if (orig.shading) {
       // User cleared the background color
       result.shading = undefined;
     }

@@ -8,7 +8,8 @@
  * - Ctrl+C, Ctrl+V, Ctrl+X keyboard shortcuts
  */
 
-import type { Run, TextFormatting, Paragraph } from '../types/document';
+import type { Run, TextFormatting, Paragraph, Theme } from '../types/document';
+import { resolveColorToHex } from './colorResolver';
 
 // ============================================================================
 // TYPES
@@ -50,6 +51,8 @@ export interface ClipboardOptions {
   cleanWordFormatting?: boolean;
   /** Callback for handling errors */
   onError?: (error: Error) => void;
+  /** Document theme — required to resolve themed text/shading colors in HTML. */
+  theme?: Theme | null;
 }
 
 // ============================================================================
@@ -159,10 +162,10 @@ export function getClipboardImageFiles(clipboardData: DataTransfer | null): File
  * Copy runs to clipboard with formatting
  */
 export async function copyRuns(runs: Run[], options: ClipboardOptions = {}): Promise<boolean> {
-  const { includeFormatting = true, onError } = options;
+  const { includeFormatting = true, onError, theme } = options;
 
   try {
-    const content = runsToClipboardContent(runs, includeFormatting);
+    const content = runsToClipboardContent(runs, includeFormatting, theme);
     return await writeToClipboard(content);
   } catch (error) {
     onError?.(error as Error);
@@ -177,10 +180,10 @@ export async function copyParagraphs(
   paragraphs: Paragraph[],
   options: ClipboardOptions = {}
 ): Promise<boolean> {
-  const { includeFormatting = true, onError } = options;
+  const { includeFormatting = true, onError, theme } = options;
 
   try {
-    const content = paragraphsToClipboardContent(paragraphs, includeFormatting);
+    const content = paragraphsToClipboardContent(paragraphs, includeFormatting, theme);
     return await writeToClipboard(content);
   } catch (error) {
     onError?.(error as Error);
@@ -189,28 +192,36 @@ export async function copyParagraphs(
 }
 
 /**
- * Convert runs to clipboard content (HTML and plain text)
+ * Convert runs to clipboard content (HTML and plain text).
+ *
+ * @param theme - Optional document theme. Pass it so themed text color and
+ *   shading resolve correctly in the HTML payload (matters when pasting into
+ *   Gmail/Word/etc.). Omit for rgb-only content.
  */
 export function runsToClipboardContent(
   runs: Run[],
-  includeFormatting: boolean = true
+  includeFormatting: boolean = true,
+  theme?: Theme | null
 ): ClipboardContent {
   const plainText = runs.map(getRunText).join('');
-  const html = includeFormatting ? runsToHtml(runs) : escapeHtml(plainText);
+  const html = includeFormatting ? runsToHtml(runs, theme) : escapeHtml(plainText);
   const internal = JSON.stringify(runs);
 
   return { plainText, html, internal };
 }
 
 /**
- * Convert paragraphs to clipboard content
+ * Convert paragraphs to clipboard content.
+ *
+ * @param theme - See {@link runsToClipboardContent}.
  */
 export function paragraphsToClipboardContent(
   paragraphs: Paragraph[],
-  includeFormatting: boolean = true
+  includeFormatting: boolean = true,
+  theme?: Theme | null
 ): ClipboardContent {
   const plainText = paragraphs.map(getParagraphText).join('\n');
-  const html = includeFormatting ? paragraphsToHtml(paragraphs) : escapeHtml(plainText);
+  const html = includeFormatting ? paragraphsToHtml(paragraphs, theme) : escapeHtml(plainText);
   const internal = JSON.stringify(paragraphs);
 
   return { plainText, html, internal };
@@ -668,23 +679,26 @@ function getParagraphText(paragraph: Paragraph): string {
 /**
  * Convert runs to HTML
  */
-function runsToHtml(runs: Run[]): string {
-  return runs.map(runToHtml).join('');
+function runsToHtml(runs: Run[], theme?: Theme | null): string {
+  return runs.map((run) => runToHtml(run, theme)).join('');
 }
 
 /**
  * Convert paragraphs to HTML
  */
-function paragraphsToHtml(paragraphs: Paragraph[]): string {
+function paragraphsToHtml(paragraphs: Paragraph[], theme?: Theme | null): string {
   return paragraphs
-    .map((p) => `<p>${runsToHtml(p.content?.filter((c): c is Run => c.type === 'run') || [])}</p>`)
+    .map(
+      (p) =>
+        `<p>${runsToHtml(p.content?.filter((c): c is Run => c.type === 'run') || [], theme)}</p>`
+    )
     .join('');
 }
 
 /**
  * Convert a run to HTML
  */
-function runToHtml(run: Run): string {
+function runToHtml(run: Run, theme?: Theme | null): string {
   const text = getRunText(run);
   if (!text) return '';
 
@@ -725,12 +739,14 @@ function runToHtml(run: Run): string {
     styles.push(`font-family: "${formatting.fontFamily.ascii}"`);
   }
 
-  if (formatting.color?.rgb) {
-    styles.push(`color: #${formatting.color.rgb}`);
+  const colorHex = resolveColorToHex(formatting.color, theme);
+  if (colorHex) {
+    styles.push(`color: #${colorHex}`);
   }
 
-  if (formatting.shading?.fill?.rgb) {
-    styles.push(`background-color: #${formatting.shading.fill.rgb}`);
+  const bgHex = resolveColorToHex(formatting.shading?.fill, theme);
+  if (bgHex) {
+    styles.push(`background-color: #${bgHex}`);
   }
 
   if (styles.length > 0) {
