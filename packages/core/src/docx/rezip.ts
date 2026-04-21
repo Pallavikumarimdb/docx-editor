@@ -481,6 +481,8 @@ export async function repackDocx(doc: Document, options: RepackOptions = {}): Pr
   // Serialize and update modified headers/footers
   serializeHeadersFootersToZip(exportDocument, newZip, compressionLevel);
 
+  await ensureHeaderFooterParts(exportDocument, newZip, compressionLevel);
+
   // Serialize comments
   await serializeCommentsToZip(exportDocument, newZip, compressionLevel);
 
@@ -564,6 +566,8 @@ export async function repackDocxFromRaw(
   // Serialize and update modified headers/footers
   serializeHeadersFootersToZip(exportDocument, newZip, compressionLevel);
 
+  await ensureHeaderFooterParts(exportDocument, newZip, compressionLevel);
+
   // Serialize comments
   await serializeCommentsToZip(exportDocument, newZip, compressionLevel);
 
@@ -594,6 +598,12 @@ export async function repackDocxFromRaw(
 // COMMENT PACKAGING HELPERS
 // ============================================================================
 
+const HEADER_CONTENT_TYPE =
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml';
+
+const FOOTER_CONTENT_TYPE =
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml';
+
 export const COMMENTS_CONTENT_TYPE =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml';
 
@@ -605,6 +615,81 @@ export const COMMENTS_IDS_CONTENT_TYPE =
 
 export const COMMENTS_EXTENSIBLE_CONTENT_TYPE =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtensible+xml';
+
+/**
+ * Ensure every header/footer in `doc.package.relationships` is wired up in
+ * `[Content_Types].xml` and `word/_rels/document.xml.rels`. For blank documents
+ * where the user adds a header/footer for the first time, these files don't
+ * know about the new part yet — without this Word silently drops them (#274).
+ */
+async function ensureHeaderFooterParts(
+  doc: Document,
+  zip: JSZip,
+  compressionLevel: number
+): Promise<void> {
+  const rels = doc.package.relationships;
+  if (!rels) return;
+
+  const parts: Array<{ rId: string; target: string; contentType: string; relType: string }> = [];
+  for (const [rId, rel] of rels) {
+    if (!rel.target) continue;
+    const contentType =
+      rel.type === RELATIONSHIP_TYPES.header
+        ? HEADER_CONTENT_TYPE
+        : rel.type === RELATIONSHIP_TYPES.footer
+          ? FOOTER_CONTENT_TYPE
+          : null;
+    if (!contentType) continue;
+    parts.push({
+      rId,
+      target: rel.target.replace(/^(\/?word\/)/, ''),
+      contentType,
+      relType: rel.type,
+    });
+  }
+  if (parts.length === 0) return;
+
+  const ctFile = zip.file('[Content_Types].xml');
+  if (ctFile) {
+    let ctXml = await ctFile.async('text');
+    let changed = false;
+    for (const { target, contentType } of parts) {
+      const partName = `/word/${target}`;
+      if (!ctXml.includes(`PartName="${partName}"`)) {
+        ctXml = ctXml.replace(
+          '</Types>',
+          `<Override PartName="${partName}" ContentType="${contentType}"/></Types>`
+        );
+        changed = true;
+      }
+    }
+    if (changed) {
+      zip.file('[Content_Types].xml', ctXml, {
+        compression: 'DEFLATE',
+        compressionOptions: { level: compressionLevel },
+      });
+    }
+  }
+
+  const relsPath = 'word/_rels/document.xml.rels';
+  let relsXml = await readRelsOrStub(zip, relsPath);
+  let relsChanged = false;
+  for (const { rId, relType, target } of parts) {
+    if (!relsXml.includes(`Id="${rId}"`)) {
+      relsXml = relsXml.replace(
+        '</Relationships>',
+        `<Relationship Id="${rId}" Type="${relType}" Target="${target}"/></Relationships>`
+      );
+      relsChanged = true;
+    }
+  }
+  if (relsChanged) {
+    zip.file(relsPath, relsXml, {
+      compression: 'DEFLATE',
+      compressionOptions: { level: compressionLevel },
+    });
+  }
+}
 
 /**
  * Ensure content types and relationships exist for all comment parts.
