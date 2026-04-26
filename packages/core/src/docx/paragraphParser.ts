@@ -41,6 +41,7 @@ import type {
   ParagraphPropertyChange,
   TrackedChangeInfo,
   MathEquation,
+  NumberFormat,
 } from '../types/document';
 import type { StyleMap } from './styleParser';
 import type { NumberingMap } from './numberingParser';
@@ -1235,6 +1236,15 @@ export function parseParagraph(
     if (numId !== undefined && numId !== 0) {
       const level = numbering.getLevel(numId, ilvl);
       if (level) {
+        // Collect numFmts for levels 0..ilvl so multi-level templates like
+        // "%1.%2." can resolve each %N with its own format (e.g., upperRoman
+        // parent + decimal child).
+        const levelNumFmts: NumberFormat[] = [];
+        for (let i = 0; i <= ilvl; i += 1) {
+          const parent = numbering.getLevel(numId, i);
+          levelNumFmts.push(parent?.numFmt ?? 'decimal');
+        }
+
         paragraph.listRendering = {
           level: ilvl,
           numId,
@@ -1246,6 +1256,7 @@ export function parseParagraph(
             level.rPr?.fontFamily?.ascii || level.rPr?.fontFamily?.hAnsi || undefined,
           // w:sz is in half-points; convert to points for downstream use
           markerFontSize: level.rPr?.fontSize ? level.rPr.fontSize / 2 : undefined,
+          levelNumFmts,
         };
 
         // Apply level's paragraph properties (indentation) as defaults.

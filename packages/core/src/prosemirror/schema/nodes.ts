@@ -62,6 +62,12 @@ export interface ParagraphAttrs {
   listMarkerFontFamily?: string;
   /** Marker font size from numbering level rPr, in points */
   listMarkerFontSize?: number;
+  /**
+   * NumberFormat for each level 0..ilvl (inclusive).
+   * Lets buildBoxTree resolve multi-level templates like "%1.%2." with
+   * the correct format per token.
+   */
+  listLevelNumFmts?: NumberFormat[];
 
   // Style reference
   styleId?: string;

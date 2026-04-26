@@ -282,6 +282,7 @@ function paragraphFormattingToAttrs(
     listMarkerHidden: paragraph.listRendering?.markerHidden || undefined,
     listMarkerFontFamily: paragraph.listRendering?.markerFontFamily || undefined,
     listMarkerFontSize: paragraph.listRendering?.markerFontSize || undefined,
+    listLevelNumFmts: paragraph.listRendering?.levelNumFmts || undefined,
     // Store original inline formatting for lossless serialization round-trip
     _originalFormatting: formatting || undefined,
   };

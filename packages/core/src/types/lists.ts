@@ -166,6 +166,12 @@ export interface ListRendering {
   markerFontFamily?: string;
   /** Marker font size from numbering level rPr, in points */
   markerFontSize?: number;
+  /**
+   * NumberFormat for each level from 0..ilvl (inclusive).
+   * Used to resolve multi-level templates like "%1.%2." where each %N
+   * may need a different format (e.g., upperRoman parent + decimal child).
+   */
+  levelNumFmts?: NumberFormat[];
 }
 
 /**
