@@ -58,14 +58,27 @@ function marksToTextFormatting(marks: readonly Mark[]): TextFormatting {
   return formatting;
 }
 
-function saveStoredMarksToParagraph(state: EditorState, tr: Transaction): Transaction {
+/**
+ * Mirror the cursor's stored marks into the paragraph's `defaultTextFormatting`
+ * attr so an empty paragraph renders with the right caret height/font.
+ *
+ * IMPORTANT: callers must invoke this BEFORE `tr.setStoredMarks(...)`. The
+ * `setNodeMarkup` step appended here clears `tr.storedMarks` (every step does —
+ * see prosemirror-state Transaction.addStep), so stored marks must be set last.
+ * Marks are passed in explicitly rather than read off `tr.storedMarks` for the
+ * same reason.
+ */
+function saveStoredMarksToParagraph(
+  state: EditorState,
+  tr: Transaction,
+  marks: readonly Mark[]
+): Transaction {
   const { $from } = state.selection;
   const paragraph = $from.parent;
 
   if (paragraph.type.name !== 'paragraph') return tr;
   if (paragraph.textContent.length > 0) return tr;
 
-  const marks = tr.storedMarks || state.storedMarks || [];
   if (marks.length === 0) {
     return tr.setNodeMarkup($from.before(), undefined, {
       ...paragraph.attrs,
@@ -86,8 +99,22 @@ function saveStoredMarksToParagraph(state: EditorState, tr: Transaction): Transa
 // ============================================================================
 
 /**
- * Set a mark with specific attributes
+ * Apply a new stored-mark set at a collapsed cursor and mirror it into the
+ * paragraph's defaultTextFormatting. Order matters: setNodeMarkup runs first
+ * because every transform step clears tr.storedMarks, so setStoredMarks must
+ * be the last mutation.
  */
+function dispatchStoredMarks(
+  state: EditorState,
+  dispatch: (tr: Transaction) => void,
+  marks: readonly Mark[]
+): void {
+  let tr = state.tr;
+  tr = saveStoredMarksToParagraph(state, tr, marks);
+  tr.setStoredMarks(marks);
+  dispatch(tr);
+}
+
 export function setMark(markType: MarkType, attrs: MarkAttrs): Command {
   return (state, dispatch) => {
     const { from, to, empty } = state.selection;
@@ -95,13 +122,11 @@ export function setMark(markType: MarkType, attrs: MarkAttrs): Command {
 
     if (empty) {
       if (dispatch) {
-        const marks = markType.isInSet(state.storedMarks || state.selection.$from.marks())
-          ? (state.storedMarks || state.selection.$from.marks()).filter((m) => m.type !== markType)
-          : state.storedMarks || state.selection.$from.marks();
-
-        let tr = state.tr.setStoredMarks([...marks, mark]);
-        tr = saveStoredMarksToParagraph(state, tr);
-        dispatch(tr);
+        const current = state.storedMarks || state.selection.$from.marks();
+        const sansType = markType.isInSet(current)
+          ? current.filter((m) => m.type !== markType)
+          : current;
+        dispatchStoredMarks(state, dispatch, [...sansType, mark]);
       }
       return true;
     }
@@ -109,26 +134,20 @@ export function setMark(markType: MarkType, attrs: MarkAttrs): Command {
     if (dispatch) {
       dispatch(state.tr.addMark(from, to, mark).scrollIntoView());
     }
-
     return true;
   };
 }
 
-/**
- * Remove a mark
- */
 export function removeMark(markType: MarkType): Command {
   return (state, dispatch) => {
     const { from, to, empty } = state.selection;
 
     if (empty) {
       if (dispatch) {
-        const marks = (state.storedMarks || state.selection.$from.marks()).filter(
+        const next = (state.storedMarks || state.selection.$from.marks()).filter(
           (m) => m.type !== markType
         );
-        let tr = state.tr.setStoredMarks(marks);
-        tr = saveStoredMarksToParagraph(state, tr);
-        dispatch(tr);
+        dispatchStoredMarks(state, dispatch, next);
       }
       return true;
     }
@@ -136,7 +155,6 @@ export function removeMark(markType: MarkType): Command {
     if (dispatch) {
       dispatch(state.tr.removeMark(from, to, markType).scrollIntoView());
     }
-
     return true;
   };
 }
