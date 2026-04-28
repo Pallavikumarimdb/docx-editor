@@ -149,14 +149,27 @@ function createParagraphChangeTrackerPlugin(): Plugin<ParagraphChangeTrackerStat
           newState.structuralChange = true;
         }
 
-        // Track which paragraphs were affected by each step
-        for (const step of tr.steps) {
+        // Track which paragraphs were affected by each step.
+        //
+        // Each step's `from`/`to`/`pos` are valid in the doc as it was *when
+        // that step ran*, not in `tr.doc` (the final doc after every step).
+        // We must remap them through the mapping of all subsequent steps
+        // before using them with `tr.doc.nodesBetween` / `tr.doc.nodeAt`,
+        // otherwise a later doc-shrinking step can leave the coords past
+        // the final doc end, crashing `Fragment.nodesBetween` on
+        // `undefined.nodeSize`.
+        for (let stepIndex = 0; stepIndex < tr.steps.length; stepIndex++) {
+          const step = tr.steps[stepIndex];
+          const remap = tr.mapping.slice(stepIndex + 1);
+
           if (step instanceof AddMarkStep || step instanceof RemoveMarkStep) {
-            const { ids, hasUntracked } = collectAffectedParaIdsFromMarkLikeStep(
-              tr.doc,
-              step.from,
-              step.to
-            );
+            const from = remap.map(step.from, 1);
+            const to = remap.map(step.to, -1);
+            if (to <= from) {
+              // Range fully covered by a later deletion; nothing to track.
+              continue;
+            }
+            const { ids, hasUntracked } = collectAffectedParaIdsFromMarkLikeStep(tr.doc, from, to);
             for (const id of ids) {
               newState.changedParaIds.add(id);
             }
@@ -167,9 +180,13 @@ function createParagraphChangeTrackerPlugin(): Plugin<ParagraphChangeTrackerStat
           }
 
           if (step instanceof AddNodeMarkStep || step instanceof RemoveNodeMarkStep) {
-            const pos = step.pos;
+            const pos = remap.map(step.pos, 1);
             const node = tr.doc.nodeAt(pos);
-            const end = node ? pos + node.nodeSize : pos + 1;
+            if (!node) {
+              // Target node was deleted by a later step.
+              continue;
+            }
+            const end = pos + node.nodeSize;
             const { ids, hasUntracked } = collectAffectedParaIds(tr.doc, pos, end);
             for (const id of ids) {
               newState.changedParaIds.add(id);
@@ -180,9 +197,14 @@ function createParagraphChangeTrackerPlugin(): Plugin<ParagraphChangeTrackerStat
             continue;
           }
 
+          // ReplaceStep / ReplaceAroundStep emit (newStart, newEnd) coords
+          // in the doc *after this step*. Remap those forward to `tr.doc`.
           const stepMap = step.getMap();
           stepMap.forEach((_oldStart, _oldEnd, newStart, newEnd) => {
-            const { ids, hasUntracked } = collectAffectedParaIds(tr.doc, newStart, newEnd);
+            const from = remap.map(newStart, 1);
+            const to = remap.map(newEnd, -1);
+            if (to < from) return;
+            const { ids, hasUntracked } = collectAffectedParaIds(tr.doc, from, to);
             for (const id of ids) {
               newState.changedParaIds.add(id);
             }
