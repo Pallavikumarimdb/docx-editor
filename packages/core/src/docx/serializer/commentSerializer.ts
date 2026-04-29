@@ -12,6 +12,7 @@
 
 import type { Comment, Paragraph, Run } from '../../types/content';
 import { escapeXml } from './xmlUtils';
+import { generateHexId } from '../../utils/hexId';
 
 /** Full OOXML namespace block matching Word/working implementations */
 const OOXML_NAMESPACES =
@@ -52,14 +53,6 @@ const OOXML_NAMESPACES =
   'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"';
 
 const MC_IGNORABLE = 'mc:Ignorable="w14 w15 w16se w16cid w16 w16cex w16sdtdh w16sdtfl w16du wp14"';
-
-/** Generate a random 8-char uppercase hex ID (used for paraId and durableId) */
-function generateHexId(): string {
-  return Math.floor(Math.random() * 0x7fffffff)
-    .toString(16)
-    .toUpperCase()
-    .padStart(8, '0');
-}
 
 function serializeRunContent(run: Run): string {
   let xml = '<w:r>';

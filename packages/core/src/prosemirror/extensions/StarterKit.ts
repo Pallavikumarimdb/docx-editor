@@ -64,6 +64,7 @@ import { ImageDragExtension } from './features/ImageDragExtension';
 import { ImagePasteExtension } from './features/ImagePasteExtension';
 import { DropCursorExtension } from './features/DropCursorExtension';
 import { ParagraphChangeTrackerExtension } from './features/ParagraphChangeTrackerExtension';
+import { ParaIdAllocatorExtension } from './features/ParaIdAllocatorExtension';
 import { BidiShortcutExtension } from './features/BidiShortcutExtension';
 import { PasteStyleInlinerExtension } from './features/PasteStyleInlinerExtension';
 
@@ -160,6 +161,10 @@ export function createStarterKit(options: StarterKitOptions = {}): AnyExtension[
     })
   );
   add('paragraphChangeTracker', ParagraphChangeTrackerExtension());
+  // Run after the change tracker so it sees paragraphs in their final
+  // state. Allocates `paraId` for any paragraph without one (e.g. new
+  // paragraphs from Enter / paste / programmatic insertion).
+  add('paraIdAllocator', ParaIdAllocatorExtension());
   add('bidiShortcut', BidiShortcutExtension());
 
   return extensions;

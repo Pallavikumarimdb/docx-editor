@@ -98,6 +98,17 @@ export class StyleResolver {
   }
 
   /**
+   * Whether a paragraph style with the given id is defined in the
+   * document's `styles.xml`. Used by the agent toolkit to refuse
+   * `set_paragraph_style({ styleId: 'NoSuchStyle' })` instead of
+   * silently writing an invalid `<w:pStyle>` reference.
+   */
+  hasParagraphStyle(styleId: string): boolean {
+    const style = this.stylesById.get(styleId);
+    return style?.type === 'paragraph';
+  }
+
+  /**
    * Resolve paragraph style properties, including docDefaults cascade
    *
    * @param styleId - The style ID to resolve (e.g., 'Heading1', 'Normal')
