@@ -13,6 +13,7 @@ import {
   clearTrackedChanges,
   ParagraphChangeTrackerExtension,
 } from './ParagraphChangeTrackerExtension';
+import { ExtensionManager } from '../ExtensionManager';
 
 // Minimal schema with paraId support
 const schema = new Schema({
@@ -41,7 +42,8 @@ const schema = new Schema({
 
 // Get the plugin from the extension
 const ext = ParagraphChangeTrackerExtension();
-const runtime = ext.onSchemaReady({ schema });
+const manager = new ExtensionManager([]);
+const runtime = ext.onSchemaReady({ schema, manager });
 const plugin = runtime.plugins![0];
 
 function createDoc(...paras: Array<{ text: string; paraId?: string }>) {

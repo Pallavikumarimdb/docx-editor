@@ -1,12 +1,18 @@
 /**
- * @eigenpal/docx-js-editor/core
+ * @eigenpal/docx-core (default entry point)
  *
- * Core entry point — types, parser, serializer, and utilities.
- * No React or ProseMirror dependencies.
+ * Fat barrel that re-exports the parser, serializer, agent, plugin
+ * registry, and the most-used types. No React/DOM imports.
+ *
+ * **When to import from `.` vs `./headless`:** identical for Node.js
+ * use; `.` is the convenient aggregate, `./headless` is its mirror with
+ * a slightly different name suffix. Adapter authors who only need a
+ * specific slice should prefer the smaller subpaths (`./docx`, `./agent`,
+ * `./prosemirror`, `./layout-*`, `./utils`) — they tree-shake better.
  *
  * @example
  * ```ts
- * import { parseDocx, serializeDocx, resolveColor } from '@eigenpal/docx-js-editor/core';
+ * import { parseDocx, serializeDocx, resolveColor } from '@eigenpal/docx-core';
  * ```
  */
 

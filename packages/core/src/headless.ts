@@ -1,13 +1,15 @@
 /**
- * Headless API Entry Point
+ * @eigenpal/docx-core/headless
  *
- * Provides document manipulation functionality without React/DOM dependencies.
- * Suitable for Node.js scripts, CLI tools, and server-side processing.
+ * Headless aggregate for Node.js scripts, CLI tools, and server-side
+ * processing. Same surface as the default `.` entry, named to make the
+ * "no DOM" intent explicit. Prefer the smaller subpaths (`./docx`,
+ * `./agent`, `./utils`, etc.) for new code — they tree-shake better.
  *
  * @example
  * ```ts
- * import { DocumentAgent, parseDocx, pluginRegistry } from '@eigenpal/docx-editor/headless';
- * import { docxtemplaterPlugin } from '@eigenpal/docx-editor/core-plugins';
+ * import { DocumentAgent, parseDocx, pluginRegistry } from '@eigenpal/docx-core/headless';
+ * import { docxtemplaterPlugin } from '@eigenpal/docx-core/core-plugins';
  *
  * // Register plugins
  * pluginRegistry.register(docxtemplaterPlugin);

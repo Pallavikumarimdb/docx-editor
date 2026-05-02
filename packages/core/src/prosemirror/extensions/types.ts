@@ -10,6 +10,7 @@
 
 import type { Schema, NodeSpec, MarkSpec } from 'prosemirror-model';
 import type { Plugin as PMPlugin, Command } from 'prosemirror-state';
+import type { ExtensionManager } from './ExtensionManager';
 
 // ============================================================================
 // PRIORITY
@@ -31,6 +32,14 @@ export const Priority = {
 
 export interface ExtensionContext {
   schema: Schema;
+  /**
+   * The manager that owns this extension. Use this in runtime callbacks
+   * (e.g. `handleKeyDown`) that need to dispatch commands, instead of
+   * reaching back to the `singletonManager` export — the latter forms a
+   * circular import that breaks when the package is consumed as a built
+   * bundle.
+   */
+  manager: ExtensionManager;
 }
 
 export type CommandMap = Record<string, (...args: any[]) => Command>;

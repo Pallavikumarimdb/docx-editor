@@ -128,3 +128,7 @@ export {
   findNextChange,
   findPreviousChange,
 } from './comments';
+
+// Table split
+export { getSplitCellDialogConfig, splitActiveTableCell } from './tableSplit';
+export type { SplitCellDialogConfig } from './tableSplit';

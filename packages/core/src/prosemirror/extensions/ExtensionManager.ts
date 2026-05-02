@@ -49,7 +49,7 @@ export class ExtensionManager {
       throw new Error('ExtensionManager: buildSchema() must be called before initializeRuntime()');
     }
 
-    const ctx: ExtensionContext = { schema: this.schema };
+    const ctx: ExtensionContext = { schema: this.schema, manager: this };
     const allKeyboardShortcuts: KeyboardShortcutMap[] = [];
     const allPlugins: PMPlugin[] = [];
     const allCommands: CommandMap = {};

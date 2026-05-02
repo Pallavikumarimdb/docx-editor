@@ -11,12 +11,12 @@ import { Plugin } from 'prosemirror-state';
 import { createExtension } from '../create';
 import { Priority } from '../types';
 import type { ExtensionRuntime, ExtensionContext } from '../types';
-import { singletonManager } from '../../schema';
 
 export const BidiShortcutExtension = createExtension({
   name: 'bidiShortcut',
   priority: Priority.High,
-  onSchemaReady(_ctx: ExtensionContext): ExtensionRuntime {
+  onSchemaReady(ctx: ExtensionContext): ExtensionRuntime {
+    const { manager } = ctx;
     return {
       plugins: [
         new Plugin({
@@ -27,7 +27,7 @@ export const BidiShortcutExtension = createExtension({
               const isMod = event.metaKey || event.ctrlKey;
               if (!isMod) return false;
 
-              const cmds = singletonManager.getCommands();
+              const cmds = manager.getCommands();
 
               if (event.code === 'ShiftLeft') {
                 event.preventDefault();

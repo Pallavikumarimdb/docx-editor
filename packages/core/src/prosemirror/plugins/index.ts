@@ -13,3 +13,11 @@ export {
 } from './selectionTracker';
 
 export type { SelectionContext, SelectionChangeCallback } from './selectionTracker';
+
+export {
+  suggestionModeKey,
+  createSuggestionModePlugin,
+  toggleSuggestionMode,
+  setSuggestionMode,
+  isSuggestionModeActive,
+} from './suggestionMode';
