@@ -20,6 +20,7 @@ import { Priority } from '../types';
 import type { ExtensionRuntime, ExtensionContext } from '../types';
 import type { Command, Transaction } from 'prosemirror-state';
 import type { TextFormatting } from '../../../types/document';
+import { mergeFontFamily } from '../../../utils/fontFamilyMerge';
 
 function chainCommands(...commands: Command[]): Command {
   return (state, dispatch, view) => {
@@ -179,7 +180,13 @@ const splitBlockClearBorders: Command = (state, dispatch, view) => {
             if (m.type.name === 'fontFamily') {
               const ascii = m.attrs.ascii as string | undefined;
               if (ascii && (!dtf.fontFamily || dtf.fontFamily.ascii !== ascii)) {
-                dtf.fontFamily = { ...dtf.fontFamily, ascii, hAnsi: m.attrs.hAnsi };
+                // Pair-aware merge so a stale asciiTheme (e.g. minorHAnsi from
+                // docDefaults) doesn't silently win over the user's explicit
+                // ascii — see fontFamilyMerge for the OOXML rule.
+                dtf.fontFamily = mergeFontFamily(dtf.fontFamily, {
+                  ascii,
+                  hAnsi: m.attrs.hAnsi as string | undefined,
+                }) as TextFormatting['fontFamily'];
                 dtfChanged = true;
               }
             }

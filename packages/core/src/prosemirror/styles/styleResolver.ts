@@ -18,6 +18,7 @@ import type {
   ParagraphFormatting,
   TextFormatting,
 } from '../../types/document';
+import { mergeFontFamily } from '../../utils/fontFamilyMerge';
 
 /**
  * Resolved style properties ready for rendering
@@ -316,8 +317,13 @@ export class StyleResolver {
     for (const key of Object.keys(source) as (keyof TextFormatting)[]) {
       const value = source[key];
       if (value !== undefined) {
-        if (typeof value === 'object' && value !== null) {
-          // Deep merge for objects like fontFamily, color, underline
+        if (key === 'fontFamily' && typeof value === 'object' && value !== null) {
+          result.fontFamily = mergeFontFamily(
+            result.fontFamily,
+            value as TextFormatting['fontFamily'] & object
+          );
+        } else if (typeof value === 'object' && value !== null) {
+          // Deep merge for objects like color, underline
           (result as Record<string, unknown>)[key] = {
             ...((result[key] as Record<string, unknown>) || {}),
             ...(value as Record<string, unknown>),

@@ -324,5 +324,71 @@ describe('StyleResolver', () => {
       expect(result.runFormatting?.fontFamily?.ascii).toBe('Cambria'); // Overridden
       expect(result.runFormatting?.fontFamily?.eastAsia).toBe('SimSun'); // Preserved from docDefaults
     });
+
+    // Regression for #387 — when docDefaults supplies a theme reference and
+    // a derived style supplies an explicit name for the SAME slot, the theme
+    // attr must NOT survive the merge. At the OOXML render layer the theme
+    // attr wins, so leaking `asciiTheme="minorHAnsi"` past an explicit
+    // `ascii="Arial"` resolves the run back to the theme font (Calibri).
+    test('explicit ascii/hAnsi from style clears inherited theme refs', () => {
+      const styleDefinitions: StyleDefinitions = {
+        docDefaults: {
+          rPr: {
+            fontFamily: {
+              ascii: 'Calibri',
+              hAnsi: 'Calibri',
+              asciiTheme: 'minorHAnsi',
+              hAnsiTheme: 'minorHAnsi',
+            },
+          },
+        },
+        styles: [
+          {
+            styleId: 'Heading1',
+            type: 'paragraph',
+            rPr: {
+              fontFamily: { ascii: 'Arial', hAnsi: 'Arial' },
+            },
+          },
+        ],
+      };
+
+      const resolver = createStyleResolver(styleDefinitions);
+      const result = resolver.resolveParagraphStyle('Heading1');
+
+      expect(result.runFormatting?.fontFamily?.ascii).toBe('Arial');
+      expect(result.runFormatting?.fontFamily?.hAnsi).toBe('Arial');
+      expect(result.runFormatting?.fontFamily?.asciiTheme).toBeUndefined();
+      expect(result.runFormatting?.fontFamily?.hAnsiTheme).toBeUndefined();
+    });
+
+    // Inverse: a style that supplies a theme ref must clear the inherited
+    // explicit name from that slot too.
+    test('explicit theme ref from style clears inherited ascii/hAnsi', () => {
+      const styleDefinitions: StyleDefinitions = {
+        docDefaults: {
+          rPr: {
+            fontFamily: { ascii: 'Calibri', hAnsi: 'Calibri' },
+          },
+        },
+        styles: [
+          {
+            styleId: 'Themed',
+            type: 'paragraph',
+            rPr: {
+              fontFamily: { asciiTheme: 'majorHAnsi', hAnsiTheme: 'majorHAnsi' },
+            },
+          },
+        ],
+      };
+
+      const resolver = createStyleResolver(styleDefinitions);
+      const result = resolver.resolveParagraphStyle('Themed');
+
+      expect(result.runFormatting?.fontFamily?.asciiTheme).toBe('majorHAnsi');
+      expect(result.runFormatting?.fontFamily?.hAnsiTheme).toBe('majorHAnsi');
+      expect(result.runFormatting?.fontFamily?.ascii).toBeUndefined();
+      expect(result.runFormatting?.fontFamily?.hAnsi).toBeUndefined();
+    });
   });
 });

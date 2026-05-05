@@ -48,6 +48,7 @@ import {
   type XmlElement,
 } from './xmlParser';
 import { resolveThemeFontRef } from './themeParser';
+import { mergeFontFamily } from '../utils/fontFamilyMerge';
 
 /**
  * Style map keyed by styleId
@@ -1088,14 +1089,19 @@ function mergeTextFormatting(
 
   const result = { ...target };
 
-  // Copy all defined properties from source
   for (const key of Object.keys(source) as (keyof TextFormatting)[]) {
     const value = source[key];
-    if (value !== undefined) {
-      (result as any)[key] =
-        typeof value === 'object' && value !== null
-          ? { ...((result[key] as any) || {}), ...value }
-          : value;
+    if (value === undefined) continue;
+    if (key === 'fontFamily' && typeof value === 'object' && value !== null) {
+      // Theme/explicit pairs travel together — see mergeFontFamily for why.
+      result.fontFamily = mergeFontFamily(
+        result.fontFamily,
+        value as TextFormatting['fontFamily'] & object
+      );
+    } else if (typeof value === 'object' && value !== null) {
+      (result as any)[key] = { ...((result[key] as any) || {}), ...value };
+    } else {
+      (result as any)[key] = value;
     }
   }
 
