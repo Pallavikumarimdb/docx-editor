@@ -283,6 +283,8 @@ function paragraphFormattingToAttrs(
     listMarkerFontFamily: paragraph.listRendering?.markerFontFamily || undefined,
     listMarkerFontSize: paragraph.listRendering?.markerFontSize || undefined,
     listLevelNumFmts: paragraph.listRendering?.levelNumFmts || undefined,
+    listAbstractNumId: paragraph.listRendering?.abstractNumId,
+    listStartOverride: paragraph.listRendering?.startOverride,
     // Store original inline formatting for lossless serialization round-trip
     _originalFormatting: formatting || undefined,
   };

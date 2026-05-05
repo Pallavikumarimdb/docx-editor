@@ -267,6 +267,8 @@ const paragraphNodeSpec: NodeSpec = {
     listMarkerFontFamily: { default: null },
     listMarkerFontSize: { default: null },
     listLevelNumFmts: { default: null },
+    listAbstractNumId: { default: null },
+    listStartOverride: { default: null },
     styleId: { default: null },
     borders: { default: null },
     shading: { default: null },

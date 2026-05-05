@@ -68,6 +68,10 @@ export interface ParagraphAttrs {
    * the correct format per token.
    */
   listLevelNumFmts?: NumberFormat[];
+  /** See ListRendering.abstractNumId. */
+  listAbstractNumId?: number;
+  /** See ListRendering.startOverride. */
+  listStartOverride?: number;
 
   // Style reference
   styleId?: string;

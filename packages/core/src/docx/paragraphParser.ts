@@ -1245,6 +1245,9 @@ export function parseParagraph(
           levelNumFmts.push(parent?.numFmt ?? 'decimal');
         }
 
+        const instance = numbering.getInstance(numId);
+        const overrideForLevel = instance?.levelOverrides?.find((o) => o.ilvl === ilvl);
+
         paragraph.listRendering = {
           level: ilvl,
           numId,
@@ -1257,6 +1260,8 @@ export function parseParagraph(
           // w:sz is in half-points; convert to points for downstream use
           markerFontSize: level.rPr?.fontSize ? level.rPr.fontSize / 2 : undefined,
           levelNumFmts,
+          abstractNumId: instance?.abstractNumId,
+          startOverride: overrideForLevel?.startOverride,
         };
 
         // Apply level's paragraph properties (indentation) as defaults.
