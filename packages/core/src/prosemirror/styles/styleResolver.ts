@@ -18,7 +18,7 @@ import type {
   ParagraphFormatting,
   TextFormatting,
 } from '../../types/document';
-import { mergeFontFamily } from '../../utils/fontFamilyMerge';
+import { mergeTextFormatting } from '../../utils/textFormattingMerge';
 
 /**
  * Resolved style properties ready for rendering
@@ -302,39 +302,11 @@ export class StyleResolver {
     return result;
   }
 
-  /**
-   * Merge text formatting (source overrides target)
-   */
   private mergeTextFormatting(
     target: TextFormatting | undefined,
     source: TextFormatting | undefined
   ): TextFormatting | undefined {
-    if (!source) return target;
-    if (!target) return source ? { ...source } : undefined;
-
-    const result = { ...target };
-
-    for (const key of Object.keys(source) as (keyof TextFormatting)[]) {
-      const value = source[key];
-      if (value !== undefined) {
-        if (key === 'fontFamily' && typeof value === 'object' && value !== null) {
-          result.fontFamily = mergeFontFamily(
-            result.fontFamily,
-            value as TextFormatting['fontFamily'] & object
-          );
-        } else if (typeof value === 'object' && value !== null) {
-          // Deep merge for objects like color, underline
-          (result as Record<string, unknown>)[key] = {
-            ...((result[key] as Record<string, unknown>) || {}),
-            ...(value as Record<string, unknown>),
-          };
-        } else {
-          (result as Record<string, unknown>)[key] = value;
-        }
-      }
-    }
-
-    return result;
+    return mergeTextFormatting(target, source);
   }
 }
 

@@ -45,6 +45,7 @@ import { emuToPixels } from '../../docx/imageParser';
 import { createStyleResolver, type StyleResolver } from '../styles';
 import type { TableAttrs, TableRowAttrs, TableCellAttrs } from '../schema/nodes';
 import { resolveColorToHex } from '../../utils/colorResolver';
+import { mergeTextFormatting } from '../../utils/textFormattingMerge';
 import type { Theme } from '../../types/document';
 
 /**
@@ -301,6 +302,8 @@ function paragraphFormattingToAttrs(
     attrs.spaceAfter = formatting?.spaceAfter ?? stylePpr?.spaceAfter;
     attrs.lineSpacing = formatting?.lineSpacing ?? stylePpr?.lineSpacing;
     attrs.lineSpacingRule = formatting?.lineSpacingRule ?? stylePpr?.lineSpacingRule;
+    // Carry through only the inline-explicit flags (never style-resolved).
+    if (formatting?.spacingOverrides) attrs.spacingOverrides = formatting.spacingOverrides;
     attrs.indentLeft = formatting?.indentLeft ?? stylePpr?.indentLeft;
     attrs.indentRight = formatting?.indentRight ?? stylePpr?.indentRight;
     attrs.indentFirstLine = formatting?.indentFirstLine ?? stylePpr?.indentFirstLine;
@@ -337,6 +340,7 @@ function paragraphFormattingToAttrs(
     attrs.spaceAfter = formatting?.spaceAfter;
     attrs.lineSpacing = formatting?.lineSpacing;
     attrs.lineSpacingRule = formatting?.lineSpacingRule;
+    if (formatting?.spacingOverrides) attrs.spacingOverrides = formatting.spacingOverrides;
     attrs.indentLeft = formatting?.indentLeft;
     attrs.indentRight = formatting?.indentRight;
     attrs.indentFirstLine = formatting?.indentFirstLine;
@@ -1094,46 +1098,6 @@ function convertRun(
   }
 
   return nodes;
-}
-
-/**
- * Merge two TextFormatting objects (source overrides target)
- */
-function mergeTextFormatting(
-  target: TextFormatting | undefined,
-  source: TextFormatting | undefined
-): TextFormatting | undefined {
-  if (!source && !target) return undefined;
-  if (!source) return target;
-  if (!target) return source;
-
-  // Start with target (style formatting), then overlay source (inline formatting)
-  const result: TextFormatting = { ...target };
-
-  // Merge each property - source (inline) takes precedence
-  if (source.bold !== undefined) result.bold = source.bold;
-  if (source.italic !== undefined) result.italic = source.italic;
-  if (source.underline !== undefined) result.underline = source.underline;
-  if (source.strike !== undefined) result.strike = source.strike;
-  if (source.doubleStrike !== undefined) result.doubleStrike = source.doubleStrike;
-  if (source.color !== undefined) {
-    const hasExplicitColor =
-      source.color.rgb ||
-      source.color.themeColor ||
-      source.color.themeTint ||
-      source.color.themeShade;
-    if (!source.color.auto || hasExplicitColor) {
-      result.color = source.color;
-    }
-  }
-  if (source.highlight !== undefined) result.highlight = source.highlight;
-  if (source.fontSize !== undefined) result.fontSize = source.fontSize;
-  if (source.fontFamily !== undefined) result.fontFamily = source.fontFamily;
-  if (source.vertAlign !== undefined) result.vertAlign = source.vertAlign;
-  if (source.allCaps !== undefined) result.allCaps = source.allCaps;
-  if (source.smallCaps !== undefined) result.smallCaps = source.smallCaps;
-
-  return result;
 }
 
 /**

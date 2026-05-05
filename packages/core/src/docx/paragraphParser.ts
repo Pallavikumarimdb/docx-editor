@@ -438,6 +438,14 @@ export function parseParagraphProperties(
     const line = parseNumericAttribute(spacing, 'w', 'line');
     if (line !== undefined) formatting.lineSpacing = line;
 
+    // See ParagraphFormatting.spacingOverrides.
+    const explicit: { before?: boolean; after?: boolean } = {};
+    if (before !== undefined) explicit.before = true;
+    if (after !== undefined) explicit.after = true;
+    if (explicit.before || explicit.after) {
+      formatting.spacingOverrides = explicit;
+    }
+
     const lineRule = getAttribute(spacing, 'w', 'lineRule');
     if (lineRule) {
       formatting.lineSpacingRule = lineRule as LineSpacingRule;

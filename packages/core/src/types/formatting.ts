@@ -224,6 +224,13 @@ export type ParagraphAlignment =
 /**
  * Complete paragraph formatting properties (w:pPr)
  */
+/**
+ * Records which before/after spacing values are authored on the paragraph.
+ * Layout uses these flags when direct formatting and inherited styles follow
+ * different placement rules.
+ */
+export type ParagraphSpacingOverrides = { before?: boolean; after?: boolean };
+
 export interface ParagraphFormatting {
   // Alignment
   /** Paragraph alignment (w:jc) */
@@ -244,6 +251,11 @@ export interface ParagraphFormatting {
   beforeAutospacing?: boolean;
   /** Auto space after (w:spacing/@w:afterAutospacing) */
   afterAutospacing?: boolean;
+  /**
+   * Paragraph-authored spacing sides. Layout keeps this provenance separate
+   * because direct values and inherited defaults follow different placement rules.
+   */
+  spacingOverrides?: ParagraphSpacingOverrides;
 
   // Indentation
   /** Left indent in twips (w:ind/@w:left) */
