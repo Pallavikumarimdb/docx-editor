@@ -1768,20 +1768,24 @@ function convertTextBox(textBox: TextBox, styleResolver: StyleResolver | null): 
 
 /**
  * Convert HeaderFooter content (array of Paragraph/Table blocks) to a ProseMirror document.
- * Used for editing headers/footers in their own ProseMirror editor.
+ * Used for editing headers/footers in their own ProseMirror editor and for the
+ * unified header/footer render pipeline. `theme` must be threaded for themeColor
+ * resolution in cell shading (`<w:shd w:themeFill=...>`) — without it, themed
+ * fills in HF tables fall back to the unresolved theme key.
  */
 export function headerFooterToProseDoc(
   content: Array<Paragraph | Table>,
-  options?: ToProseDocOptions
+  options?: ToProseDocOptions & { theme?: Theme | null }
 ): PMNode {
   const nodes: PMNode[] = [];
   const styleResolver = options?.styles ? createStyleResolver(options.styles) : null;
+  const theme = options?.theme ?? null;
 
   for (const block of content) {
     if (block.type === 'paragraph') {
       nodes.push(...convertParagraphWithTextBoxes(block, styleResolver));
     } else if (block.type === 'table') {
-      nodes.push(convertTable(block, styleResolver));
+      nodes.push(convertTable(block, styleResolver, theme));
     }
   }
 

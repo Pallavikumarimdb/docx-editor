@@ -30,7 +30,13 @@ export type {
 } from './schema';
 
 // Conversion
-export { toProseDoc, createEmptyDoc, fromProseDoc, updateDocumentContent } from './conversion';
+export {
+  toProseDoc,
+  createEmptyDoc,
+  fromProseDoc,
+  updateDocumentContent,
+  headerFooterToProseDoc,
+} from './conversion';
 export type { ToProseDocOptions } from './conversion';
 
 // Styles
