@@ -336,20 +336,21 @@ function extractFontsFromHeaderFooter(hf: HeaderFooter, fonts: Set<string>): voi
 }
 
 /**
- * Extract fonts from footnote
+ * Extract fonts from footnote. Footnote content can include both paragraphs
+ * and tables; route through the existing block dispatcher to cover both.
  */
 function extractFontsFromFootnote(footnote: Footnote, fonts: Set<string>): void {
-  for (const para of footnote.content) {
-    extractFontsFromParagraph(para, fonts);
+  for (const block of footnote.content) {
+    extractFontsFromBlock(block, fonts);
   }
 }
 
 /**
- * Extract fonts from endnote
+ * Extract fonts from endnote. See note on extractFontsFromFootnote.
  */
 function extractFontsFromEndnote(endnote: Endnote, fonts: Set<string>): void {
-  for (const para of endnote.content) {
-    extractFontsFromParagraph(para, fonts);
+  for (const block of endnote.content) {
+    extractFontsFromBlock(block, fonts);
   }
 }
 

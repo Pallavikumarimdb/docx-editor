@@ -1808,6 +1808,22 @@ export function headerFooterToProseDoc(
 }
 
 /**
+ * Convert footnote/endnote content (array of Paragraph/Table blocks) to a
+ * ProseMirror document. Mirrors `headerFooterToProseDoc` so footnotes flow
+ * through the same body pipeline (buildBoxTree → measureBlocks →
+ * paintFragment) and inherit its block support — paragraph + table + image
+ * + textBox + fields. Pre-PR, footnoteLayout's `convertFootnoteToContent`
+ * re-implemented run/paragraph conversion by hand and silently dropped
+ * tables, images, and fields nested inside a footnote.
+ */
+export function footnoteToProseDoc(
+  content: Array<Paragraph | Table>,
+  options?: ToProseDocOptions & { theme?: Theme | null }
+): PMNode {
+  return headerFooterToProseDoc(content, options);
+}
+
+/**
  * Returns true when `<w:br w:type="page"/>` appears anywhere in a paragraph.
  *
  * A hard page break is always a forced break per ECMA-376 §17.3.3.1. We used

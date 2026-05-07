@@ -1246,8 +1246,14 @@ export interface Footnote {
   id: number;
   /** Special footnote type */
   noteType?: 'normal' | 'separator' | 'continuationSeparator' | 'continuationNotice';
-  /** Content */
-  content: Paragraph[];
+  /**
+   * Content. Per ECMA-376 §17.11.10 footnotes can hold the same blocks as
+   * the body — paragraphs and tables. The parser previously only collected
+   * <w:p> children which silently dropped any <w:tbl> inside a footnote;
+   * widened to match HeaderFooter / TableCell shape so the body pipeline
+   * (toProseDoc → buildBoxTree) can render them uniformly.
+   */
+  content: (Paragraph | Table)[];
 }
 
 /**
@@ -1259,8 +1265,11 @@ export interface Endnote {
   id: number;
   /** Special endnote type */
   noteType?: 'normal' | 'separator' | 'continuationSeparator' | 'continuationNotice';
-  /** Content */
-  content: Paragraph[];
+  /**
+   * Content. Per ECMA-376 §17.11.4 endnotes can hold the same blocks as
+   * the body — paragraphs and tables. See note on `Footnote.content`.
+   */
+  content: (Paragraph | Table)[];
 }
 
 // ============================================================================

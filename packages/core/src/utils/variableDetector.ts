@@ -353,8 +353,13 @@ export function detectVariablesInNotes(notes: (Footnote | Endnote)[]): string[] 
   for (const note of notes) {
     if (!note.content) continue;
 
-    for (const paragraph of note.content) {
-      variables.push(...detectVariablesInParagraph(paragraph));
+    for (const block of note.content) {
+      // Footnote/endnote content can now hold tables too; the variable
+      // detector currently only walks paragraph runs (mustache template
+      // strings live inside text runs). Skip non-paragraph blocks until
+      // a separate pass is added for tables.
+      if (block.type !== 'paragraph') continue;
+      variables.push(...detectVariablesInParagraph(block));
     }
   }
 

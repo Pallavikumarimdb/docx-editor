@@ -28,6 +28,7 @@ import type {
   NoteNumberRestart,
   NumberFormat,
   Paragraph,
+  Table,
   Theme,
   RelationshipMap,
   MediaFile,
@@ -39,10 +40,12 @@ import {
   findChild,
   findChildren,
   getAttribute,
+  getChildElements,
   parseNumericAttribute,
   type XmlElement,
 } from './xmlParser';
 import { parseParagraph } from './paragraphParser';
+import { parseTable } from './tableParser';
 
 // ============================================================================
 // FOOTNOTE MAP INTERFACE
@@ -127,6 +130,32 @@ function parseNoteType(
 // ============================================================================
 
 /**
+ * Walk a footnote/endnote element's direct children in document order and
+ * collect block content (paragraphs + tables). Per ECMA-376 §17.11.10 a
+ * footnote can hold the same blocks as the body; preserving document order
+ * matters when a footnote interleaves text with a table.
+ */
+function parseNoteBlockContent(
+  element: XmlElement,
+  styles: StyleMap | null,
+  theme: Theme | null,
+  numbering: NumberingMap | null,
+  rels: RelationshipMap | null,
+  media: Map<string, MediaFile> | null
+): (Paragraph | Table)[] {
+  const blocks: (Paragraph | Table)[] = [];
+  for (const child of getChildElements(element)) {
+    const name = child.name ?? '';
+    if (name === 'w:p') {
+      blocks.push(parseParagraph(child, styles, theme, numbering, rels));
+    } else if (name === 'w:tbl') {
+      blocks.push(parseTable(child, styles, theme, numbering, rels, media));
+    }
+  }
+  return blocks;
+}
+
+/**
  * Parse a single footnote element (w:footnote)
  */
 function parseFootnote(
@@ -135,17 +164,13 @@ function parseFootnote(
   theme: Theme | null,
   numbering: NumberingMap | null,
   rels: RelationshipMap | null,
-  _media: Map<string, MediaFile> | null
+  media: Map<string, MediaFile> | null
 ): Footnote {
   const id = parseNumericAttribute(element, 'w', 'id') ?? 0;
   const typeAttr = getAttribute(element, 'w', 'type');
   const noteType = parseNoteType(typeAttr);
 
-  // Parse content paragraphs
-  const paragraphElements = findChildren(element, 'w', 'p');
-  const content: Paragraph[] = paragraphElements.map((pEl) =>
-    parseParagraph(pEl, styles, theme, numbering, rels)
-  );
+  const content = parseNoteBlockContent(element, styles, theme, numbering, rels, media);
 
   return {
     type: 'footnote',
@@ -251,17 +276,13 @@ function parseEndnote(
   theme: Theme | null,
   numbering: NumberingMap | null,
   rels: RelationshipMap | null,
-  _media: Map<string, MediaFile> | null
+  media: Map<string, MediaFile> | null
 ): Endnote {
   const id = parseNumericAttribute(element, 'w', 'id') ?? 0;
   const typeAttr = getAttribute(element, 'w', 'type');
   const noteType = parseNoteType(typeAttr);
 
-  // Parse content paragraphs
-  const paragraphElements = findChildren(element, 'w', 'p');
-  const content: Paragraph[] = paragraphElements.map((pEl) =>
-    parseParagraph(pEl, styles, theme, numbering, rels)
-  );
+  const content = parseNoteBlockContent(element, styles, theme, numbering, rels, media);
 
   return {
     type: 'endnote',
@@ -516,12 +537,16 @@ export function parseEndnoteProperties(element: XmlElement | null): EndnotePrope
  * Get plain text content of a footnote
  */
 export function getFootnoteText(footnote: Footnote): string {
-  // Import getParagraphText dynamically to avoid circular dependency
+  // Now that footnote.content can include tables (per ECMA-376 §17.11.10),
+  // skip non-paragraph blocks for the plain-text representation. Tables are
+  // still rendered visually via the body pipeline; they just don't
+  // contribute to this textual summary.
   const texts: string[] = [];
 
-  for (const para of footnote.content) {
+  for (const block of footnote.content) {
+    if (block.type !== 'paragraph') continue;
     const paraTexts: string[] = [];
-    for (const content of para.content) {
+    for (const content of block.content) {
       if (content.type === 'run') {
         for (const runContent of content.content) {
           if (runContent.type === 'text') {
@@ -540,11 +565,14 @@ export function getFootnoteText(footnote: Footnote): string {
  * Get plain text content of an endnote
  */
 export function getEndnoteText(endnote: Endnote): string {
+  // Same as getFootnoteText — skip non-paragraph blocks for the textual
+  // summary; tables still render visually downstream.
   const texts: string[] = [];
 
-  for (const para of endnote.content) {
+  for (const block of endnote.content) {
+    if (block.type !== 'paragraph') continue;
     const paraTexts: string[] = [];
-    for (const content of para.content) {
+    for (const content of block.content) {
       if (content.type === 'run') {
         for (const runContent of content.content) {
           if (runContent.type === 'text') {

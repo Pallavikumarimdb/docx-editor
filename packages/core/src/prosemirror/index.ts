@@ -36,6 +36,7 @@ export {
   fromProseDoc,
   updateDocumentContent,
   headerFooterToProseDoc,
+  footnoteToProseDoc,
 } from './conversion';
 export type { ToProseDocOptions } from './conversion';
 
