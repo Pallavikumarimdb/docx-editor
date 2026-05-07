@@ -552,9 +552,25 @@ function convertTable(
     tableStyle?.tblPr?.borders ??
     implicitTableGridStyle?.tblPr?.borders;
 
-  // Resolve default cell margins: table's own cellMargins > table style's cellMargins
+  // Resolve default cell margins via the OOXML cascade (§17.4.41 + §17.7.4.18):
+  //   1. inline w:tblCellMar on the table
+  //   2. resolved table style's tblPr.cellMargins (the basedOn chain is already
+  //      flattened during parse via resolveStyleInheritance, so this includes
+  //      values inherited from any ancestor style)
+  //   3. the document's default table style (the one marked w:default="1").
+  //      Tables that don't carry a tblStyle reference still inherit from this
+  //      per the spec; without this tier, such tables had no cellMargins at
+  //      all and the layout-bridge fell back to a hardcoded 7 px.
+  //
+  // The default-table-style ID varies by document language ("Normal Table",
+  // "TableNormal", "Tabelanormal", etc.), so we look it up by the parsed
+  // `w:default` flag rather than by name.
+  const defaultTableStyle = styleResolver?.getDefaultTableStyle();
   const tableCellMargins =
-    table.formatting?.cellMargins ?? tableStyle?.tblPr?.cellMargins ?? undefined;
+    table.formatting?.cellMargins ??
+    tableStyle?.tblPr?.cellMargins ??
+    defaultTableStyle?.tblPr?.cellMargins ??
+    undefined;
   const cellMarginsAttr = tableCellMargins
     ? {
         top: tableCellMargins.top?.value,
@@ -1775,33 +1791,19 @@ export function headerFooterToProseDoc(
 }
 
 /**
- * Returns true when `<w:br w:type="page"/>` appears INSIDE a paragraph after
- * some visible content. A page break that is the very first run content is
- * already handled by `renderedPageBreakBefore` on the paragraph attrs.
+ * Returns true when `<w:br w:type="page"/>` appears anywhere in a paragraph.
+ *
+ * A hard page break is always a forced break per ECMA-376 §17.3.3.1. We used
+ * to require visible content before the break (and rely on
+ * `renderedPageBreakBefore` for leading breaks), but that attr is informational
+ * only and not honored at layout, so a break-only paragraph (empty paragraph
+ * containing just `<w:r><w:br w:type="page"/></w:r>`) silently dropped its
+ * forced break — Word renders such paragraphs with the next paragraph on a
+ * fresh page.
  */
 function paragraphHasPageBreak(paragraph: Paragraph): boolean {
-  let sawVisibleContent = false;
-
   function visitRunContent(content: RunContent): boolean {
-    if (content.type === 'break') {
-      if (content.breakType === 'page') return sawVisibleContent;
-      sawVisibleContent = true;
-      return false;
-    }
-    if (
-      (content.type === 'text' && content.text.length > 0) ||
-      content.type === 'tab' ||
-      content.type === 'drawing' ||
-      content.type === 'shape' ||
-      content.type === 'symbol' ||
-      content.type === 'fieldChar' ||
-      content.type === 'instrText' ||
-      content.type === 'footnoteRef' ||
-      content.type === 'endnoteRef'
-    ) {
-      sawVisibleContent = true;
-    }
-    return false;
+    return content.type === 'break' && content.breakType === 'page';
   }
 
   function visit(item: Paragraph['content'][number]): boolean {
@@ -1825,11 +1827,6 @@ function paragraphHasPageBreak(paragraph: Paragraph): boolean {
       for (const inner of tc.content) {
         if (visit(inner)) return true;
       }
-      return false;
-    }
-    if (item.type === 'simpleField' || item.type === 'complexField') {
-      // Field result (page number, date, etc.) is visible content.
-      sawVisibleContent = true;
       return false;
     }
     return false;

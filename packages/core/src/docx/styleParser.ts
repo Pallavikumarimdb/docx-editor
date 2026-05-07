@@ -1280,6 +1280,24 @@ export function getDefaultCharacterStyle(styleMap: StyleMap): Style | undefined 
 }
 
 /**
+ * Get the default table style.
+ *
+ * Per ECMA-376 §17.7.4.18 (`<w:default>`), exactly one style of each type may
+ * be marked default; tables that do not specify a `w:tblStyle` inherit from
+ * that style. The styleId varies by document language ("Normal Table",
+ * "TableNormal", "Tabelanormal", etc.) — find it by the parsed `default` flag,
+ * not by name.
+ */
+export function getDefaultTableStyle(styleMap: StyleMap): Style | undefined {
+  for (const style of styleMap.values()) {
+    if (style.type === 'table' && style.default) {
+      return style;
+    }
+  }
+  return undefined;
+}
+
+/**
  * Get all styles of a specific type
  */
 export function getStylesByType(styleMap: StyleMap, type: StyleType): Style[] {

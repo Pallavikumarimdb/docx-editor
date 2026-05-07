@@ -54,6 +54,7 @@ export class StyleResolver {
   private readonly stylesById: Map<string, Style>;
   private readonly docDefaults: DocDefaults | undefined;
   private readonly defaultParagraphStyle: Style | undefined;
+  private readonly defaultTableStyle: Style | undefined;
 
   constructor(styleDefinitions: StyleDefinitions | undefined) {
     this.stylesById = new Map();
@@ -68,8 +69,9 @@ export class StyleResolver {
       }
     }
 
-    // Find default paragraph style
+    // Find defaults — paragraph and table
     this.defaultParagraphStyle = this.findDefaultStyle('paragraph');
+    this.defaultTableStyle = this.findDefaultStyle('table');
   }
 
   /**
@@ -227,6 +229,18 @@ export class StyleResolver {
   }
 
   /**
+   * Get the default table style (the one marked `w:default="1"`).
+   *
+   * Per ECMA-376 §17.7.4.18, tables that don't specify a `w:tblStyle`
+   * inherit from this style. The styleId varies by document language
+   * ("Normal Table", "TableNormal", "Tabelanormal", etc.) — find it by
+   * the parsed `default` flag, not by name.
+   */
+  getDefaultTableStyle(): Style | undefined {
+    return this.defaultTableStyle;
+  }
+
+  /**
    * Check if a style exists
    */
   hasStyle(styleId: string): boolean {
@@ -237,7 +251,7 @@ export class StyleResolver {
   // Private helpers
   // ============================================================================
 
-  private findDefaultStyle(type: 'paragraph' | 'character'): Style | undefined {
+  private findDefaultStyle(type: 'paragraph' | 'character' | 'table'): Style | undefined {
     // First try to find explicitly marked default
     for (const style of this.stylesById.values()) {
       if (style.type === type && style.default) {
