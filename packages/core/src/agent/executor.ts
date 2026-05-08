@@ -43,6 +43,7 @@ import type {
 } from '../types/agentApi';
 
 import { pluginRegistry } from '../core-plugins/registry';
+import { pixelsToEmu } from '../utils/units';
 
 // ============================================================================
 // MAIN EXECUTOR
@@ -723,8 +724,8 @@ function executeInsertImage(doc: Document, command: InsertImageCommand): Documen
     src: command.src,
     alt: command.alt,
     size: {
-      width: (command.width || 100) * 914400, // Convert pixels to EMU
-      height: (command.height || 100) * 914400,
+      width: pixelsToEmu(command.width || 100),
+      height: pixelsToEmu(command.height || 100),
     },
     wrap: { type: 'inline' },
   };

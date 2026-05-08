@@ -26,6 +26,7 @@ import type {
 import { serializeParagraph } from './paragraphSerializer';
 import { resetAutoIdCounter } from './runSerializer';
 import { serializeTable } from './tableSerializer';
+import { intAttr } from './xmlUtils';
 
 // ============================================================================
 // XML NAMESPACES
@@ -116,11 +117,11 @@ function serializeBorder(border: BorderSpec | undefined, elementName: string): s
   const attrs: string[] = [`w:val="${border.style}"`];
 
   if (border.size !== undefined) {
-    attrs.push(`w:sz="${border.size}"`);
+    attrs.push(`w:sz="${intAttr(border.size)}"`);
   }
 
   if (border.space !== undefined) {
-    attrs.push(`w:space="${border.space}"`);
+    attrs.push(`w:space="${intAttr(border.space)}"`);
   }
 
   if (border.color) {
@@ -241,11 +242,11 @@ function serializePageSize(props: SectionProperties): string {
   const attrs: string[] = [];
 
   if (props.pageWidth !== undefined) {
-    attrs.push(`w:w="${props.pageWidth}"`);
+    attrs.push(`w:w="${intAttr(props.pageWidth)}"`);
   }
 
   if (props.pageHeight !== undefined) {
-    attrs.push(`w:h="${props.pageHeight}"`);
+    attrs.push(`w:h="${intAttr(props.pageHeight)}"`);
   }
 
   if (props.orientation === 'landscape') {
@@ -264,31 +265,31 @@ function serializePageMargins(props: SectionProperties): string {
   const attrs: string[] = [];
 
   if (props.marginTop !== undefined) {
-    attrs.push(`w:top="${props.marginTop}"`);
+    attrs.push(`w:top="${intAttr(props.marginTop)}"`);
   }
 
   if (props.marginRight !== undefined) {
-    attrs.push(`w:right="${props.marginRight}"`);
+    attrs.push(`w:right="${intAttr(props.marginRight)}"`);
   }
 
   if (props.marginBottom !== undefined) {
-    attrs.push(`w:bottom="${props.marginBottom}"`);
+    attrs.push(`w:bottom="${intAttr(props.marginBottom)}"`);
   }
 
   if (props.marginLeft !== undefined) {
-    attrs.push(`w:left="${props.marginLeft}"`);
+    attrs.push(`w:left="${intAttr(props.marginLeft)}"`);
   }
 
   if (props.headerDistance !== undefined) {
-    attrs.push(`w:header="${props.headerDistance}"`);
+    attrs.push(`w:header="${intAttr(props.headerDistance)}"`);
   }
 
   if (props.footerDistance !== undefined) {
-    attrs.push(`w:footer="${props.footerDistance}"`);
+    attrs.push(`w:footer="${intAttr(props.footerDistance)}"`);
   }
 
   if (props.gutter !== undefined) {
-    attrs.push(`w:gutter="${props.gutter}"`);
+    attrs.push(`w:gutter="${intAttr(props.gutter)}"`);
   }
 
   if (attrs.length === 0) return '';
@@ -305,11 +306,11 @@ function serializeColumns(props: SectionProperties): string {
   const attrs: string[] = [];
 
   if (props.columnCount !== undefined && props.columnCount > 1) {
-    attrs.push(`w:num="${props.columnCount}"`);
+    attrs.push(`w:num="${intAttr(props.columnCount)}"`);
   }
 
   if (props.columnSpace !== undefined) {
-    attrs.push(`w:space="${props.columnSpace}"`);
+    attrs.push(`w:space="${intAttr(props.columnSpace)}"`);
   }
 
   if (props.equalWidth !== undefined) {
@@ -327,10 +328,10 @@ function serializeColumns(props: SectionProperties): string {
       .map((col) => {
         const colAttrs: string[] = [];
         if (col.width !== undefined) {
-          colAttrs.push(`w:w="${col.width}"`);
+          colAttrs.push(`w:w="${intAttr(col.width)}"`);
         }
         if (col.space !== undefined) {
-          colAttrs.push(`w:space="${col.space}"`);
+          colAttrs.push(`w:space="${intAttr(col.space)}"`);
         }
         return `<w:col ${colAttrs.join(' ')}/>`;
       })
@@ -353,15 +354,15 @@ function serializeLineNumbers(props: SectionProperties): string {
   const attrs: string[] = [];
 
   if (ln.countBy !== undefined) {
-    attrs.push(`w:countBy="${ln.countBy}"`);
+    attrs.push(`w:countBy="${intAttr(ln.countBy)}"`);
   }
 
   if (ln.start !== undefined) {
-    attrs.push(`w:start="${ln.start}"`);
+    attrs.push(`w:start="${intAttr(ln.start)}"`);
   }
 
   if (ln.distance !== undefined) {
-    attrs.push(`w:distance="${ln.distance}"`);
+    attrs.push(`w:distance="${intAttr(ln.distance)}"`);
   }
 
   if (ln.restart) {

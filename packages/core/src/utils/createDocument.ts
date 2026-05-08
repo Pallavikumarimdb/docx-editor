@@ -262,14 +262,18 @@ export interface CreateEmptyDocumentOptions {
 export function createEmptyDocument(options: CreateEmptyDocumentOptions = {}): Document {
   const sectionProps = getDefaultSectionProperties();
 
-  // Apply custom options
-  if (options.pageWidth !== undefined) sectionProps.pageWidth = options.pageWidth;
-  if (options.pageHeight !== undefined) sectionProps.pageHeight = options.pageHeight;
+  // Apply custom options. Twips are integer-typed in OOXML, and callers
+  // typically compute them as `inches * 1440` which produces drift like
+  // `0.7 * 1440 === 1008.0000000000001`. Round at the API boundary so the
+  // model never carries a fractional twip.
+  if (options.pageWidth !== undefined) sectionProps.pageWidth = Math.round(options.pageWidth);
+  if (options.pageHeight !== undefined) sectionProps.pageHeight = Math.round(options.pageHeight);
   if (options.orientation !== undefined) sectionProps.orientation = options.orientation;
-  if (options.marginTop !== undefined) sectionProps.marginTop = options.marginTop;
-  if (options.marginBottom !== undefined) sectionProps.marginBottom = options.marginBottom;
-  if (options.marginLeft !== undefined) sectionProps.marginLeft = options.marginLeft;
-  if (options.marginRight !== undefined) sectionProps.marginRight = options.marginRight;
+  if (options.marginTop !== undefined) sectionProps.marginTop = Math.round(options.marginTop);
+  if (options.marginBottom !== undefined)
+    sectionProps.marginBottom = Math.round(options.marginBottom);
+  if (options.marginLeft !== undefined) sectionProps.marginLeft = Math.round(options.marginLeft);
+  if (options.marginRight !== undefined) sectionProps.marginRight = Math.round(options.marginRight);
 
   // Create initial paragraph content
   const textContent: TextContent = {

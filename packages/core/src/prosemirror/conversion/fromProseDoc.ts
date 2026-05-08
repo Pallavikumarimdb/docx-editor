@@ -801,13 +801,12 @@ function createImageRun(node: PMNode): Run {
 
   // Determine wrap type from attrs (default: inline)
   const wrapType = attrs.wrapType || 'inline';
-  const PX_TO_EMU = 914400 / 96;
 
   const wrap: import('../../types/content').ImageWrap = { type: wrapType };
-  if (attrs.distTop !== undefined) wrap.distT = Math.round(attrs.distTop * PX_TO_EMU);
-  if (attrs.distBottom !== undefined) wrap.distB = Math.round(attrs.distBottom * PX_TO_EMU);
-  if (attrs.distLeft !== undefined) wrap.distL = Math.round(attrs.distLeft * PX_TO_EMU);
-  if (attrs.distRight !== undefined) wrap.distR = Math.round(attrs.distRight * PX_TO_EMU);
+  if (attrs.distTop !== undefined) wrap.distT = pixelsToEmu(attrs.distTop);
+  if (attrs.distBottom !== undefined) wrap.distB = pixelsToEmu(attrs.distBottom);
+  if (attrs.distLeft !== undefined) wrap.distL = pixelsToEmu(attrs.distLeft);
+  if (attrs.distRight !== undefined) wrap.distR = pixelsToEmu(attrs.distRight);
 
   // Restore wrapText from PM attr
   if (attrs.wrapText) {
@@ -882,8 +881,7 @@ function createImageRun(node: PMNode): Run {
       outset: 'solid',
     };
     image.outline = {
-      // Convert pixels back to EMU (1 px = 914400/96 EMU)
-      width: Math.round(attrs.borderWidth * (914400 / 96)),
+      width: pixelsToEmu(attrs.borderWidth),
       color: attrs.borderColor ? { rgb: attrs.borderColor.replace('#', '') } : undefined,
       style: attrs.borderKind
         ? (cssToOoxmlStyle[
@@ -920,8 +918,8 @@ function createShapeRun(node: PMNode): Run {
     shapeType: (attrs.shapeType || 'rect') as Shape['shapeType'],
     id: attrs.shapeId || undefined,
     size: {
-      width: attrs.width ? Math.round(attrs.width * (914400 / 96)) : 0,
-      height: attrs.height ? Math.round(attrs.height * (914400 / 96)) : 0,
+      width: attrs.width ? pixelsToEmu(attrs.width) : 0,
+      height: attrs.height ? pixelsToEmu(attrs.height) : 0,
     },
   };
 
@@ -964,7 +962,7 @@ function createShapeRun(node: PMNode): Run {
       dashed: 'dash',
     };
     shape.outline = {
-      width: Math.round(attrs.outlineWidth * (914400 / 96)),
+      width: pixelsToEmu(attrs.outlineWidth),
       color: attrs.outlineColor ? { rgb: attrs.outlineColor.replace('#', '') } : undefined,
       style: attrs.outlineStyle
         ? (cssToOoxml[attrs.outlineStyle] as import('../../types/content').ShapeOutline['style']) ||
@@ -1617,18 +1615,16 @@ function convertPMTextBox(node: PMNode): Paragraph {
     shapeType: 'rect',
     id: attrs.textBoxId || undefined,
     size: {
-      width: attrs.width ? Math.round(attrs.width * (914400 / 96)) : 0,
-      height: attrs.height ? Math.round(attrs.height * (914400 / 96)) : 0,
+      width: attrs.width ? pixelsToEmu(attrs.width) : 0,
+      height: attrs.height ? pixelsToEmu(attrs.height) : 0,
     },
     textBody: {
       content: childParagraphs.length > 0 ? childParagraphs : [{ type: 'paragraph', content: [] }],
       margins: {
-        top: attrs.marginTop != null ? Math.round(attrs.marginTop * (914400 / 96)) : undefined,
-        bottom:
-          attrs.marginBottom != null ? Math.round(attrs.marginBottom * (914400 / 96)) : undefined,
-        left: attrs.marginLeft != null ? Math.round(attrs.marginLeft * (914400 / 96)) : undefined,
-        right:
-          attrs.marginRight != null ? Math.round(attrs.marginRight * (914400 / 96)) : undefined,
+        top: attrs.marginTop != null ? pixelsToEmu(attrs.marginTop) : undefined,
+        bottom: attrs.marginBottom != null ? pixelsToEmu(attrs.marginBottom) : undefined,
+        left: attrs.marginLeft != null ? pixelsToEmu(attrs.marginLeft) : undefined,
+        right: attrs.marginRight != null ? pixelsToEmu(attrs.marginRight) : undefined,
       },
     },
   };
@@ -1649,7 +1645,7 @@ function convertPMTextBox(node: PMNode): Paragraph {
       dashed: 'dash',
     };
     shape.outline = {
-      width: Math.round(attrs.outlineWidth * (914400 / 96)),
+      width: pixelsToEmu(attrs.outlineWidth),
       color: attrs.outlineColor ? { rgb: attrs.outlineColor.replace('#', '') } : undefined,
       style: attrs.outlineStyle
         ? (cssToOoxmlOutline[
