@@ -2,8 +2,180 @@
  * Image Extension — inline/floating image node
  */
 
+import type { Command } from 'prosemirror-state';
 import { createNodeExtension } from '../create';
+import type { ExtensionContext, ExtensionRuntime } from '../types';
 import type { ImageAttrs } from '../../schema/nodes';
+import type { WrapType } from '../../../docx/wrapTypes';
+
+/**
+ * Anchored wrap-type targets — the OOXML wrap types except `inline`.
+ */
+export type AnchorWrapType = Exclude<WrapType, 'inline'>;
+
+/**
+ * User-facing layout choices that mirror Word's Wrap Text menu. These are
+ * directional shortcuts that fold (`wrapType`, `cssFloat`) into a single
+ * picker option:
+ *
+ *   - `squareLeft`  — image floats left, text wraps on the right
+ *   - `squareRight` — image floats right, text wraps on the left
+ *   - `inline`      — image flows in the line as a glyph
+ *   - the other targets are 1:1 with their OOXML wrap types
+ *
+ * `setImageWrapType` accepts both raw OOXML targets (square / tight / through
+ * / topAndBottom / behind / inFront / inline) and the directional convenience
+ * targets.
+ */
+export type ImageLayoutTarget = AnchorWrapType | 'squareLeft' | 'squareRight' | 'inline';
+
+/**
+ * Optional context for `setImageWrapType` transitions:
+ *
+ *   - `initialPositionEmu`: when promoting an inline image to an anchor, the
+ *     caller passes the inline image's current rendered position relative to
+ *     the column origin in EMUs. The command stores this as the anchor's
+ *     `wp:positionH` / `wp:positionV` so Word renders the new float exactly
+ *     where the inline image used to sit (Word's own behavior).
+ */
+export interface SetImageWrapTypeOptions {
+  initialPositionEmu?: { horizontalEmu: number; verticalEmu: number };
+}
+
+/**
+ * Resolve the consistent (`wrapType`, `displayMode`, `cssFloat`, `wrapText`)
+ * tuple for a target layout choice, given the image's current attrs.
+ *
+ * - `squareLeft` / `squareRight` are directional convenience targets that pin
+ *   `cssFloat` and `wrapText` explicitly. They preserve `wrapType` when it's
+ *   already `tight` / `through` so the user keeps the polygon-clipped XML
+ *   they came in with; otherwise they normalize to `square`.
+ * - `square` / `tight` / `through` keep the existing `cssFloat` if it's
+ *   `left`/`right`, otherwise default to `left` (Word's default).
+ * - `topAndBottom` is a block-band that breaks text above and below.
+ * - `behind` / `inFront` (`wp:wrapNone`) paint at a position with no flow.
+ *
+ * `wrapText` is the OOXML hint for which side(s) text flows on. We always
+ * emit it alongside `cssFloat` so the saved DOCX agrees with the in-memory
+ * cssFloat after a round-trip — without this, `fromProseDoc` writes a stale
+ * `wrapText` from the original load and reopening the doc silently flips the
+ * image side.
+ */
+type AnchorAttrs = Pick<
+  ImageAttrs,
+  | 'wrapType'
+  | 'displayMode'
+  | 'cssFloat'
+  | 'wrapText'
+  | 'position'
+  | 'distTop'
+  | 'distBottom'
+  | 'distLeft'
+  | 'distRight'
+>;
+
+export function resolveAnchorAttrs(
+  target: ImageLayoutTarget,
+  current: Pick<ImageAttrs, 'wrapType' | 'cssFloat' | 'position'>,
+  opts?: SetImageWrapTypeOptions
+): AnchorAttrs {
+  // Pick the `position` to write. When promoting inline → anchor, Word
+  // anchors the float at the inline image's current X/Y so the result lands
+  // exactly where the user was looking. Callers measure that in EMUs and
+  // pass it via `initialPositionEmu`.
+  const buildAnchorPosition = (): ImageAttrs['position'] => {
+    if (current.position?.horizontal && current.position?.vertical) {
+      return current.position;
+    }
+    if (opts?.initialPositionEmu) {
+      return {
+        horizontal: {
+          relativeTo: 'column',
+          posOffset: opts.initialPositionEmu.horizontalEmu,
+        },
+        vertical: {
+          relativeTo: 'paragraph',
+          posOffset: opts.initialPositionEmu.verticalEmu,
+        },
+      };
+    }
+    return {
+      horizontal: { relativeTo: 'column', posOffset: 0 },
+      vertical: { relativeTo: 'paragraph', posOffset: 0 },
+    };
+  };
+
+  switch (target) {
+    case 'inline':
+      // Drop every anchor-only attr so the saver emits `<wp:inline>` and the
+      // renderer routes the image through the inline-glyph path. The
+      // `dist*` margins existed to keep wrapped text away from the float;
+      // an inline glyph doesn't need them, and leaving them populates
+      // `<wp:inline distT/B/L/R>` with stale anchor padding that would add
+      // visible whitespace around the inline image after a save round-trip.
+      return {
+        wrapType: 'inline',
+        displayMode: 'inline',
+        cssFloat: 'none',
+        wrapText: undefined,
+        position: undefined,
+        distTop: undefined,
+        distBottom: undefined,
+        distLeft: undefined,
+        distRight: undefined,
+      };
+    case 'squareLeft':
+    case 'squareRight': {
+      const cssFloat: ImageAttrs['cssFloat'] = target === 'squareLeft' ? 'left' : 'right';
+      // Image-on-left ⇒ text flows on the right, and vice versa.
+      const wrapText: ImageAttrs['wrapText'] = target === 'squareLeft' ? 'right' : 'left';
+      // Keep `tight` / `through` if the image came in with one — flipping the
+      // anchor side shouldn't drop the polygon-clipping XML.
+      const wrapType: ImageAttrs['wrapType'] =
+        current.wrapType === 'tight' || current.wrapType === 'through'
+          ? current.wrapType
+          : 'square';
+      return {
+        wrapType,
+        displayMode: 'float',
+        cssFloat,
+        wrapText,
+        position: buildAnchorPosition(),
+      };
+    }
+    case 'square':
+    case 'tight':
+    case 'through': {
+      const cssFloat: ImageAttrs['cssFloat'] =
+        current.cssFloat === 'left' || current.cssFloat === 'right' ? current.cssFloat : 'left';
+      const wrapText: ImageAttrs['wrapText'] = cssFloat === 'left' ? 'right' : 'left';
+      return {
+        wrapType: target,
+        displayMode: 'float',
+        cssFloat,
+        wrapText,
+        position: buildAnchorPosition(),
+      };
+    }
+    case 'topAndBottom':
+      return {
+        wrapType: 'topAndBottom',
+        displayMode: 'block',
+        cssFloat: 'none',
+        wrapText: 'bothSides',
+        position: buildAnchorPosition(),
+      };
+    case 'behind':
+    case 'inFront':
+      return {
+        wrapType: target,
+        displayMode: 'float',
+        cssFloat: 'none',
+        wrapText: 'bothSides',
+        position: buildAnchorPosition(),
+      };
+  }
+}
 
 export const ImageExtension = createNodeExtension({
   name: 'image',
@@ -140,5 +312,56 @@ export const ImageExtension = createNodeExtension({
 
       return ['img', domAttrs];
     },
+  },
+  onSchemaReady(ctx: ExtensionContext): ExtensionRuntime {
+    const imageType = ctx.schema.nodes.image;
+
+    /**
+     * Mutate the image at `pos` to the target wrap-layout. Returns false (and
+     * stays a no-op) when the image is currently `inline` — that transition
+     * is structural and lives in a follow-up.
+     */
+    const setImageWrapType =
+      (pos: number, target: ImageLayoutTarget, opts?: SetImageWrapTypeOptions): Command =>
+      (state, dispatch) => {
+        const node = state.doc.nodeAt(pos);
+        if (!node || node.type !== imageType) return false;
+        const attrs = node.attrs as ImageAttrs;
+        const next = resolveAnchorAttrs(
+          target,
+          {
+            wrapType: attrs.wrapType,
+            cssFloat: attrs.cssFloat,
+            position: attrs.position,
+          },
+          opts
+        );
+        if (
+          attrs.wrapType === next.wrapType &&
+          attrs.displayMode === next.displayMode &&
+          attrs.cssFloat === next.cssFloat &&
+          attrs.wrapText === next.wrapText &&
+          // Position equality check is shallow; for inline → inline this is a
+          // no-op. For anchor → anchor with same (wrapType, cssFloat, wrapText)
+          // we keep the existing position untouched anyway.
+          attrs.position === next.position
+        ) {
+          return true;
+        }
+        if (dispatch) {
+          dispatch(state.tr.setNodeMarkup(pos, undefined, { ...attrs, ...next }));
+        }
+        return true;
+      };
+
+    return {
+      commands: {
+        setImageWrapType: (
+          pos: number,
+          target: ImageLayoutTarget,
+          opts?: SetImageWrapTypeOptions
+        ) => setImageWrapType(pos, target, opts),
+      },
+    };
   },
 });

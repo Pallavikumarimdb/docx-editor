@@ -114,6 +114,10 @@ export type { TableContextInfo, BorderPreset } from './table';
 // Page break
 export { insertPageBreak } from './pageBreak';
 
+// Image commands
+export { setImageWrapType } from './image';
+export type { AnchorWrapType, ImageLayoutTarget, SetImageWrapTypeOptions } from './image';
+
 // Table of Contents
 export { generateTOC } from './paragraph';
 
