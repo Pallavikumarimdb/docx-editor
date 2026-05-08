@@ -189,6 +189,32 @@ export interface ImageAttrs {
   wrapText?: string;
   /** Hyperlink URL for clickable image */
   hlinkHref?: string;
+  /**
+   * `wp:srcRect` crop fractions in [0, 1]. Each side is the fraction of the
+   * source image that should be hidden. Renders as CSS `clip-path: inset(...)`.
+   */
+  cropTop?: number;
+  cropRight?: number;
+  cropBottom?: number;
+  cropLeft?: number;
+  /** `a:alphaModFix amt` mapped to CSS `opacity` in [0, 1]. */
+  opacity?: number;
+  /**
+   * `wp:effectExtent` padding (pixels) — extra space reserved around the image
+   * for shadows, glows, soft edges, etc. Applied as outer margin so the
+   * effect isn't clipped by surrounding content.
+   */
+  effectExtentTop?: number;
+  effectExtentBottom?: number;
+  effectExtentLeft?: number;
+  effectExtentRight?: number;
+  /**
+   * `wp:anchor layoutInCell`. Tri-state: true / false / undefined (= Word's
+   * default "1"). Floating-only; round-tripped on save.
+   */
+  layoutInCell?: boolean;
+  /** `wp:anchor allowOverlap`. Same tri-state convention as `layoutInCell`. */
+  allowOverlap?: boolean;
 }
 
 /**

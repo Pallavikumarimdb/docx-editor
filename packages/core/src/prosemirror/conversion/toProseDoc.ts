@@ -1365,6 +1365,13 @@ function convertImage(image: Image): PMNode {
     borderKind = image.outline.style ? styleMap[image.outline.style] || 'solid' : 'solid';
   }
 
+  // Effect extent (shadow/glow padding) is parsed in EMU; convert to px so
+  // the renderer can apply it as outer margin.
+  const effectExtentTop = image.padding?.top ? emuToPixels(image.padding.top) : undefined;
+  const effectExtentBottom = image.padding?.bottom ? emuToPixels(image.padding.bottom) : undefined;
+  const effectExtentLeft = image.padding?.left ? emuToPixels(image.padding.left) : undefined;
+  const effectExtentRight = image.padding?.right ? emuToPixels(image.padding.right) : undefined;
+
   return schema.node('image', {
     src: image.src || '',
     alt: image.alt,
@@ -1386,6 +1393,17 @@ function convertImage(image: Image): PMNode {
     borderKind: borderKind,
     wrapText: wrapText,
     hlinkHref: image.hlinkHref,
+    cropTop: image.crop?.top,
+    cropRight: image.crop?.right,
+    cropBottom: image.crop?.bottom,
+    cropLeft: image.crop?.left,
+    opacity: image.opacity,
+    effectExtentTop,
+    effectExtentBottom,
+    effectExtentLeft,
+    effectExtentRight,
+    layoutInCell: image.layoutInCell,
+    allowOverlap: image.allowOverlap,
   });
 }
 
@@ -1577,6 +1595,21 @@ function textFormattingToMarks(
   // Text outline (w:outline)
   if (formatting.outline) {
     marks.push(schema.mark('textOutline'));
+  }
+
+  // Hidden text (w:vanish)
+  if (formatting.hidden) {
+    marks.push(schema.mark('hidden'));
+  }
+
+  // Per-run RTL (w:rtl) — independent of paragraph direction
+  if (formatting.rtl) {
+    marks.push(schema.mark('rtl'));
+  }
+
+  // Text effect animations (w:effect)
+  if (formatting.effect && formatting.effect !== 'none') {
+    marks.push(schema.mark('textEffect', { effect: formatting.effect }));
   }
 
   return marks;

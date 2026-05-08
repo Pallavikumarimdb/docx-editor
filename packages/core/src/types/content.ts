@@ -392,6 +392,20 @@ export interface ImagePadding {
 }
 
 /**
+ * Image crop, expressed as fractions of the source image to trim from each
+ * edge. OOXML's `<a:srcRect l="10000" t="0" r="5000" b="0"/>` uses units of
+ * 1/100000 (so 10000 → 0.1 → 10% trimmed from the left). We store the
+ * normalised fraction so both the renderer and the saver can read it
+ * directly without re-parsing units.
+ */
+export interface ImageCrop {
+  left?: number;
+  top?: number;
+  right?: number;
+  bottom?: number;
+}
+
+/**
  * Embedded image (w:drawing)
  */
 export interface Image {
@@ -422,8 +436,25 @@ export interface Image {
   transform?: ImageTransform;
   /** Padding around image */
   padding?: ImagePadding;
+  /** Source-image crop (fractional, OOXML `a:srcRect`). */
+  crop?: ImageCrop;
+  /** Opacity in [0, 1] (OOXML `a:alphaModFix amt`). Undefined = fully opaque. */
+  opacity?: number;
   /** Whether this is a decorative image */
   decorative?: boolean;
+  /**
+   * `wp:anchor layoutInCell` — when true (default), an anchored image inside
+   * a table cell is constrained to the cell. When false, the image escapes
+   * the cell into the page area. Round-tripped on save.
+   */
+  layoutInCell?: boolean;
+  /**
+   * `wp:anchor allowOverlap` — when true (default), anchored objects may
+   * overlap; when false, Word repositions them to avoid collisions. We
+   * don't currently reposition; we round-trip the flag so saving preserves
+   * the author's intent.
+   */
+  allowOverlap?: boolean;
   /** Hyperlink URL for clickable image */
   hlinkHref?: string;
   /** Image outline/border */

@@ -896,6 +896,49 @@ function createImageRun(node: PMNode): Run {
     image.hlinkHref = attrs.hlinkHref;
   }
 
+  // Round-trip wp:srcRect crop fractions
+  if (
+    attrs.cropTop !== undefined ||
+    attrs.cropRight !== undefined ||
+    attrs.cropBottom !== undefined ||
+    attrs.cropLeft !== undefined
+  ) {
+    const crop: import('../../types/content').ImageCrop = {};
+    if (attrs.cropTop !== undefined && attrs.cropTop !== null) crop.top = attrs.cropTop;
+    if (attrs.cropRight !== undefined && attrs.cropRight !== null) crop.right = attrs.cropRight;
+    if (attrs.cropBottom !== undefined && attrs.cropBottom !== null) crop.bottom = attrs.cropBottom;
+    if (attrs.cropLeft !== undefined && attrs.cropLeft !== null) crop.left = attrs.cropLeft;
+    if (Object.keys(crop).length > 0) image.crop = crop;
+  }
+
+  // Round-trip a:alphaModFix opacity
+  if (attrs.opacity !== undefined && attrs.opacity !== null && attrs.opacity < 1) {
+    image.opacity = attrs.opacity;
+  }
+
+  // Round-trip wp:anchor layoutInCell / allowOverlap (tri-state)
+  if (attrs.layoutInCell !== undefined && attrs.layoutInCell !== null) {
+    image.layoutInCell = attrs.layoutInCell;
+  }
+  if (attrs.allowOverlap !== undefined && attrs.allowOverlap !== null) {
+    image.allowOverlap = attrs.allowOverlap;
+  }
+
+  // Round-trip wp:effectExtent padding (px → EMU)
+  if (
+    attrs.effectExtentTop ||
+    attrs.effectExtentBottom ||
+    attrs.effectExtentLeft ||
+    attrs.effectExtentRight
+  ) {
+    const padding: import('../../types/content').ImagePadding = {};
+    if (attrs.effectExtentTop) padding.top = pixelsToEmu(attrs.effectExtentTop);
+    if (attrs.effectExtentBottom) padding.bottom = pixelsToEmu(attrs.effectExtentBottom);
+    if (attrs.effectExtentLeft) padding.left = pixelsToEmu(attrs.effectExtentLeft);
+    if (attrs.effectExtentRight) padding.right = pixelsToEmu(attrs.effectExtentRight);
+    if (Object.keys(padding).length > 0) image.padding = padding;
+  }
+
   const drawingContent: DrawingContent = {
     type: 'drawing',
     image,
@@ -1102,6 +1145,18 @@ function marksToTextFormatting(marks: readonly Mark[]): TextFormatting {
 
       case 'textOutline':
         formatting.outline = true;
+        break;
+
+      case 'hidden':
+        formatting.hidden = true;
+        break;
+
+      case 'rtl':
+        formatting.rtl = true;
+        break;
+
+      case 'textEffect':
+        formatting.effect = mark.attrs.effect || 'blinkBackground';
         break;
 
       // hyperlink is handled separately

@@ -205,6 +205,17 @@ export const ImageExtension = createNodeExtension({
       borderKind: { default: null },
       wrapText: { default: null },
       hlinkHref: { default: null },
+      cropTop: { default: null },
+      cropRight: { default: null },
+      cropBottom: { default: null },
+      cropLeft: { default: null },
+      opacity: { default: null },
+      effectExtentTop: { default: null },
+      effectExtentBottom: { default: null },
+      effectExtentLeft: { default: null },
+      effectExtentRight: { default: null },
+      layoutInCell: { default: null },
+      allowOverlap: { default: null },
     },
     parseDOM: [
       {
