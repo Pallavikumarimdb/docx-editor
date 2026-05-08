@@ -21,6 +21,7 @@ import type {
   SectionProperties,
 } from '../../types/document';
 import type { FloatingTableProperties, TableLook } from '../../types';
+import type { WrapType } from '../../docx/wrapTypes';
 
 /**
  * Paragraph node attributes - maps to ParagraphFormatting
@@ -161,7 +162,7 @@ export interface ImageAttrs {
   height?: number;
   rId?: string;
   /** Wrap type from DOCX: inline, square, tight, through, topAndBottom, behind, inFront */
-  wrapType?: 'inline' | 'square' | 'tight' | 'through' | 'topAndBottom' | 'behind' | 'inFront';
+  wrapType?: WrapType;
   /** Display mode for CSS: inline (flows with text), float (left/right float), block (centered) */
   displayMode?: 'inline' | 'float' | 'block';
   /** CSS float direction for floating images */

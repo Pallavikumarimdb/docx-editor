@@ -42,6 +42,7 @@ import type {
   MathEquation,
 } from '../../types/document';
 import { emuToPixels } from '../../docx/imageParser';
+import { isWrapNone } from '../../docx/wrapTypes';
 import { createStyleResolver, type StyleResolver } from '../styles';
 import type { TableAttrs, TableRowAttrs, TableCellAttrs } from '../schema/nodes';
 import { resolveColorToHex } from '../../utils/colorResolver';
@@ -1277,12 +1278,14 @@ function convertImage(image: Image): PMNode {
     displayMode = 'inline';
   } else if (wrapType === 'topAndBottom') {
     displayMode = 'block';
-  } else if (wrapType === 'behind' || wrapType === 'inFront') {
+  } else if (isWrapNone(wrapType)) {
+    // wrapNone (behind / inFront): positioned float, painted out of paragraph flow.
     displayMode = 'float';
   } else if (cssFloat && cssFloat !== 'none') {
     displayMode = 'float';
   } else {
-    displayMode = 'block'; // Centered square/tight/through images without wrapping side
+    // Centered square/tight/through images without a wrapping side fall back to block.
+    displayMode = 'block';
   }
 
   // Build transform string if needed (rotation, flip)

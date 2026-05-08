@@ -10,6 +10,7 @@
  */
 
 import type { ColorValue, ThemeColorSlot, BorderSpec } from './colors';
+import type { WrapType } from '../docx/wrapTypes';
 import type {
   TextFormatting,
   ParagraphFormatting,
@@ -324,7 +325,7 @@ export interface ImageSize {
  * Image wrap type for floating images
  */
 export interface ImageWrap {
-  type: 'inline' | 'square' | 'tight' | 'through' | 'topAndBottom' | 'behind' | 'inFront';
+  type: WrapType;
   /** Wrap text direction */
   wrapText?: 'bothSides' | 'left' | 'right' | 'largest';
   /** Distance from text */
