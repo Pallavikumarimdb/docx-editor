@@ -1275,10 +1275,14 @@ function convertImage(image: Image): PMNode {
   let displayMode: 'inline' | 'block' | 'float' = 'inline';
   if (wrapType === 'inline') {
     displayMode = 'inline';
+  } else if (wrapType === 'topAndBottom') {
+    displayMode = 'block';
+  } else if (wrapType === 'behind' || wrapType === 'inFront') {
+    displayMode = 'float';
   } else if (cssFloat && cssFloat !== 'none') {
     displayMode = 'float';
   } else {
-    displayMode = 'block'; // TopAndBottom or centered
+    displayMode = 'block'; // Centered square/tight/through images without wrapping side
   }
 
   // Build transform string if needed (rotation, flip)
