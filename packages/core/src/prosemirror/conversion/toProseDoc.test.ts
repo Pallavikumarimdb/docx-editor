@@ -5,10 +5,16 @@
  * is correctly resolved to RGB values on ProseMirror tableCell node attrs.
  */
 
-import { describe, test, expect } from 'bun:test';
+import { afterAll, beforeAll, describe, test, expect } from 'bun:test';
+import { GlobalRegistrator } from '@happy-dom/global-registrator';
+import { DOMSerializer } from 'prosemirror-model';
 import { toProseDoc } from './toProseDoc';
 import { fromProseDoc } from './fromProseDoc';
+import { schema } from '../schema';
 import type { Document, Table, TableRow, TableCell, Theme } from '../../types/document';
+
+beforeAll(() => GlobalRegistrator.register());
+afterAll(() => GlobalRegistrator.unregister());
 
 const OFFICE_THEME: Theme = {
   colorScheme: {
@@ -134,6 +140,26 @@ describe('toProseDoc — table cell theme color resolution', () => {
     expect(cells[0].backgroundColor).toBe('8FAADC');
     // tint=33 (0.2) → near-white
     expect(cells[1].backgroundColor).toBe('DAE3F3');
+  });
+});
+
+describe('ProseMirror table cell DOM serialization', () => {
+  test('OOXML auto border colors serialize to valid CSS colors', () => {
+    const borders = {
+      top: { style: 'single', size: 8, color: { rgb: 'auto' } },
+      bottom: { style: 'single', size: 8, color: { rgb: 'auto' } },
+      left: { style: 'single', size: 8, color: { rgb: 'auto' } },
+      right: { style: 'single', size: 8, color: { rgb: 'auto' } },
+    };
+    const cell = schema.nodes.tableCell.create({ borders }, schema.nodes.paragraph.create());
+
+    const dom = DOMSerializer.fromSchema(schema).serializeNode(cell) as HTMLElement;
+    const style = dom.getAttribute('style') ?? '';
+
+    expect(style).toContain('border-width: 1px');
+    expect(style).toContain('border-style: solid');
+    expect(style).toContain('border-color: #000000');
+    expect(style).not.toContain('#auto');
   });
 });
 

@@ -50,6 +50,12 @@ function paragraphAttrsToDOMStyle(attrs: ParagraphAttrs): string {
   };
 
   const style = paragraphToStyle(formatting);
+  if (style.marginTop) {
+    style['--docx-space-before'] = style.marginTop;
+  }
+  if (style.marginBottom) {
+    style['--docx-space-after'] = style.marginBottom;
+  }
   return Object.entries(style)
     .map(([key, value]) => {
       const cssKey = key.replace(/([A-Z])/g, '-$1').toLowerCase();

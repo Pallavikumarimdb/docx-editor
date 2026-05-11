@@ -26,6 +26,7 @@ import { createNodeExtension, createExtension } from '../create';
 import type { ExtensionContext, ExtensionRuntime, AnyExtension } from '../types';
 import type { TableAttrs, TableRowAttrs, TableCellAttrs } from '../../schema/nodes';
 import type { ColorValue, BorderSpec } from '../../../types/colors';
+import { resolveColor } from '../../../utils/colorResolver';
 
 // ============================================================================
 // CSS PASTE HELPERS — Extract formatting from inline styles (Google Docs, etc.)
@@ -298,17 +299,13 @@ function buildCellBorderKinds(attrs: TableCellAttrs): string[] {
 
   if (!borders) return styles;
 
-  const borderToCss = (border?: {
-    style?: string;
-    size?: number;
-    color?: { rgb?: string };
-  }): string => {
+  const borderToCss = (border?: { style?: string; size?: number; color?: ColorValue }): string => {
     if (!border || !border.style || border.style === 'none' || border.style === 'nil') {
       return 'none';
     }
     const widthPx = border.size ? Math.max(1, Math.round((border.size / 8) * 1.333)) : 1;
     const cssStyle = BORDER_STYLE_CSS[border.style] || 'solid';
-    const color = border.color?.rgb ? `#${border.color.rgb}` : '#000000';
+    const color = resolveColor(border.color, undefined);
     return `${widthPx}px ${cssStyle} ${color}`;
   };
 
