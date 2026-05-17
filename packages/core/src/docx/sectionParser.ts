@@ -31,6 +31,9 @@ import type {
   ColorValue,
   ThemeColorSlot,
   RelationshipMap,
+  HeaderReference,
+  FooterReference,
+  Section,
 } from '../types/document';
 import {
   findChild,
@@ -795,4 +798,59 @@ export function mergeSectionProperties(
   if (override.paperSrcOther !== undefined) result.paperSrcOther = override.paperSrcOther;
 
   return result;
+}
+
+function mergeRefsByType<T extends HeaderReference | FooterReference>(
+  own: readonly T[] | undefined,
+  prior: readonly T[] | undefined
+): T[] | undefined {
+  if (!prior || prior.length === 0) return own as T[] | undefined;
+  const ownTypes = new Set((own ?? []).map((r) => r.type));
+  const inherited = prior.filter((r) => !ownTypes.has(r.type));
+  if (inherited.length === 0) return own as T[] | undefined;
+  return [...(own ?? []), ...inherited];
+}
+
+/**
+ * Apply OOXML section inheritance for header/footer references and titlePg.
+ *
+ * Per ECMA-376 §17.6, when a section omits a w:headerReference or
+ * w:footerReference of a given type (default/first/even), it inherits the
+ * reference of that type from the previous section. The w:titlePg flag
+ * inherits the same way.
+ *
+ * Other section properties (pgSz, pgMar, cols, etc.) are not inherited —
+ * each section's own values stand on their own.
+ *
+ * Returns a new sections array with effective properties on each section
+ * after the first. Sections with no inheritable changes are reused.
+ */
+export function applySectionInheritance(sections: Section[]): Section[] {
+  if (sections.length < 2) return sections;
+  const out: Section[] = [sections[0]];
+  for (let i = 1; i < sections.length; i++) {
+    const prior = out[i - 1].properties;
+    const own = sections[i].properties;
+    const headers = mergeRefsByType(own.headerReferences, prior.headerReferences);
+    const footers = mergeRefsByType(own.footerReferences, prior.footerReferences);
+    const titlePg = own.titlePg !== undefined ? own.titlePg : prior.titlePg;
+    if (
+      headers === own.headerReferences &&
+      footers === own.footerReferences &&
+      titlePg === own.titlePg
+    ) {
+      out.push(sections[i]);
+      continue;
+    }
+    out.push({
+      ...sections[i],
+      properties: {
+        ...own,
+        headerReferences: headers,
+        footerReferences: footers,
+        titlePg,
+      },
+    });
+  }
+  return out;
 }

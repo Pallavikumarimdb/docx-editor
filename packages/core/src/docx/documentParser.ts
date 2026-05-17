@@ -36,7 +36,11 @@ import {
 } from './xmlParser';
 import { parseParagraph, getParagraphText } from './paragraphParser';
 import { parseTable } from './tableParser';
-import { parseSectionProperties, getDefaultSectionProperties } from './sectionParser';
+import {
+  parseSectionProperties,
+  getDefaultSectionProperties,
+  applySectionInheritance,
+} from './sectionParser';
 import {
   isTextBoxDrawing,
   parseTextBox,
@@ -506,8 +510,18 @@ export function parseDocumentBody(
     result.finalSectionProperties = parseSectionProperties(finalSectPr, rels);
   }
 
-  // Build sections from content
-  result.sections = buildSections(result.content, result.finalSectionProperties);
+  // Build sections from content, then apply OOXML inheritance so that later
+  // sections pick up header/footer refs and titlePg from earlier sections
+  // when omitted (ECMA-376 §17.6).
+  const rawSections = buildSections(result.content, result.finalSectionProperties);
+  result.sections = applySectionInheritance(rawSections);
+
+  // The body-level sectPr is what most consumers read via finalSectionProperties.
+  // Promote the last section's effective properties so downstream code sees the
+  // inherited refs without having to walk sections[].
+  if (result.finalSectionProperties && result.sections.length > 0) {
+    result.finalSectionProperties = result.sections[result.sections.length - 1].properties;
+  }
 
   return result;
 }
