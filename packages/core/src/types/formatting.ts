@@ -52,7 +52,14 @@ export type TextEffect =
 export type EmphasisMark = 'none' | 'dot' | 'comma' | 'circle' | 'underDot';
 
 /**
- * Complete text formatting properties (w:rPr)
+ * Character-level formatting (`w:rPr`) — the full set of run properties
+ * Word supports: weight, slant, font, size, color, highlight, underline,
+ * strikethrough, vertical position, language, complex-script variants,
+ * spacing/kerning, emphasis marks, and more.
+ *
+ * Most fields mirror their ECMA-376 element names (see §17.3.2). Missing
+ * keys inherit from the run's paragraph style → linked style → document
+ * defaults chain.
  */
 export interface TextFormatting {
   // Basic formatting
@@ -222,15 +229,22 @@ export type ParagraphAlignment =
   | 'thaiDistribute';
 
 /**
- * Complete paragraph formatting properties (w:pPr)
- */
-/**
  * Records which before/after spacing values are authored on the paragraph.
  * Layout uses these flags when direct formatting and inherited styles follow
  * different placement rules.
  */
 export type ParagraphSpacingOverrides = { before?: boolean; after?: boolean };
 
+/**
+ * Paragraph-level formatting (`w:pPr`) — alignment, indentation, spacing
+ * (before/after, line height), pagination flags (keepNext, keepLines,
+ * pageBreakBefore, widowControl), tabs, borders, shading, numbering
+ * reference, style reference, and frame/anchored-text properties.
+ *
+ * Most fields mirror their ECMA-376 element names (see §17.3.1).
+ * Inheritance: direct formatting beats the linked style which beats
+ * document defaults.
+ */
 export interface ParagraphFormatting {
   // Alignment
   /** Paragraph alignment (w:jc) */
