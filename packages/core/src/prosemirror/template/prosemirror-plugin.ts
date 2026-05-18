@@ -3,6 +3,8 @@
  *
  * Simple plugin that finds template tags using regex and creates decorations.
  * No separate parsing layer - everything happens here.
+ * @packageDocumentation
+ * @public
  */
 
 import { Plugin, PluginKey } from 'prosemirror-state';

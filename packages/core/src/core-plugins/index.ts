@@ -21,6 +21,8 @@
  * // Check available command handlers
  * const commandTypes = pluginRegistry.getCommandTypes();
  * ```
+ * @packageDocumentation
+ * @public
  */
 
 // ============================================================================

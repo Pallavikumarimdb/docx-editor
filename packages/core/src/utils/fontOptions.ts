@@ -2,6 +2,8 @@
  * Shared FontOption shape + normaliser used by FontPicker components
  * in both adapters. Lifted from packages/react/src/components/ui/
  * normalizeFontFamilies.ts so the type definition has a single home.
+ * @packageDocumentation
+ * @public
  */
 
 export interface FontOption {

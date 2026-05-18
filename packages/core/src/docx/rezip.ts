@@ -32,6 +32,8 @@
  * live here. Per-domain helpers — part enumeration, new-image registration,
  * new-hyperlink registration, header/footer & comment packaging, and the
  * empty-DOCX template — live under ./rezip/.
+ * @packageDocumentation
+ * @public
  */
 
 import JSZip from 'jszip';

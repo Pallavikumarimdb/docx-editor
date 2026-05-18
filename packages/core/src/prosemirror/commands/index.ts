@@ -2,6 +2,8 @@
  * ProseMirror Commands
  *
  * Commands for formatting text and paragraphs.
+ * @packageDocumentation
+ * @public
  */
 
 // Text formatting

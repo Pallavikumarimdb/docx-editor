@@ -7,6 +7,8 @@
  * Frontend-agnostic: takes a `getContainer: () => HTMLElement | null`
  * callback and a mutable sticky-state object, returns the same
  * function quartet React's hook returns.
+ * @packageDocumentation
+ * @public
  */
 import { TextSelection } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';

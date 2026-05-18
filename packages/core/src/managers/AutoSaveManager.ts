@@ -8,6 +8,8 @@
  * ```ts
  * const snapshot = useSyncExternalStore(manager.subscribe, manager.getSnapshot);
  * ```
+ * @packageDocumentation
+ * @public
  */
 
 import { Subscribable } from './Subscribable';

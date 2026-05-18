@@ -6,6 +6,8 @@
  *
  * Lifted from packages/react/src/components/reportIssue.ts so the
  * Vue adapter can re-use it without re-implementing.
+ * @packageDocumentation
+ * @public
  */
 
 const ISSUE_URL = 'https://github.com/eigenpal/docx-editor/issues/new';

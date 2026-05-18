@@ -15,6 +15,8 @@
  * The deep import `@eigenpal/.../prosemirror/conversion/fromProseDoc` is
  * a tsup entry consumed by the Vue adapter — the barrel re-exports
  * preserve that surface.
+ * @packageDocumentation
+ * @public
  */
 
 import type { Node as PMNode } from 'prosemirror-model';

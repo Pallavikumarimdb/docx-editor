@@ -10,6 +10,8 @@
  * - lists.ts       — Numbering and list definitions
  * - content.ts     — Content model (runs, images, shapes, tables, paragraphs, sections)
  * - styles.ts      — Styles, theme, fonts, relationships, media
+ * @packageDocumentation
+ * @public
  */
 
 // Color & Styling Primitives

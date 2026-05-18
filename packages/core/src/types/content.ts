@@ -9,6 +9,8 @@
  * and are split across `./content/*.ts` by domain. This file re-exports them
  * so existing imports from `@eigenpal/docx-editor-core/types/content` keep
  * working unchanged.
+ * @packageDocumentation
+ * @public
  */
 
 export type {

@@ -16,6 +16,8 @@
  * // Call a tool programmatically
  * const result = await server.handleToolCall('docx_load', { content: base64 });
  * ```
+ * @packageDocumentation
+ * @public
  */
 
 // ============================================================================

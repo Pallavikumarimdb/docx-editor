@@ -5,6 +5,8 @@
  * document search. Lifted from packages/react/src/components/dialogs/
  * findReplaceUtils.ts so the React adapter and the Vue adapter share
  * one implementation.
+ * @packageDocumentation
+ * @public
  */
 
 // ============================================================================

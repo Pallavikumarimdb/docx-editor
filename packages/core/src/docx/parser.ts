@@ -16,6 +16,8 @@
  * 9. Extract and load fonts
  * 10. Build media file map
  * 11. Assemble final Document
+ * @packageDocumentation
+ * @public
  */
 
 import type {

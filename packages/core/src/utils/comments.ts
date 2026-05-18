@@ -5,6 +5,8 @@
  * keep this file as the single source of truth — both adapters import
  * from here. CSS-property factories live in adapter-specific files
  * (sidebar/cardUtils.ts in React, sidebar/sidebarUtils.ts in Vue).
+ * @packageDocumentation
+ * @public
  */
 import type { Paragraph } from '../types/content';
 

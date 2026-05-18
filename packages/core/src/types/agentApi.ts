@@ -5,6 +5,8 @@
  * - Position and Range types
  * - Command types for document manipulation
  * - Context types for AI agents
+ * @packageDocumentation
+ * @public
  */
 
 import type { TextFormatting, ParagraphFormatting } from './document';

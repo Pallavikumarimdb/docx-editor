@@ -6,6 +6,8 @@
  * - Text formatting at cursor/selection
  * - Paragraph formatting
  * - Selection range information
+ * @packageDocumentation
+ * @public
  */
 
 import type { Mark } from 'prosemirror-model';

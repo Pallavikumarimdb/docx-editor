@@ -14,6 +14,8 @@
  * ```ts
  * import { parseDocx, serializeDocx, resolveColor } from '@eigenpal/docx-editor-core';
  * ```
+ * @packageDocumentation
+ * @public
  */
 
 // ============================================================================

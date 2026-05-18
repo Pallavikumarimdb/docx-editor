@@ -2,6 +2,8 @@
  * Document Conversion Utilities
  *
  * Bidirectional conversion between Document (DOCX) and ProseMirror document.
+ * @packageDocumentation
+ * @public
  */
 
 export {

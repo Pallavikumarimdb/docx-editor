@@ -4,6 +4,8 @@
  * Singleton ExtensionManager that builds the schema and initializes runtime.
  * Legacy code imports `schema` and commands from here; new code should use
  * ExtensionManager directly.
+ * @packageDocumentation
+ * @public
  */
 
 import { createStarterKit } from '../extensions/StarterKit';

@@ -8,6 +8,8 @@
  * Pure function — no React, no Vue, no side effects. Single O(N) walk
  * over text nodes. Lifted from packages/react/src/hooks/useTrackedChanges.ts
  * so both adapters can call it directly.
+ * @packageDocumentation
+ * @public
  */
 import type { EditorState } from 'prosemirror-state';
 import type { Mark } from 'prosemirror-model';

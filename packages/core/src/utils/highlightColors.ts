@@ -5,6 +5,8 @@
  *
  * Lifted from packages/react/src/components/toolbarUtils.ts so both
  * sides share the same canonical table.
+ * @packageDocumentation
+ * @public
  */
 
 export const HIGHLIGHT_HEX_TO_NAME: Record<string, string> = {

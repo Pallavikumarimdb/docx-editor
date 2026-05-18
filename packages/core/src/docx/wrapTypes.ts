@@ -5,6 +5,8 @@
  *   - `square` / `tight` / `through` — text wraps around the image
  *   - `topAndBottom` — text breaks above and below
  *   - `behind` / `inFront` (`wp:wrapNone`) — image paints out of flow
+ * @packageDocumentation
+ * @public
  */
 
 export type WrapType =

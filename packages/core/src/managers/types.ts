@@ -2,6 +2,8 @@
  * Manager Types
  *
  * Framework-agnostic interfaces for the editor's manager classes.
+ * @packageDocumentation
+ * @public
  */
 
 import type { EditorView } from 'prosemirror-view';

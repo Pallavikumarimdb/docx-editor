@@ -3,6 +3,8 @@
  *
  * Lower-level Document → OOXML transforms. For the round-trip "model in,
  * `.docx` archive out" path, use `./docx` instead.
+ * @packageDocumentation
+ * @public
  */
 
 export {

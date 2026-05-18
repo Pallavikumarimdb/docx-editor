@@ -4,6 +4,8 @@
  * Headless, framework-agnostic API for inspecting and editing the
  * Document model. Used by `@eigenpal/docx-editor-agents` and any
  * adapter that wants agent capabilities without UI.
+ * @packageDocumentation
+ * @public
  */
 
 export { DocumentAgent, createAgent, createAgentFromDocument } from './DocumentAgent';

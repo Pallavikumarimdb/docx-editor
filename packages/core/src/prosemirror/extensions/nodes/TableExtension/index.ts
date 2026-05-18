@@ -11,6 +11,8 @@
  * runtime itself lives under ./commands/ — one file per command domain
  * (insert, delete, selection, borders, cellFormatting, sizing,
  * tableStyle), plus shared helpers and the active-cell decoration plugin.
+ * @packageDocumentation
+ * @public
  */
 
 import { createNodeExtension, createExtension } from '../../create';

@@ -3,6 +3,8 @@
  *
  * Selection tracker plugin for the DOCX editor.
  * Keymap plugins are now provided by the extension system.
+ * @packageDocumentation
+ * @public
  */
 
 export {

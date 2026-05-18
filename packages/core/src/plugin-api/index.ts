@@ -6,6 +6,8 @@
  *
  * @experimental Plugin API is still evolving. Breaking changes may
  * happen in minor releases until plugin authors stabilize the contract.
+ * @packageDocumentation
+ * @public
  */
 
 export type {

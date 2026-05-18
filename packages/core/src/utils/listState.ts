@@ -4,6 +4,8 @@
  * indent level. Lifted from packages/react/src/components/ui/
  * ListButtons.tsx so the React + Vue toolbars share identical
  * state-mutation logic.
+ * @packageDocumentation
+ * @public
  */
 
 export type ListType = 'bullet' | 'numbered' | 'none';

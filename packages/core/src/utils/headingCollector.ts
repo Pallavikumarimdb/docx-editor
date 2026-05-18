@@ -1,3 +1,8 @@
+/**
+ * @packageDocumentation
+ * @public
+ */
+
 import type { Node as PMNode } from 'prosemirror-model';
 
 /**

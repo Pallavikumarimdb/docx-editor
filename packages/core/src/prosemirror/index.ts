@@ -8,6 +8,8 @@
  * - Plugins for selection tracking
  * - Commands for formatting
  * - Extension system for schema, plugins, and keymaps
+ * @packageDocumentation
+ * @public
  */
 
 // Schema

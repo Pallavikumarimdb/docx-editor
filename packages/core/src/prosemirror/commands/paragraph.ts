@@ -4,6 +4,8 @@
  * Alignment, line spacing, indentation, lists, paragraph styles.
  * All implementations live in extensions/; this file re-exports
  * for backward compatibility.
+ * @packageDocumentation
+ * @public
  */
 
 import type { Command } from 'prosemirror-state';

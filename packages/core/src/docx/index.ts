@@ -9,6 +9,8 @@
  * helper to a source module does not automatically make it public — it
  * must be added to this barrel to be reachable from
  * `@eigenpal/docx-editor-core/docx`.
+ * @packageDocumentation
+ * @public
  */
 
 // Top-level archive I/O

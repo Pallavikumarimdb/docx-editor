@@ -1,5 +1,7 @@
 /**
  * Extension System — Barrel Export
+ * @packageDocumentation
+ * @public
  */
 
 // Types

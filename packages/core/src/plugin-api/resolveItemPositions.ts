@@ -13,6 +13,8 @@
  *
  * Then it sorts by target Y and pushes overlapping cards down by
  * their height + MIN_CARD_GAP.
+ * @packageDocumentation
+ * @public
  */
 import type { RenderedDomContext, SidebarItem } from './types';
 import { MIN_CARD_GAP } from '../utils/sidebarConstants';

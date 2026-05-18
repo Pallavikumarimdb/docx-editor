@@ -4,6 +4,8 @@
  * CSSProperties shapes accept them. Lifted from
  * `packages/react/src/components/sidebar/cardStyles.ts` and the
  * Vue mirror so there's one canonical table.
+ * @packageDocumentation
+ * @public
  */
 import type { CSSProperties } from './cssTypes';
 

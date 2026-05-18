@@ -9,6 +9,8 @@
  * - Eighths of a point: 1/8 of a point (576 eighths = 1 inch)
  *
  * Standard assumption: 96 DPI (pixels per inch)
+ * @packageDocumentation
+ * @public
  */
 
 // ============================================================================

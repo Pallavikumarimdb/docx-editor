@@ -3,6 +3,8 @@
  *
  * Utilities for word-level and paragraph-level text selection.
  * Used for double-click (word) and triple-click (paragraph) selection.
+ * @packageDocumentation
+ * @public
  */
 
 // ============================================================================

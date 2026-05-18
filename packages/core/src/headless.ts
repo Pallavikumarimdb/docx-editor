@@ -37,6 +37,8 @@
  * const output = await finalAgent.toBuffer();
  * fs.writeFileSync('output.docx', Buffer.from(output));
  * ```
+ * @packageDocumentation
+ * @public
  */
 
 // ============================================================================

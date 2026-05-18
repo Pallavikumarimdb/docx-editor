@@ -4,6 +4,8 @@
  * findVerticalScrollParent.ts so both adapters use the same logic
  * for scroll-to-position, arrow-key line navigation, and drag
  * auto-scroll.
+ * @packageDocumentation
+ * @public
  */
 
 /**

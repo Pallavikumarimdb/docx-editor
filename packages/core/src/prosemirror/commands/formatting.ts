@@ -4,6 +4,8 @@
  * Toggle marks, set marks, clear formatting, hyperlinks.
  * All implementations live in extensions/marks/; this file re-exports
  * for backward compatibility.
+ * @packageDocumentation
+ * @public
  */
 
 import type { Command } from 'prosemirror-state';

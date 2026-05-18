@@ -7,6 +7,8 @@
  * Handles:
  * - Cell selection via data-attribute queries on the DOM
  * - Table document operations (add/delete rows/columns, merge/split)
+ * @packageDocumentation
+ * @public
  */
 
 import { Subscribable } from './Subscribable';
