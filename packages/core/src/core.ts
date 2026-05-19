@@ -186,6 +186,7 @@ export type {
   DocumentBody,
   BlockContent,
   Paragraph,
+  ParagraphContent,
   Run,
   RunContent,
   TextContent,
@@ -216,6 +217,18 @@ export type {
   ListLevel,
   NumberingDefinitions,
   Relationship,
+  // Comments + track-changes — also exported from `./headless`, but surfaced
+  // here so consumers touching comment threads or revision marks don't have
+  // to import from a separate subpath.
+  Comment,
+  CommentRangeStart,
+  CommentRangeEnd,
+  TrackedChangeInfo,
+  TrackedRunChange,
+  Insertion,
+  Deletion,
+  MoveFrom,
+  MoveTo,
 } from './types/document';
 
 export type {
