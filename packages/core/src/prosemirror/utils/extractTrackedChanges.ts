@@ -8,13 +8,21 @@
  * Pure function — no React, no Vue, no side effects. Single O(N) walk
  * over text nodes. Lifted from packages/react/src/hooks/useTrackedChanges.ts
  * so both adapters can call it directly.
+ *
+ * @remarks
+ * Tagged `@internal` post-1.0 cut. Both adapters re-export this through
+ * their own composables (`useTrackedChanges`); consumers should prefer
+ * those. The subpath stays in `package.json` `exports` for back-compat;
+ * expect it to move behind a public surface in a future major.
+ *
  * @packageDocumentation
- * @public
+ * @internal
  */
 import type { EditorState } from 'prosemirror-state';
 import type { Mark } from 'prosemirror-model';
 import type { TrackedChangeEntry } from '../../utils/comments';
 
+/** @internal */
 export interface TrackedChangesResult {
   /** Tracked-change entries, sorted by document position, with adjacent same-revision entries merged. */
   entries: TrackedChangeEntry[];
@@ -30,6 +38,7 @@ const EMPTY_RESULT: TrackedChangesResult = {
   commentToRevision: new Map(),
 };
 
+/** @internal */
 export function extractTrackedChanges(state: EditorState | null): TrackedChangesResult {
   if (!state) return EMPTY_RESULT;
   const { doc, schema } = state;

@@ -6,22 +6,22 @@
 
 import { EditorView } from 'prosemirror-view';
 
-// @public (undocumented)
+// @internal (undocumented)
 export function createVisualLineState(): VisualLineState;
 
-// @public (undocumented)
+// @internal (undocumented)
 export function findLineElementAtPosition(container: HTMLElement, pmPos: number): HTMLElement | null;
 
-// @public (undocumented)
+// @internal (undocumented)
 export function findPositionOnLineAtClientX(lineEl: HTMLElement, clientX: number): number | null;
 
-// @public (undocumented)
+// @internal (undocumented)
 export function getCaretClientX(container: HTMLElement, pmPos: number): number | null;
 
-// @public
+// @internal (undocumented)
 export function handleVisualLineKeyDown(state: VisualLineState, view: EditorView, event: KeyboardEvent, container: HTMLElement | null): boolean;
 
-// @public (undocumented)
+// @internal (undocumented)
 export interface VisualLineState {
     // (undocumented)
     lastVisualLineIndex: number;

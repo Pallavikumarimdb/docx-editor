@@ -7,8 +7,16 @@
  * Frontend-agnostic: takes a `getContainer: () => HTMLElement | null`
  * callback and a mutable sticky-state object, returns the same
  * function quartet React's hook returns.
+ *
+ * @remarks
+ * Tagged `@internal` post-1.0 cut. Both adapters re-export this through
+ * their own composables (`useVisualLineNavigation`); consumers should
+ * prefer those. The subpath stays in `package.json` `exports` for
+ * back-compat; expect it to move behind a public surface in a future
+ * major.
+ *
  * @packageDocumentation
- * @public
+ * @internal
  */
 import { TextSelection } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
@@ -16,11 +24,13 @@ import { findVerticalScrollParent } from '../../utils/findVerticalScrollParent';
 
 const CONTENT_LINE_SELECTOR = '.layout-page-content .layout-line';
 
+/** @internal */
 export interface VisualLineState {
   stickyX: number | null;
   lastVisualLineIndex: number;
 }
 
+/** @internal */
 export function createVisualLineState(): VisualLineState {
   return { stickyX: null, lastVisualLineIndex: -1 };
 }
@@ -38,6 +48,7 @@ function scrollIntoViewIfNeeded(el: HTMLElement): void {
   }
 }
 
+/** @internal */
 export function getCaretClientX(container: HTMLElement, pmPos: number): number | null {
   const spans = container.querySelectorAll('span[data-doc-from][data-doc-to]');
   for (const span of Array.from(spans)) {
@@ -70,6 +81,7 @@ export function getCaretClientX(container: HTMLElement, pmPos: number): number |
   return null;
 }
 
+/** @internal */
 export function findLineElementAtPosition(
   container: HTMLElement,
   pmPos: number
@@ -99,6 +111,7 @@ export function findLineElementAtPosition(
   return null;
 }
 
+/** @internal */
 export function findPositionOnLineAtClientX(lineEl: HTMLElement, clientX: number): number | null {
   const spans = lineEl.querySelectorAll('span[data-doc-from][data-doc-to]');
   if (spans.length === 0) {
@@ -173,6 +186,7 @@ export function findPositionOnLineAtClientX(lineEl: HTMLElement, clientX: number
  * its default behaviour. Mutates `state` so consecutive presses
  * keep the same sticky X.
  */
+/** @internal */
 export function handleVisualLineKeyDown(
   state: VisualLineState,
   view: EditorView,

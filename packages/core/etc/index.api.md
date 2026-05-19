@@ -315,7 +315,7 @@ export function createThemeColor(themeColor: ThemeColorSlot, tint?: number, shad
 // @public
 export function darkenColor(color: ColorValue | undefined | null, theme: Theme | null | undefined, percent: number): string;
 
-// @public
+// @internal
 export function deleteTableFromDocument(doc: Document_2, tableIndex: number): Document_2;
 
 // @public
@@ -575,7 +575,7 @@ export function findParagraphByParaId(doc: Node_2, paraId: string): {
 // @public
 export function findStartPosForParaId(doc: Node_2, paraId: string): number | null;
 
-// @public
+// @internal
 export function findTableFromClick(target: EventTarget | null, container?: HTMLElement | null): CellCoordinates | null;
 
 // @public
@@ -657,7 +657,7 @@ export function getLoadedFonts(): string[];
 // @public
 export function getSelectionRuns(): Run[];
 
-// @public
+// @internal
 export function getTableFromDocument(doc: Document_2, tableIndex: number): Table | null;
 
 // @public
@@ -1563,7 +1563,7 @@ export interface Table {
     type: 'table';
 }
 
-// @public
+// @internal
 export const TABLE_DATA_ATTRIBUTES: {
     readonly TABLE_INDEX: "data-table-index";
     readonly ROW_INDEX: "data-row";
@@ -1591,7 +1591,7 @@ export interface TableRow {
     type: 'tableRow';
 }
 
-// @public (undocumented)
+// @internal (undocumented)
 export class TableSelectionManager extends Subscribable<TableSelectionSnapshot> {
     constructor();
     clearSelection(): void;
@@ -1744,7 +1744,7 @@ export function twipsToPixels(twips: number): number;
 // @public
 export function updateMultipleFiles(originalBuffer: ArrayBuffer, updates: Map<string, string | ArrayBuffer>, options?: RepackOptions): Promise<ArrayBuffer>;
 
-// @public
+// @internal
 export function updateTableInDocument(doc: Document_2, tableIndex: number, newTable: Table): Document_2;
 
 // @public

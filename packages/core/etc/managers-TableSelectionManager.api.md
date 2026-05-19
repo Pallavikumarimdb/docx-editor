@@ -4,16 +4,16 @@
 
 ```ts
 
-// @public
+// @internal
 export function deleteTableFromDocument(doc: Document_2, tableIndex: number): Document_2;
 
-// @public
+// @internal
 export function findTableFromClick(target: EventTarget | null, container?: HTMLElement | null): CellCoordinates | null;
 
-// @public
+// @internal
 export function getTableFromDocument(doc: Document_2, tableIndex: number): Table | null;
 
-// @public
+// @internal
 export const TABLE_DATA_ATTRIBUTES: {
     readonly TABLE_INDEX: "data-table-index";
     readonly ROW_INDEX: "data-row";
@@ -21,7 +21,7 @@ export const TABLE_DATA_ATTRIBUTES: {
     readonly TABLE_CELL: "data-table-cell";
 };
 
-// @public (undocumented)
+// @internal (undocumented)
 export class TableSelectionManager extends Subscribable<TableSelectionSnapshot> {
     constructor();
     clearSelection(): void;
@@ -30,7 +30,7 @@ export class TableSelectionManager extends Subscribable<TableSelectionSnapshot> 
     selectCell(coords: CellCoordinates): void;
 }
 
-// @public
+// @internal
 export function updateTableInDocument(doc: Document_2, tableIndex: number, newTable: Table): Document_2;
 
 // (No @packageDocumentation comment for this package)

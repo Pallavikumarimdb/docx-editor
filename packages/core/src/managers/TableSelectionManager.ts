@@ -7,8 +7,15 @@
  * Handles:
  * - Cell selection via data-attribute queries on the DOM
  * - Table document operations (add/delete rows/columns, merge/split)
+ *
+ * @remarks
+ * Tagged `@internal` post-1.0 cut. Adapters bind to this class today,
+ * but consumers should reach for `useTableSelection()` (React/Vue) instead
+ * of this raw subpath. The subpath stays in `package.json` `exports` for
+ * back-compat; expect it to move behind a public surface in a future major.
+ *
  * @packageDocumentation
- * @public
+ * @internal
  */
 
 import { Subscribable } from './Subscribable';
@@ -19,7 +26,10 @@ import type { Document, Table } from '../types/document';
 // CONSTANTS
 // ============================================================================
 
-/** Data attributes for table elements in the rendered DOM */
+/**
+ * Data attributes for table elements in the rendered DOM
+ * @internal
+ */
 export const TABLE_DATA_ATTRIBUTES = {
   TABLE_INDEX: 'data-table-index',
   ROW_INDEX: 'data-row',
@@ -34,6 +44,7 @@ export const TABLE_DATA_ATTRIBUTES = {
 /**
  * Find table cell coordinates from a click target by walking up the DOM
  * and reading data attributes.
+ * @internal
  */
 export function findTableFromClick(
   target: EventTarget | null,
@@ -72,7 +83,10 @@ export function findTableFromClick(
   return null;
 }
 
-/** Get a table from the document by index. */
+/**
+ * Get a table from the document by index.
+ * @internal
+ */
 export function getTableFromDocument(doc: Document, tableIndex: number): Table | null {
   if (!doc.package?.document?.content) return null;
 
@@ -88,7 +102,10 @@ export function getTableFromDocument(doc: Document, tableIndex: number): Table |
   return null;
 }
 
-/** Update a table in the document immutably. */
+/**
+ * Update a table in the document immutably.
+ * @internal
+ */
 export function updateTableInDocument(
   doc: Document,
   tableIndex: number,
@@ -120,7 +137,10 @@ export function updateTableInDocument(
   };
 }
 
-/** Delete a table from the document immutably. */
+/**
+ * Delete a table from the document immutably.
+ * @internal
+ */
 export function deleteTableFromDocument(doc: Document, tableIndex: number): Document {
   if (!doc.package?.document?.content) return doc;
 
@@ -150,6 +170,7 @@ export function deleteTableFromDocument(doc: Document, tableIndex: number): Docu
 // MANAGER
 // ============================================================================
 
+/** @internal */
 export class TableSelectionManager extends Subscribable<TableSelectionSnapshot> {
   constructor() {
     super({ selectedCell: null });
