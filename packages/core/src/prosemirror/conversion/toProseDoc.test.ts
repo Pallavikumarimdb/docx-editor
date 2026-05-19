@@ -269,3 +269,41 @@ describe('toProseDoc ↔ fromProseDoc round-trip — theme shading preservation'
     expect(shading?.fill?.themeColor).toBeUndefined();
   });
 });
+
+describe('toProseDoc — hyperlink preserves non-text inline content', () => {
+  test('tabs inside a hyperlink survive Document → PM → Document round-trip', () => {
+    const inDoc: Document = {
+      package: {
+        document: {
+          content: [
+            {
+              type: 'paragraph',
+              content: [
+                {
+                  type: 'hyperlink',
+                  anchor: '_Toc1',
+                  children: [
+                    { type: 'run', content: [{ type: 'text', text: '1' }] },
+                    { type: 'run', content: [{ type: 'tab' }] },
+                    { type: 'run', content: [{ type: 'text', text: 'Introduction' }] },
+                    { type: 'run', content: [{ type: 'tab' }] },
+                    { type: 'run', content: [{ type: 'text', text: '5' }] },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    };
+    const outDoc = fromProseDoc(toProseDoc(inDoc), inDoc);
+    const para = outDoc.package.document.content[0];
+    if (para.type !== 'paragraph') throw new Error('expected paragraph');
+    const link = para.content[0];
+    if (link.type !== 'hyperlink') throw new Error('expected hyperlink');
+    const contentTypes = link.children.flatMap((r) =>
+      r.type === 'run' ? r.content.map((c) => c.type) : []
+    );
+    expect(contentTypes).toEqual(['text', 'tab', 'text', 'tab', 'text']);
+  });
+});
