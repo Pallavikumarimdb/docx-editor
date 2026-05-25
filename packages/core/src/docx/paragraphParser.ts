@@ -167,10 +167,13 @@ export function parseParagraph(
             directInd != null &&
             (getAttribute(directInd, 'w', 'left') !== null ||
               getAttribute(directInd, 'w', 'start') !== null);
+          const directFirstLine = directInd ? getAttribute(directInd, 'w', 'firstLine') : null;
+          const directFirstLineValue =
+            directFirstLine !== null ? parseInt(directFirstLine, 10) : NaN;
           const hasDirectFirstLineOrHanging =
             directInd != null &&
-            (getAttribute(directInd, 'w', 'firstLine') !== null ||
-              getAttribute(directInd, 'w', 'hanging') !== null);
+            (getAttribute(directInd, 'w', 'hanging') !== null ||
+              (directFirstLine !== null && directFirstLineValue !== 0));
 
           if (!hasDirectLeft && level.pPr.indentLeft !== undefined) {
             paragraph.formatting.indentLeft = level.pPr.indentLeft;
