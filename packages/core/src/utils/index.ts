@@ -85,6 +85,8 @@ export {
   loadFont,
   loadFonts,
   loadFontFromBuffer,
+  loadFontFromUrl,
+  loadFontDefinitions,
   loadFontWithMapping,
   loadFontsWithMapping,
   preloadCommonFonts,
@@ -93,11 +95,13 @@ export {
   isLoading,
   getLoadedFonts,
   onFontsLoaded,
+  onFontError,
   canRenderFont,
   FONT_MAPPING,
   getGoogleFontEquivalent,
   extractFontsFromDocument,
 } from './fontLoader';
+export type { FontDefinition } from './fontLoader';
 
 // Formatting → CSS style
 export {

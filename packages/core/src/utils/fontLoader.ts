@@ -14,11 +14,52 @@ const loadedFonts = new Set<string>();
 // Track fonts currently being loaded
 const loadingFonts = new Map<string, Promise<boolean>>();
 
+// Track loaded faces (family|weight) for URL/buffer paths where one
+// family can have multiple weights registered independently.
+const loadedFaces = new Set<string>();
+const loadingFaces = new Map<string, Promise<boolean>>();
+
 // Callbacks to notify when fonts are loaded
 const loadCallbacks = new Set<(fonts: string[]) => void>();
 
+// Callbacks to notify when a font fails to load. Adapters subscribe and
+// forward to their `onError` prop so library consumers can route into their
+// own error tracker (Sentry, Datadog, etc.) instead of filtering the console.
+const errorCallbacks = new Set<(error: Error) => void>();
+
 // Track overall loading state
 let isLoadingAny = false;
+
+function reportFontError(error: unknown, context: string): void {
+  // Wrap in a fresh Error rather than mutating the original — some Error
+  // subclasses (DOMException, frozen objects) have a non-writable .message
+  // and assigning to it throws, which would swallow the real load error.
+  // Carry the original via `cause` so consumers can still inspect it.
+  const origMessage = error instanceof Error ? error.message : String(error);
+  const err = new Error(`[font] ${context}: ${origMessage}`, {
+    cause: error,
+  });
+
+  if (errorCallbacks.size > 0) {
+    for (const callback of errorCallbacks) {
+      try {
+        callback(err);
+      } catch (subscriberError) {
+        // A bad subscriber must not block the others — but don't silently eat
+        // the bug. Surface in dev via console.error so the consumer can fix it.
+        console.error('Font error subscriber threw:', subscriberError);
+      }
+    }
+  } else {
+    // No subscriber yet — fall back to console so the error is not silently
+    // dropped during pre-mount or in non-adapter (headless / SSR) usage.
+    console.warn(err.message);
+  }
+}
+
+function faceKey(family: string, weight: number | string = 'normal'): string {
+  return `${family.trim()}|${weight}`;
+}
 
 /**
  * Generate Google Fonts CSS URL for a font family
@@ -126,13 +167,13 @@ export async function loadFont(
 
       return false;
     } catch (error) {
-      console.warn(`Failed to load font "${normalizedFamily}":`, error);
+      reportFontError(error, `failed to load "${normalizedFamily}"`);
       return false;
     } finally {
       loadingFonts.delete(normalizedFamily);
 
-      // Check if still loading any fonts
-      if (loadingFonts.size === 0) {
+      // Check if still loading any fonts (Google or face-based)
+      if (loadingFonts.size === 0 && loadingFaces.size === 0) {
         isLoadingAny = false;
       }
     }
@@ -218,9 +259,23 @@ function notifyCallbacks(fonts: string[]): void {
     try {
       callback(fonts);
     } catch (error) {
-      console.warn('Font load callback error:', error);
+      reportFontError(error, 'load callback threw');
     }
   }
+}
+
+/**
+ * Register a callback to be notified when a font fails to load.
+ *
+ * Adapters subscribe and forward to their `onError` prop. Returns the unsub.
+ *
+ * @public
+ */
+export function onFontError(callback: (error: Error) => void): () => void {
+  errorCallbacks.add(callback);
+  return () => {
+    errorCallbacks.delete(callback);
+  };
 }
 
 /**
@@ -316,46 +371,188 @@ export async function loadFontFromBuffer(
   buffer: ArrayBuffer,
   options?: {
     weight?: number | string;
-    style?: 'normal' | 'italic';
   }
 ): Promise<boolean> {
+  if (typeof document === 'undefined') return false;
+
   const normalizedFamily = fontFamily.trim();
+  const key = faceKey(normalizedFamily, options?.weight);
 
-  // Already loaded?
-  if (loadedFonts.has(normalizedFamily)) {
-    return true;
-  }
+  // Face-keyed dedupe so multiple weights of the same family register
+  // independently and a prior URL/Google load of the family does not skip
+  // this face.
+  if (loadedFaces.has(key)) return true;
+  const existing = loadingFaces.get(key);
+  if (existing) return existing;
 
-  try {
-    // Create blob URL
-    const blob = new Blob([buffer], { type: 'font/ttf' });
-    const url = URL.createObjectURL(blob);
+  const loadPromise = (async (): Promise<boolean> => {
+    isLoadingAny = true;
+    try {
+      const blob = new Blob([buffer], { type: 'font/ttf' });
+      const url = URL.createObjectURL(blob);
 
-    // Create @font-face CSS
-    const style = document.createElement('style');
-    style.textContent = `
+      const style = document.createElement('style');
+      style.textContent = `
       @font-face {
         font-family: "${normalizedFamily}";
         src: url(${url}) format('truetype');
         font-weight: ${options?.weight ?? 'normal'};
-        font-style: ${options?.style ?? 'normal'};
         font-display: swap;
       }
     `;
+      document.head.appendChild(style);
 
-    document.head.appendChild(style);
+      await waitForFontAvailable(normalizedFamily, 3000);
 
-    // Wait for font to be available
-    await waitForFontAvailable(normalizedFamily, 3000);
+      loadedFaces.add(key);
+      loadedFonts.add(normalizedFamily);
+      notifyCallbacks([normalizedFamily]);
 
-    loadedFonts.add(normalizedFamily);
-    notifyCallbacks([normalizedFamily]);
+      return true;
+    } catch (error) {
+      reportFontError(error, `failed to load "${normalizedFamily}" from buffer`);
+      return false;
+    } finally {
+      loadingFaces.delete(key);
+      if (loadingFonts.size === 0 && loadingFaces.size === 0) {
+        isLoadingAny = false;
+      }
+    }
+  })();
 
-    return true;
-  } catch (error) {
-    console.warn(`Failed to load font "${normalizedFamily}" from buffer:`, error);
+  loadingFaces.set(key, loadPromise);
+  return loadPromise;
+}
+
+function guessFontFormat(src: string): string {
+  const url = src.split('?')[0].split('#')[0].toLowerCase();
+  if (url.endsWith('.woff2')) return 'woff2';
+  if (url.endsWith('.woff')) return 'woff';
+  if (url.endsWith('.otf')) return 'opentype';
+  return 'truetype';
+}
+
+/**
+ * Load a font face from a URL (woff2, woff, ttf, otf).
+ *
+ * Injects an `@font-face` rule pointing at the URL. Multiple weights of the
+ * same family can be registered independently.
+ *
+ * @param fontFamily - CSS font-family name to expose
+ * @param src - URL to the font file
+ * @param options - Optional weight
+ * @returns Promise resolving to true if the face became available
+ *
+ * @public
+ */
+export async function loadFontFromUrl(
+  fontFamily: string,
+  src: string,
+  options?: {
+    weight?: number | string;
+  }
+): Promise<boolean> {
+  if (typeof document === 'undefined') return false;
+
+  // Reject URLs containing HTML-breaking characters. The loader writes src
+  // into a <style> element's textContent — safe for client rendering, but
+  // a serialized document.head (SSR, devtools snapshot) would terminate the
+  // style block early on </style>. < and > are never valid in a URL anyway.
+  if (/[<>]/.test(src)) {
+    reportFontError(
+      new Error(`invalid src URL for "${fontFamily}": contains '<' or '>'`),
+      'rejected src'
+    );
     return false;
   }
+
+  const normalizedFamily = fontFamily.trim();
+  const key = faceKey(normalizedFamily, options?.weight);
+
+  if (loadedFaces.has(key)) return true;
+  const existing = loadingFaces.get(key);
+  if (existing) return existing;
+
+  const loadPromise = (async (): Promise<boolean> => {
+    isLoadingAny = true;
+    try {
+      const style = document.createElement('style');
+      style.textContent = `
+      @font-face {
+        font-family: "${normalizedFamily}";
+        src: url(${JSON.stringify(src)}) format('${guessFontFormat(src)}');
+        font-weight: ${options?.weight ?? 'normal'};
+        font-display: swap;
+      }
+    `;
+      document.head.appendChild(style);
+
+      await waitForFontAvailable(normalizedFamily, 3000);
+
+      loadedFaces.add(key);
+      loadedFonts.add(normalizedFamily);
+      notifyCallbacks([normalizedFamily]);
+
+      return true;
+    } catch (error) {
+      reportFontError(error, `failed to load "${normalizedFamily}" from ${src}`);
+      return false;
+    } finally {
+      loadingFaces.delete(key);
+      if (loadingFonts.size === 0 && loadingFaces.size === 0) {
+        isLoadingAny = false;
+      }
+    }
+  })();
+
+  loadingFaces.set(key, loadPromise);
+  return loadPromise;
+}
+
+/**
+ * Declarative description of a single font face to register with the editor.
+ *
+ * Each entry injects one `@font-face` rule pointing at a URL. Multiple
+ * entries can share `family` to register distinct weights as separate faces.
+ *
+ * For Google Fonts, call `loadFont(family)` directly — the `fonts` prop is
+ * for fonts the consumer hosts themselves. For raw bytes already in memory
+ * (DOCX-embedded fonts, user uploads), call `loadFontFromBuffer(family, buf)`.
+ *
+ * @public
+ */
+export interface FontDefinition {
+  /**
+   * CSS `font-family` name to expose. Match the family name your documents
+   * reference; the browser uses this to look up glyphs when text is rendered.
+   */
+  family: string;
+  /**
+   * URL to the font file (woff2, woff, ttf, or otf). The loader injects an
+   * `@font-face` rule and lets the browser fetch on demand.
+   */
+  src: string;
+  /**
+   * CSS `font-weight` for this face. Defaults to `'normal'` (≈400). Pass a
+   * number (`400`, `700`) or a CSS keyword (`'bold'`). Required when one
+   * `family` registers multiple weights as separate entries.
+   */
+  weight?: number | string;
+}
+
+/**
+ * Register a list of custom font faces. Used by the `fonts` prop on
+ * `<DocxEditor>` (React + Vue). Idempotent — safe to call on every render.
+ *
+ * @public
+ */
+export async function loadFontDefinitions(
+  defs: ReadonlyArray<FontDefinition> | undefined
+): Promise<void> {
+  if (!defs || defs.length === 0) return;
+  await Promise.all(
+    defs.map((def) => loadFontFromUrl(def.family, def.src, { weight: def.weight }))
+  );
 }
 
 /**
