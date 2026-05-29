@@ -106,8 +106,10 @@ function mergeConditionalStyles(
  * OOXML uses vMerge="restart" to start a vertical merge and vMerge="continue" for cells that should be merged.
  * This function converts that to rowSpan values and marks which cells should be skipped.
  */
-function calculateRowSpans(table: Table): Map<string, { rowSpan: number; skip: boolean }> {
-  const result = new Map<string, { rowSpan: number; skip: boolean }>();
+type RowSpanInfo = { rowSpan: number; skip: boolean };
+
+function calculateRowSpans(table: Table): Map<string, RowSpanInfo> {
+  const result = new Map<string, RowSpanInfo>();
   const numRows = table.rows.length;
 
   // Track active vertical merges per column (stores the row index where merge started)
@@ -117,36 +119,63 @@ function calculateRowSpans(table: Table): Map<string, { rowSpan: number; skip: b
   for (let rowIndex = 0; rowIndex < numRows; rowIndex++) {
     const row = table.rows[rowIndex];
     let colIndex = 0;
-
-    for (let cellIndex = 0; cellIndex < row.cells.length; cellIndex++) {
-      const cell = row.cells[cellIndex];
+    const rowCells = row.cells.map((cell) => {
       const colspan = cell.formatting?.gridSpan ?? 1;
-      const vMerge = cell.formatting?.vMerge;
-      const key = `${rowIndex}-${colIndex}`;
+      const startCol = colIndex;
+      colIndex += colspan;
+      return {
+        colIndex: startCol,
+        vMerge: cell.formatting?.vMerge,
+        key: `${rowIndex}-${startCol}`,
+      };
+    });
+
+    const rowWouldBeEmpty =
+      rowCells.length > 0 &&
+      rowCells.every(
+        ({ colIndex: cellColIndex, vMerge }) =>
+          vMerge === 'continue' && activeMerges.has(cellColIndex)
+      );
+
+    if (rowWouldBeEmpty) {
+      // PM tableRow content is `(tableCell | tableHeader)+`. A DOCX row fully
+      // covered by vMerge continuations cannot be represented as an empty row,
+      // so render those continuation cells as standalone cells and stop the
+      // active merge before it overlaps this row.
+      for (const { colIndex: cellColIndex, key } of rowCells) {
+        activeMerges.delete(cellColIndex);
+        result.set(key, { rowSpan: 1, skip: false });
+      }
+      continue;
+    }
+
+    for (const { colIndex: cellColIndex, vMerge, key } of rowCells) {
+      const colIndex = cellColIndex;
 
       if (vMerge === 'restart') {
         // Start of a new vertical merge
         activeMerges.set(colIndex, rowIndex);
         result.set(key, { rowSpan: 1, skip: false });
       } else if (vMerge === 'continue') {
-        // Continuation of a merge - this cell should be skipped
         const startRow = activeMerges.get(colIndex);
         if (startRow !== undefined) {
+          // Continuation of a merge - this cell should be skipped
           // Increment rowSpan of the starting cell
           const startKey = `${startRow}-${colIndex}`;
           const startCell = result.get(startKey);
           if (startCell) {
             startCell.rowSpan++;
           }
+          result.set(key, { rowSpan: 1, skip: true });
+        } else {
+          // An orphan continuation has no owning restart cell to span from.
+          result.set(key, { rowSpan: 1, skip: false });
         }
-        result.set(key, { rowSpan: 1, skip: true });
       } else {
         // No vMerge - clear any active merge for this column
         activeMerges.delete(colIndex);
         result.set(key, { rowSpan: 1, skip: false });
       }
-
-      colIndex += colspan;
     }
   }
 
@@ -497,6 +526,37 @@ function convertTableRow(
         isFirstCol,
         isLastCol,
         calculatedRowSpan,
+        defaultCellMargins,
+        theme
+      )
+    );
+  }
+
+  if (cells.length === 0) {
+    const fallbackColspan = Math.max(totalCols, 1);
+    const fallbackCell: TableCell = {
+      type: 'tableCell',
+      formatting: fallbackColspan > 1 ? { gridSpan: fallbackColspan } : undefined,
+      content: [{ type: 'paragraph', content: [] }],
+    };
+    const fallbackConditionalStyle = mergeConditionalStyles(
+      conditionalStyles?.wholeTable,
+      rowBandStyle
+    );
+
+    cells.push(
+      convertTableCell(
+        fallbackCell,
+        styleResolver,
+        isHeaderRow,
+        totalWidth && totalWidth > 0 ? 100 : undefined,
+        fallbackConditionalStyle,
+        tableBorders,
+        isFirstRow,
+        isLastRow,
+        true,
+        true,
+        1,
         defaultCellMargins,
         theme
       )
