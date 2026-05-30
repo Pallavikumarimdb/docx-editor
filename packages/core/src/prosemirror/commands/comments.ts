@@ -316,6 +316,8 @@ interface ParagraphPropertyChangeSite {
   entryIndex: number;
   /** The prior `ParagraphFormatting` snapshot from the matching entry. */
   prior: import('../../types/document').ParagraphFormatting | undefined;
+  /** The post-change snapshot, when present — used to detect numbering the change added. */
+  current: import('../../types/document').ParagraphFormatting | undefined;
 }
 
 interface TableRowSite {
@@ -365,6 +367,7 @@ function findParagraphPropertyChangeSites(
     const changes = node.attrs.pPrChange as Array<{
       info: { id: number };
       previousFormatting?: unknown;
+      currentFormatting?: unknown;
     }> | null;
     if (!Array.isArray(changes)) return;
     changes.forEach((entry, idx) => {
@@ -377,6 +380,9 @@ function findParagraphPropertyChangeSites(
           node,
           entryIndex: idx,
           prior: entry.previousFormatting as
+            | import('../../types/document').ParagraphFormatting
+            | undefined,
+          current: entry.currentFormatting as
             | import('../../types/document').ParagraphFormatting
             | undefined,
         });
@@ -488,7 +494,8 @@ function clearParagraphPropertyChangeEntry(
  */
 function applyPriorParagraphFormattingToAttrs(
   attrs: Record<string, unknown>,
-  prior: import('../../types/document').ParagraphFormatting
+  prior: import('../../types/document').ParagraphFormatting,
+  current?: import('../../types/document').ParagraphFormatting
 ): Record<string, unknown> {
   const next: Record<string, unknown> = { ...attrs };
   // Only fields whose PM-attr shape matches the model `ParagraphFormatting`
@@ -538,6 +545,24 @@ function applyPriorParagraphFormattingToAttrs(
     if (Object.prototype.hasOwnProperty.call(prior, f)) {
       next[f as string] = prior[f] ?? null;
     }
+  }
+  // Numbering added by the change must be removed on reject. When `prior` has
+  // no `numPr` the loop above leaves the current numbering in place — correct
+  // for an unrelated property change (e.g. alignment) on a list item, but
+  // wrong when THIS change is what introduced the numbering. Disambiguate via
+  // `current`: if the post-change snapshot carried `numPr` and the prior did
+  // not, the numbering was part of the change, so clear it. This is the path a
+  // list-creation suggestion takes after a save/reload, where the empty prior
+  // `<w:pPr/>` round-trips without a `numPr` key (issue #634).
+  if (current?.numPr && !Object.prototype.hasOwnProperty.call(prior, 'numPr')) {
+    next.numPr = null;
+  }
+  // Keep the render-only list attrs consistent with `numPr`: once numbering is
+  // gone, the bullet/format/marker hints must go too, or a stale glyph lingers.
+  if (next.numPr == null) {
+    next.listIsBullet = null;
+    next.listNumFmt = null;
+    next.listMarker = null;
   }
   return next;
 }
@@ -678,8 +703,13 @@ function resolveById(revisionId: number, mode: 'accept' | 'reject'): Command {
 
       if (mode === 'reject' && site.prior) {
         // Restore prior fields BEFORE clearing the entry so we don't lose
-        // the snapshot in the intermediate state.
-        const restored = applyPriorParagraphFormattingToAttrs(liveNode.attrs, site.prior);
+        // the snapshot in the intermediate state. `current` lets the restore
+        // detect (and clear) numbering the change introduced.
+        const restored = applyPriorParagraphFormattingToAttrs(
+          liveNode.attrs,
+          site.prior,
+          site.current
+        );
         const nextChanges = liveChanges.slice();
         nextChanges.splice(liveIndex, 1);
         tr.setNodeMarkup(mappedPos, undefined, {

@@ -566,6 +566,34 @@ export function extractTrackedChanges(state: EditorState | null): TrackedChanges
     ids.delete(survivor.revisionId);
     survivor.coalescedRevisionIds = ids.size > 0 ? [...ids] : undefined;
   }
+  // Structural fold: a paragraph-property change (e.g. a numbering change from
+  // applying a list) whose paragraph overlaps a contiguous same-author
+  // insertion is part of the same conceptual edit — Word shows it as ONE
+  // tracked change and Reject clears all of it. Fold the `pPrChange` id into
+  // the overlapping inline card and hide the standalone entry, so one Reject
+  // reverts both the inserted text and the numbering (issue #634). Matched by
+  // structure (range overlap + author), never by timestamp: Word stamps each
+  // element of one logical change a slightly different time.
+  //
+  // Intentional over-capture: matching on author + overlap (not the exact
+  // edit) means a property change on a paragraph that also holds an unrelated
+  // same-author insertion would fold into it. In practice only the parser and
+  // the list-toggle author `pPrChange`, so the window is tiny; folding errs
+  // toward one Reject clearing related edits, matching the pPrIns fold above.
+  const inlineHosts = final.filter((e) => e.type === 'insertion' || e.type === 'replacement');
+  const foldedPropChanges = new Set<TrackedChangeEntry>();
+  for (const e of final) {
+    if (e.type !== 'paragraphPropertiesChanged') continue;
+    const host = inlineHosts.find((c) => c.author === e.author && c.from < e.to && e.from < c.to);
+    if (!host) continue;
+    const ids = new Set<number>(mergeIds(host, e));
+    if (host.type === 'replacement' && host.insertionRevisionId != null) {
+      ids.delete(host.insertionRevisionId);
+    }
+    host.coalescedRevisionIds = ids.size > 0 ? [...ids] : undefined;
+    foldedPropChanges.add(e);
+  }
+
   const deduped = final.filter((e) => {
     const key = `${e.author}|${e.date ?? ''}`;
     if (e.type === 'tableInserted' || e.type === 'tableDeleted') {
@@ -575,6 +603,9 @@ export function extractTrackedChanges(state: EditorState | null): TrackedChanges
     }
     if (e.type === 'paragraphMarkInsertion' || e.type === 'paragraphMarkDeletion') {
       return !inlineByKey.has(key) && !tableByKey.has(key);
+    }
+    if (e.type === 'paragraphPropertiesChanged') {
+      return !foldedPropChanges.has(e);
     }
     if (e.type === 'insertion' || e.type === 'deletion' || e.type === 'replacement') {
       return !tableByKey.has(key);
