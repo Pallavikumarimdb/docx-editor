@@ -191,11 +191,14 @@ export {
   formatPx,
   emuToPixels,
   pointsToPixels,
+  pointsToHalfPoints,
   halfPointsToPixels,
   pixelsToEmu,
   emuToTwips,
   twipsToEmu,
 } from './utils/units';
+
+export { mapHexToHighlightName } from './utils/highlightColors';
 
 export {
   resolveColor,
