@@ -1,5 +1,22 @@
 # @eigenpal/docx-editor-core
 
+## 1.1.0
+
+### Minor Changes
+
+- 9d7138e: Add a `fonts` prop on `<DocxEditor>` for declarative custom-font registration — each entry injects an `@font-face` from the URL you provide, and entries sharing a `family` register different weights. Also exposes `loadFontFromUrl`, `loadFontDefinitions`, and the `FontDefinition` type from `@eigenpal/docx-editor-core/utils`. Fixes #620.
+- bf11ee8: Fix undo in suggesting mode marking an existing character as inserted. Undoing a tracked paragraph break (Enter) now only removes the break, without stamping a stray insertion on the boundary character. Raises the prosemirror-history peer dependency to >= 1.5.0. Fixes #633
+- 9d7138e: Font-load failures now route through the React `onError` prop and the Vue `error` event instead of the console, so you can forward them to your own error tracker; with no subscriber attached they fall back to `console.warn`. Adds `onFontError(callback)` to `@eigenpal/docx-editor-core/utils` for non-adapter hosts.
+- 42ea72d: Track structural edits as OOXML revisions in suggesting mode. Paragraph-break insert/delete, paragraph-property changes, and table row/cell insert/delete/merge are now recorded, round-tripped through DOCX, and shown in the tracked-changes sidebar (React and Vue, localized). Adds `acceptChangeById(id)` / `rejectChangeById(id)`, and `acceptAllChanges` / `rejectAllChanges` now resolve every revision type rather than inline marks only. Fixes #614.
+- 137d5de: Track inserted and deleted images as real tracked changes in suggesting mode. A picture added (or removed) while suggesting now carries the insertion/deletion mark, paints with a revision outline, shows a review card, and is accepted/rejected with the rest of the change — and round-trips to `<w:ins>`/`<w:del>` like Word. The mechanism is generic to inline atom nodes, so other elements (shapes, …) plug in the same way.
+
+### Patch Changes
+
+- 7e77654: Track list/numbering changes made in suggesting mode so rejecting them reverts cleanly. Applying a list to a paragraph now records a tracked paragraph-property change (`w:pPrChange`, matching Word), and rejecting the suggestion removes both the typed items and the numbering instead of stranding an empty list item. Fixes #634
+- 30c1931: Handle DOCX tables with fully covered vertical-merge rows without creating invalid empty table rows.
+- ebb85a5: Tolerate a stray unescaped `&` in DOCX XML parts (document, headers, footers, comments) instead of failing the whole parse with "Invalid character in entity name". Stray ampersands are escaped before parsing, and any remaining parse error now includes a snippet of the bytes around the offending column.
+- e5e0997: Header/footer editing now matches the body: click, drag, multi-click, selection, right-click, image select, hyperlinks, table row/column/edge resize, and PAGE/NUMPAGES field inserts all behave the same as in the document body. Fixes #468.
+
 ## 1.0.3
 
 ### Patch Changes
