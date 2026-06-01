@@ -54,6 +54,7 @@ import { HorizontalRuleExtension } from './nodes/HorizontalRuleExtension';
 import { PageBreakExtension } from './nodes/PageBreakExtension';
 import { FieldExtension } from './nodes/FieldExtension';
 import { SdtExtension } from './nodes/SdtExtension';
+import { BlockSdtExtension } from './nodes/BlockSdtExtension';
 import { MathExtension } from './nodes/MathExtension';
 import { createTableExtensions } from './nodes/TableExtension';
 
@@ -148,6 +149,7 @@ export function createStarterKit(options: StarterKitOptions = {}): AnyExtension[
   add('pageBreak', PageBreakExtension());
   add('field', FieldExtension());
   add('sdt', SdtExtension());
+  add('blockSdt', BlockSdtExtension());
   add('math', MathExtension());
 
   // Table (5 extensions grouped)
