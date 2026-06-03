@@ -11,8 +11,9 @@
 
 import type JSZip from 'jszip';
 import type { BlockContent, Image } from '../../types/content';
+import type { Document } from '../../types/document';
 import { RELATIONSHIP_TYPES } from '../relsParser';
-import { findMaxRId, readRelsOrStub, type Part } from './parts';
+import { findMaxRId, readRelsOrStub, headerFooterFilename, type Part } from './parts';
 
 /**
  * Get content type for a file extension. Falls back to the provided MIME type
@@ -213,6 +214,68 @@ export async function processNewImages(
       compression: 'DEFLATE',
       compressionOptions: { level: compressionLevel },
     });
+  }
+
+  await registerImageExtensions(zip, extensionsAdded, compressionLevel);
+}
+
+/**
+ * Register newly added picture-watermark images (those whose `dataUrl` is still
+ * a data URL and have no relationship yet) against their header part's rels,
+ * writing the binary into `word/media/` and stamping the resulting rId onto the
+ * watermark so the serializer emits a valid `<v:imagedata r:id="...">`.
+ *
+ * Watermarks live on `HeaderFooter.watermark` (outside the run flow), so they
+ * are processed here rather than via {@link processNewImages}.
+ */
+export async function processNewWatermarkImages(
+  doc: Document,
+  zip: JSZip,
+  compressionLevel: number
+): Promise<void> {
+  const headers = doc.package.headers;
+  const rels = doc.package.relationships;
+  if (!headers || !rels) return;
+
+  let maxImageNum = findMaxImageNum(zip);
+  const extensionsAdded = new Set<string>();
+
+  for (const [rId, hf] of headers.entries()) {
+    const wm = hf.watermark;
+    if (!wm || wm.kind !== 'picture') continue;
+    // Already backed by a relationship from the original file — nothing to add.
+    if (wm.relId) continue;
+    if (!wm.dataUrl || !wm.dataUrl.startsWith('data:')) continue;
+
+    const headerRel = rels.get(rId);
+    if (!headerRel?.target) continue;
+    const filename = headerFooterFilename(headerRel.target).replace(/^word\//, '');
+    const relsPath = `word/_rels/${filename}.rels`;
+
+    const { data, extension } = decodeDataUrl(wm.dataUrl);
+    maxImageNum++;
+    const mediaFilename = `image${maxImageNum}.${extension}`;
+
+    const relsXml = await readRelsOrStub(zip, relsPath);
+    const newRId = `rId${findMaxRId(relsXml) + 1}`;
+
+    zip.file(`word/media/${mediaFilename}`, data, {
+      compression: 'DEFLATE',
+      compressionOptions: { level: compressionLevel },
+    });
+
+    const updatedRelsXml = relsXml.replace(
+      '</Relationships>',
+      `<Relationship Id="${newRId}" Type="${RELATIONSHIP_TYPES.image}" ` +
+        `Target="media/${mediaFilename}"/></Relationships>`
+    );
+    zip.file(relsPath, updatedRelsXml, {
+      compression: 'DEFLATE',
+      compressionOptions: { level: compressionLevel },
+    });
+
+    extensionsAdded.add(extension);
+    wm.relId = newRId;
   }
 
   await registerImageExtensions(zip, extensionsAdded, compressionLevel);

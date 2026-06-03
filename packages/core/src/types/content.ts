@@ -104,6 +104,8 @@ export type {
   Endnote,
 } from './content/headerFooter';
 
+export type { TextWatermark, PictureWatermark, Watermark } from './content/watermark';
+
 export type {
   PageOrientation,
   SectionStart,
