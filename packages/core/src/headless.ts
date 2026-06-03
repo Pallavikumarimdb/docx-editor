@@ -155,8 +155,8 @@ export { parseDocx } from './docx/parser';
 export {
   serializeDocument as serializeDocx,
   serializeDocumentBody,
-  serializeSectionProperties,
 } from './docx/serializer/documentSerializer';
+export { serializeSectionProperties } from './docx/serializer/sectionPropertiesSerializer';
 export { repackDocx, createDocx, updateMultipleFiles } from './docx/rezip';
 export { getDocumentWatermark, setDocumentWatermark } from './docx/watermarkApi';
 export { attemptSelectiveSave } from './docx/selectiveSave';

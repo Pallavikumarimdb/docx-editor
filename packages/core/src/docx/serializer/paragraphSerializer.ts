@@ -21,11 +21,13 @@ import type {
   Paragraph,
   ParagraphFormatting,
   ParagraphPropertyChange,
+  SectionProperties,
   TextFormatting,
   TrackedChangeInfo,
 } from '../../types/document';
 
 import { serializeTextFormatting } from './runSerializer';
+import { serializeSectionProperties } from './sectionPropertiesSerializer';
 import { escapeXml } from './xmlUtils';
 import {
   serializeFrameProperties,
@@ -109,7 +111,7 @@ export function serializeParagraphFormatting(
   propertyChanges?: ParagraphPropertyChange[],
   pPrIns?: TrackedChangeInfo,
   pPrDel?: TrackedChangeInfo,
-  options?: { baseOnly?: boolean }
+  options?: { baseOnly?: boolean; sectionProperties?: SectionProperties }
 ): string {
   const parts: string[] = [];
 
@@ -220,6 +222,16 @@ export function serializeParagraphFormatting(
       parts.push(rPrXml);
     }
 
+    // Section properties (mid-body section break carried on `w:pPr/w:sectPr`).
+    // CT_PPr ordering puts `<w:sectPr>` after the paragraph-mark `<w:rPr>` and
+    // before `<w:pPrChange>`.
+    if (options?.sectionProperties) {
+      const sectPrXml = serializeSectionProperties(options.sectionProperties);
+      if (sectPrXml) {
+        parts.push(sectPrXml);
+      }
+    }
+
     // OOXML allows at most one `<w:pPrChange>` per `<w:pPr>` (CT_PPr
     // maxOccurs="1"). The model array CAN carry several entries for in-memory
     // history; on disk we emit only the first (the canonical prior snapshot)
@@ -290,7 +302,8 @@ export function serializeParagraph(paragraph: Paragraph): string {
     paragraph.formatting,
     paragraph.propertyChanges,
     paragraph.pPrIns,
-    paragraph.pPrDel
+    paragraph.pPrDel,
+    paragraph.sectionProperties ? { sectionProperties: paragraph.sectionProperties } : undefined
   );
   if (pPrXml) {
     parts.push(pPrXml);
