@@ -76,6 +76,7 @@ export default defineConfig([
       'prosemirror/imageCommit': 'src/prosemirror/imageCommit.ts',
       'prosemirror/commentOps': 'src/prosemirror/commentOps.ts',
       'prosemirror/commentIdAllocator': 'src/prosemirror/commentIdAllocator.ts',
+      'editor/index': 'src/editor/index.ts',
       'utils/autoScroll': 'src/utils/autoScroll.ts',
     },
     format: ['cjs', 'esm'],

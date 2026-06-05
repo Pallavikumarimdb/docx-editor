@@ -333,6 +333,11 @@
       "import": "./dist/prosemirror/commentIdAllocator.mjs",
       "require": "./dist/prosemirror/commentIdAllocator.js"
     },
+    "./editor": {
+      "types": "./dist/editor/index.d.ts",
+      "import": "./dist/editor/index.mjs",
+      "require": "./dist/editor/index.js"
+    },
     "./prosemirror/conversion/fromProseDoc": {
       "types": "./dist/prosemirror/conversion/fromProseDoc.d.ts",
       "import": "./dist/prosemirror/conversion/fromProseDoc.mjs",
@@ -547,6 +552,9 @@
       ],
       "prosemirror/commentIdAllocator": [
         "./dist/prosemirror/commentIdAllocator.d.ts"
+      ],
+      "editor": [
+        "./dist/editor/index.d.ts"
       ],
       "prosemirror/conversion/fromProseDoc": [
         "./dist/prosemirror/conversion/fromProseDoc.d.ts"
