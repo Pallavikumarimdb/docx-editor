@@ -1,5 +1,13 @@
 # @eigenpal/docx-editor-core
 
+## 1.3.2
+
+### Patch Changes
+
+- 3bd7bf7: Plain paragraphs that reference a numbering level with `numFmt="none"` are no longer rendered with a fabricated "1." marker. Word shows these as plain text, so the editor now omits the marker while keeping genuine numbered and bulleted lists intact. Fixes #718.
+- 0ded2a1: Right-to-left paragraphs now render in the correct reading order. A paragraph whose runs are marked right-to-left (`w:rtl`) but that carries no explicit bidi flag is laid out right-to-left based on its first strong character, so Hebrew and Arabic text no longer reads left-to-right. Alignment and indentation mirror to match. Fixes #719.
+- 58e3a7e: Text highlight colors are restored when a document is reloaded. Custom highlight colors outside Word's named palette are saved as character shading (`w:shd`); the importer now reads that shading back into the highlight, so the background no longer disappears on reload even though it was always present in the exported file. Fixes #712.
+
 ## 1.3.1
 
 ### Patch Changes
