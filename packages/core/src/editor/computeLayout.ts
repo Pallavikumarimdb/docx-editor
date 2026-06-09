@@ -268,12 +268,16 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
     firstPageFooterForRender,
     hasTitlePg,
     watermark,
-    headerDistancePx: sectionProperties?.headerDistance
-      ? twipsToPixels(sectionProperties.headerDistance)
-      : undefined,
-    footerDistancePx: sectionProperties?.footerDistance
-      ? twipsToPixels(sectionProperties.footerDistance)
-      : undefined,
+    // Nullish, not truthy: an explicit `w:header="0"` must paint the header at
+    // the page top, not fall back to the painter's 0.5in default (#740).
+    headerDistancePx:
+      sectionProperties?.headerDistance != null
+        ? twipsToPixels(sectionProperties.headerDistance)
+        : undefined,
+    footerDistancePx:
+      sectionProperties?.footerDistance != null
+        ? twipsToPixels(sectionProperties.footerDistance)
+        : undefined,
     pageBorders: sectionProperties?.pageBorders,
     footnotesByPage: footnotesByPage?.size ? footnotesByPage : undefined,
   };
