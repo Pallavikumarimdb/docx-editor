@@ -19,6 +19,7 @@ import { TextSelection } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import { applyStyle } from './commands/paragraph';
 import type { StyleResolver } from './styles';
+import type { NumberingMap } from '../docx/numberingParser';
 import { mapHexToHighlightName } from '../utils/highlightColors';
 import { pointsToHalfPoints } from '../utils/units';
 import { findParaIdRange, findTextInPmParagraph } from './paraText';
@@ -150,12 +151,12 @@ export function applyFormatting(view: EditorView, options: ApplyFormattingOption
 export function setParagraphStyle(
   view: EditorView,
   options: { paraId: string; styleId: string },
-  deps: { styleResolver: StyleResolver | null }
+  deps: { styleResolver: StyleResolver | null; numbering?: NumberingMap | null }
 ): boolean {
   const range = findParaIdRange(view.state.doc, options.paraId);
   if (!range) return false;
 
-  const { styleResolver } = deps;
+  const { styleResolver, numbering } = deps;
   if (styleResolver && !styleResolver.hasParagraphStyle(options.styleId)) {
     return false;
   }
@@ -174,6 +175,7 @@ export function setParagraphStyle(
         return applyStyle(options.styleId, {
           paragraphFormatting: r.paragraphFormatting,
           runFormatting: r.runFormatting,
+          numbering,
         });
       })()
     : applyStyle(options.styleId);
