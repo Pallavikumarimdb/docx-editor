@@ -151,6 +151,7 @@ describe('package.json exports map', () => {
       './prosemirror/queries',
       './prosemirror/applyFormatting',
       './prosemirror/tableResize',
+      './prosemirror/cellDragSelection',
       './prosemirror/imageCommit',
       './prosemirror/commentOps',
       './prosemirror/commentIdAllocator',

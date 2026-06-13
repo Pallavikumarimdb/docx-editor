@@ -318,6 +318,11 @@
       "import": "./dist/prosemirror/tableResize.mjs",
       "require": "./dist/prosemirror/tableResize.js"
     },
+    "./prosemirror/cellDragSelection": {
+      "types": "./dist/prosemirror/cellDragSelection.d.ts",
+      "import": "./dist/prosemirror/cellDragSelection.mjs",
+      "require": "./dist/prosemirror/cellDragSelection.js"
+    },
     "./prosemirror/imageCommit": {
       "types": "./dist/prosemirror/imageCommit.d.ts",
       "import": "./dist/prosemirror/imageCommit.mjs",
@@ -543,6 +548,9 @@
       ],
       "prosemirror/tableResize": [
         "./dist/prosemirror/tableResize.d.ts"
+      ],
+      "prosemirror/cellDragSelection": [
+        "./dist/prosemirror/cellDragSelection.d.ts"
       ],
       "prosemirror/imageCommit": [
         "./dist/prosemirror/imageCommit.d.ts"

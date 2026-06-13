@@ -73,6 +73,7 @@ export default defineConfig([
       'prosemirror/queries': 'src/prosemirror/queries.ts',
       'prosemirror/applyFormatting': 'src/prosemirror/applyFormatting.ts',
       'prosemirror/tableResize': 'src/prosemirror/tableResize.ts',
+      'prosemirror/cellDragSelection': 'src/prosemirror/cellDragSelection.ts',
       'prosemirror/imageCommit': 'src/prosemirror/imageCommit.ts',
       'prosemirror/commentOps': 'src/prosemirror/commentOps.ts',
       'prosemirror/commentIdAllocator': 'src/prosemirror/commentIdAllocator.ts',
