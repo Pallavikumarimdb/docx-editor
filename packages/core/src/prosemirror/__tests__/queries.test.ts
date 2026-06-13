@@ -11,7 +11,13 @@ import type { EditorView } from 'prosemirror-view';
 import type { Layout } from '../../layout-engine';
 
 import { singletonManager } from '../schema';
-import { findInDocument, getSelectionInfo, getPageContent } from '../queries';
+import {
+  findInDocument,
+  getSelectionInfo,
+  getPageContent,
+  findCommentRange,
+  findChangeRange,
+} from '../queries';
 
 const schema = singletonManager.getSchema();
 
@@ -98,6 +104,66 @@ describe('getSelectionInfo', () => {
 
   test('null view returns null', () => {
     expect(getSelectionInfo(null)).toBeNull();
+  });
+});
+
+describe('findCommentRange', () => {
+  function stateWithComment(commentId: number) {
+    const mark = schema.marks.comment.create({ commentId });
+    const doc = schema.nodes.doc.create(null, [
+      schema.nodes.paragraph.create({ paraId: 'AAA' }, [
+        schema.text('plain '),
+        schema.text('marked text', [mark]),
+        schema.text(' tail'),
+      ]),
+    ]);
+    return EditorState.create({ schema, doc });
+  }
+
+  test('resolves a present comment id to its marked range', () => {
+    const view = asView(stateWithComment(7));
+    const range = findCommentRange(view, 7);
+    expect(range).not.toBeNull();
+    // 'plain ' is 6 chars; paragraph open tag adds 1 → range starts at 7.
+    expect(view.state.doc.textBetween(range!.from, range!.to)).toBe('marked text');
+  });
+
+  test('returns null for an absent comment id', () => {
+    const view = asView(stateWithComment(7));
+    expect(findCommentRange(view, 9999)).toBeNull();
+  });
+
+  test('null view returns null', () => {
+    expect(findCommentRange(null, 7)).toBeNull();
+  });
+});
+
+describe('findChangeRange', () => {
+  function stateWithInsertion(revisionId: number) {
+    const ins = schema.marks.insertion.create({ revisionId, author: 'A', date: null });
+    const doc = schema.nodes.doc.create(null, [
+      schema.nodes.paragraph.create({ paraId: 'AAA' }, [
+        schema.text('kept '),
+        schema.text('inserted', [ins]),
+      ]),
+    ]);
+    return EditorState.create({ schema, doc });
+  }
+
+  test('resolves a present revision id to its change range', () => {
+    const view = asView(stateWithInsertion(42));
+    const range = findChangeRange(view, 42);
+    expect(range).not.toBeNull();
+    expect(view.state.doc.textBetween(range!.from, range!.to)).toBe('inserted');
+  });
+
+  test('returns null for an absent revision id', () => {
+    const view = asView(stateWithInsertion(42));
+    expect(findChangeRange(view, 9999)).toBeNull();
+  });
+
+  test('null view returns null', () => {
+    expect(findChangeRange(null, 42)).toBeNull();
   });
 });
 
