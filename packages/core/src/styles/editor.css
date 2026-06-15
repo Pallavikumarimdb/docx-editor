@@ -142,66 +142,128 @@
  * via these token overrides (as below), never via a `dark:` utility placed
  * directly on the `.ep-root` node.
  * ====================================================================== */
-.ep-root.dark {
-  /* shadcn / Tailwind tokens (HSL triples) */
-  /* --background: 220 7% 11%; */
-  /* --foreground: 0 0% 89%; */
-  /* --card: 220 6% 13%; */
-  /* --card-foreground: 0 0% 89%; */
-  /* --popover: 220 6% 13%; */
-  /* --popover-foreground: 0 0% 89%; */
-  /* --primary: 217 89% 76%; */
-  /* --primary-foreground: 220 7% 11%; */
-  /* --secondary: 220 5% 20%; */
-  /* --secondary-foreground: 0 0% 89%; */
-  /* --muted: 220 5% 20%; */
-  /* --muted-foreground: 218 6% 65%; */
-  /* --accent: 220 5% 20%; */
-  /* --accent-foreground: 0 0% 89%; */
-  /* --destructive: 0 70% 67%; */
-  /* --destructive-foreground: 220 7% 11%; */
-  /* --border: 220 4% 26%; */
-  /* --input: 220 4% 26%; */
-  /* --ring: 217 89% 76%; */
+/* Also targets nested `.ep-root` elements (e.g. the paged-editor root, Radix
+ * portals) so the base `.ep-root` light tokens don't shadow these inside a
+ * dark tree. */
+.ep-root.dark,
+.ep-root.dark .ep-root {
+  /* Palette sampled from Microsoft Word Online dark mode (chrome + canvas).
+   * shadcn / Tailwind tokens (HSL triples) — mirror the --doc-* chrome values
+   * below so shadcn-based components (Select, Button) re-theme in lockstep. */
+  --background: 0 0% 12%; /* #1f1f1f ribbon/surface */
+  --foreground: 0 0% 91%; /* #e8e8e8 */
+  --card: 0 0% 18%; /* #2d2d2d */
+  --card-foreground: 0 0% 91%;
+  --popover: 0 0% 18%; /* #2d2d2d */
+  --popover-foreground: 0 0% 91%;
+  --primary: 212 100% 65%; /* #4e9dff Word accent */
+  --primary-foreground: 0 0% 12%;
+  --secondary: 0 0% 20%; /* #333333 */
+  --secondary-foreground: 0 0% 91%;
+  --muted: 0 0% 20%; /* #333333 */
+  --muted-foreground: 0 0% 63%; /* #a0a0a0 */
+  --accent: 0 0% 23%; /* #3a3a3a */
+  --accent-foreground: 212 100% 65%;
+  --destructive: 0 72% 60%; /* #e05656 */
+  --destructive-foreground: 0 0% 98%;
+  --border: 0 0% 24%; /* #3c3c3c */
+  --input: 0 0% 24%;
+  --ring: 212 100% 60%;
 
-  /* chrome palette */
-  /* --doc-surface: #1f1f1f; */
-  /* --doc-card: #25262a; */
-  /* --doc-bg: #131314; */
-  /* --doc-bg-subtle: #292a2d; */
-  /* --doc-bg-hover: #2d2e30; */
-  /* --doc-bg-input: #1f1f1f; */
-  /* --doc-primary: #8ab4f8; */
-  /* --doc-primary-hover: #aecbfa; */
-  /* --doc-primary-light: #1f3047; */
-  /* --doc-accent: #a8c7fa; */
-  /* --doc-accent-bg: #1f2a3d; */
-  /* --doc-on-primary: #202124; */
-  /* --doc-text: #e3e3e3; */
-  /* --doc-text-muted: #c4c7c5; */
-  /* --doc-text-subtle: #9aa0a6; */
-  /* --doc-text-placeholder: #80868b; */
-  /* --doc-border: #3c4043; */
-  /* --doc-border-light: #444746; */
-  /* --doc-border-dark: #5f6368; */
-  /* --doc-border-input: #5f6368; */
-  /* --doc-error: #f28b82; */
-  /* --doc-error-bg: #3c1f1d; */
-  /* --doc-success: #81c995; */
-  /* --doc-success-bg: #1f2e22; */
-  /* --doc-warning: #fdd663; */
-  /* --doc-warning-bg: #332a1a; */
-  /* --doc-warning-text: #fdd663; */
-  /* --doc-link: #8ab4f8; */
-  /* --doc-shadow: rgba(0, 0, 0, 0.4); */
-  /* --doc-shadow-strong: rgba(0, 0, 0, 0.6); */
-  /* --doc-shadow-subtle: rgba(0, 0, 0, 0.2); */
-  /* --doc-card-shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.2); */
-  /* --doc-card-shadow-strong: 0 1px 3px rgba(0, 0, 0, 0.5), 0 4px 8px 3px rgba(0, 0, 0, 0.3); */
-  /* --doc-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.5); */
-  /* --doc-overlay: rgba(0, 0, 0, 0.7); */
-  /* --doc-focus-ring: rgba(138, 180, 248, 0.4); */
-  /* --doc-selection: rgba(138, 180, 248, 0.3); */
+  /* chrome palette (Word Online dark) */
+  --doc-surface: #1f1f1f; /* ribbon / toolbar / title bar */
+  --doc-card: #2d2d2d; /* collapsed comment / suggestion cards */
+  --doc-bg: #262626; /* workspace behind the page */
+  --doc-bg-subtle: #2d2d2d; /* dropdowns, dialogs, panels */
+  --doc-bg-hover: #3a3a3a; /* hover states */
+  --doc-bg-input: #333333; /* input fields */
+  --doc-primary: #4e9dff; /* Word accent blue (Home-tab underline) */
+  --doc-primary-hover: #6cb0ff;
+  --doc-primary-light: rgba(78, 157, 255, 0.18); /* selected/active bg */
+  --doc-accent: #4e9dff;
+  --doc-accent-bg: #1f3047;
+  --doc-on-primary: #1f1f1f; /* text/icon on a filled primary surface */
+  --doc-text: #e8e8e8; /* primary text */
+  --doc-text-muted: #a0a0a0; /* secondary text */
+  --doc-text-subtle: #6e6e6e; /* tertiary/disabled text */
+  --doc-text-placeholder: #6e6e6e;
+  --doc-border: #3c3c3c; /* standard borders */
+  --doc-border-light: #353535; /* lighter borders */
+  --doc-border-dark: #555555; /* darker borders (tables) */
+  --doc-border-input: #4a4a4a; /* input borders */
+  --doc-error: #f28b82;
+  --doc-error-bg: #3c1f1d;
+  --doc-success: #81c995;
+  --doc-success-bg: #1f2e22;
+  --doc-warning: #fdd663;
+  --doc-warning-bg: #332a1a;
+  --doc-warning-text: #fdd663;
+  --doc-link: #6eb9ff;
+  --doc-shadow: rgba(0, 0, 0, 0.4);
+  --doc-shadow-strong: rgba(0, 0, 0, 0.6);
+  --doc-shadow-subtle: rgba(0, 0, 0, 0.2);
+  --doc-card-shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.2);
+  --doc-card-shadow-strong: 0 1px 3px rgba(0, 0, 0, 0.5), 0 4px 8px 3px rgba(0, 0, 0, 0.3);
+  --doc-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.5);
+  --doc-overlay: rgba(0, 0, 0, 0.7);
+  --doc-focus-ring: rgba(78, 157, 255, 0.45);
+  --doc-selection: rgba(78, 157, 255, 0.32);
+
+  /* Document canvas in dark mode (a VIEW transform — the saved DOCX never
+   * changes). Word doesn't just swap two colors; it perceptually inverts the
+   * LIGHTNESS of every document color while keeping its hue, so black text →
+   * white, dark-navy headings → light blue, dark-red → light red, etc. We get
+   * that for free by rendering the page in normal (light) colors and applying
+   * `invert(1) hue-rotate(180deg)` to the whole page below — hue-rotate undoes
+   * the hue flip that invert() introduces, leaving only the lightness flip.
+   *
+   * So the page is painted light here: pre-filter #ccc inverts to the ~#333
+   * canvas Word uses; text stays #000 (→ near-white). Images are inverted back
+   * to normal by the counter-filter below. */
+  --doc-page-bg: #cccccc;
+  /* --doc-page-text stays #000000 (light fallback) so it inverts to white. */
+
+  /* Caret on the dark canvas. The selection overlay sits OUTSIDE the inverted
+   * page (it's a sibling, not filtered), so a black caret would be invisible —
+   * point it at a light colour in dark mode. */
+  --doc-caret: #e8e8e8;
+}
+
+/* Smart lightness inversion of the document canvas — the heart of dark mode.
+ * invert(1) hue-rotate(180deg) flips lightness but preserves hue for ALL
+ * authored colors, so nothing is unreadable. Media is double-inverted back so
+ * photos/logos render normally. */
+.ep-root.dark .layout-page {
+  /* contrast(0.92) softens the pure black/white extremes a plain invert
+   * produces, landing on Word's gentler off-white text / dark-grey fills
+   * rather than #fff on #000. */
+  filter: invert(1) hue-rotate(180deg) contrast(0.92);
+  /* Replace the painter's drop shadow (the filter would turn it into a weird
+   * light glow) with a 1px ring. Pre-invert dark → post-invert a subtle light
+   * border, matching Word's framed dark page. */
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18) !important;
+}
+.ep-root.dark .layout-page img,
+.ep-root.dark .layout-page svg,
+.ep-root.dark .layout-page canvas,
+.ep-root.dark .layout-page video,
+.ep-root.dark .layout-page [data-no-color-invert] {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+/* Printing is always on white paper: drop the inversion and paint the page
+ * white with black text (matches Word, saves toner). */
+@media print {
+  .ep-root.dark {
+    --doc-page-bg: #ffffff;
+  }
+  .ep-root.dark .layout-page,
+  .ep-root.dark .layout-page img,
+  .ep-root.dark .layout-page svg,
+  .ep-root.dark .layout-page canvas,
+  .ep-root.dark .layout-page video {
+    filter: none;
+  }
 }
 
 /* ============================================================================
