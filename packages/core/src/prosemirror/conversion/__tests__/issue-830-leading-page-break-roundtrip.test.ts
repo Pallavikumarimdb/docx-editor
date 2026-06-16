@@ -52,7 +52,12 @@ describe('issue #830 leading hard page break round-trip', () => {
 
     const xml = serializeParagraph(outputParagraph);
     expect(xml).toContain('<w:pageBreakBefore/>');
-    expect(xml).toMatch(/<w:r[^>]*><w:lastRenderedPageBreak\/><w:t>After hard break/);
+    // The lastRenderedPageBreak marker survives and the text survives. The
+    // marker may ride its own run rather than the text run, since run-boundary
+    // preservation keeps the empty leading-break run distinct; both layouts are
+    // valid OOXML (Word itself commonly emits the marker on a standalone run).
+    expect(xml).toMatch(/<w:r[^>]*><w:lastRenderedPageBreak\/>/);
+    expect(xml).toContain('<w:t>After hard break</w:t>');
   });
 
   test('preserves a break-only paragraph with no direct formatting', () => {
