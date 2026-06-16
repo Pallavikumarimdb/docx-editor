@@ -349,6 +349,9 @@ function paragraphFormattingToAttrs(
   if (paragraph.renderedPageBreakBefore) {
     attrs.renderedPageBreakBefore = true;
   }
+  if (paragraphStartsWithPageBreak(paragraph)) {
+    attrs.pageBreakBefore = true;
+  }
 
   // Paragraph-mark tracked-change attrs (w:pPr/w:rPr/w:ins, w:del).
   if (paragraph.pPrIns) {
@@ -414,50 +417,109 @@ function convertInlineSdt(
   );
 }
 
-/**
- * Returns true when `<w:br w:type="page"/>` appears anywhere in a paragraph.
- *
- * A hard page break is always a forced break per ECMA-376 §17.3.3.1. We used
- * to require visible content before the break (and rely on
- * `renderedPageBreakBefore` for leading breaks), but that attr is informational
- * only and not honored at layout, so a break-only paragraph (empty paragraph
- * containing just `<w:r><w:br w:type="page"/></w:r>`) silently dropped its
- * forced break — Word renders such paragraphs with the next paragraph on a
- * fresh page.
- */
-export function paragraphHasPageBreak(paragraph: Paragraph): boolean {
-  function visitRunContent(content: RunContent): boolean {
-    return content.type === 'break' && content.breakType === 'page';
-  }
+type ParagraphContentToken = 'pageBreak' | 'visible';
 
-  function visit(item: Paragraph['content'][number]): boolean {
+function isVisibleRunContent(content: RunContent): boolean {
+  if (content.type === 'text') return content.text.length > 0;
+  return true;
+}
+
+function collectRunContentTokens(contents: RunContent[], tokens: ParagraphContentToken[]): void {
+  for (const content of contents) {
+    if (content.type === 'break' && content.breakType === 'page') {
+      tokens.push('pageBreak');
+    } else if (isVisibleRunContent(content)) {
+      tokens.push('visible');
+    }
+  }
+}
+
+function collectRunOrHyperlinkTokens(
+  items: readonly (Run | Hyperlink)[],
+  tokens: ParagraphContentToken[]
+): void {
+  for (const item of items) {
     if (item.type === 'run') {
-      for (const c of (item as Run).content) {
-        if (visitRunContent(c)) return true;
-      }
-      return false;
+      collectRunContentTokens(item.content, tokens);
+    } else {
+      collectRunOrHyperlinkTokens(
+        item.children.filter((child): child is Run => child.type === 'run'),
+        tokens
+      );
     }
-    if (item.type === 'hyperlink') {
-      for (const r of (item as Hyperlink).children) {
-        if (r.type === 'run' && visit(r)) return true;
-      }
-      return false;
+  }
+}
+
+function collectParagraphContentTokens(
+  items: readonly Paragraph['content'][number][],
+  tokens: ParagraphContentToken[]
+): void {
+  for (const item of items) {
+    switch (item.type) {
+      case 'run':
+        collectRunContentTokens(item.content, tokens);
+        break;
+      case 'hyperlink':
+        collectRunOrHyperlinkTokens(
+          item.children.filter((child): child is Run => child.type === 'run'),
+          tokens
+        );
+        break;
+      case 'simpleField':
+        collectRunOrHyperlinkTokens(item.content, tokens);
+        break;
+      case 'complexField':
+        collectRunOrHyperlinkTokens([...item.fieldCode, ...item.fieldResult], tokens);
+        break;
+      case 'inlineSdt':
+        collectParagraphContentTokens(item.content as Paragraph['content'], tokens);
+        break;
+      case 'insertion':
+      case 'deletion':
+      case 'moveFrom':
+      case 'moveTo':
+        collectRunOrHyperlinkTokens(item.content, tokens);
+        break;
+      case 'mathEquation':
+        tokens.push('visible');
+        break;
     }
-    if (item.type === 'insertion' || item.type === 'deletion') {
-      // Tracked-change wrappers can themselves contain a page break.
-      // Descend so a break inside <w:ins> or <w:del> still emits a
-      // pageBreak node downstream.
-      const tc = item as { content: Paragraph['content'] };
-      for (const inner of tc.content) {
-        if (visit(inner)) return true;
+  }
+}
+
+function paragraphContentTokens(paragraph: Paragraph): ParagraphContentToken[] {
+  const tokens: ParagraphContentToken[] = [];
+  collectParagraphContentTokens(paragraph.content, tokens);
+  return tokens;
+}
+
+export function paragraphStartsWithPageBreak(paragraph: Paragraph): boolean {
+  return paragraphContentTokens(paragraph)[0] === 'pageBreak';
+}
+
+/**
+ * Returns true when `<w:br w:type="page"/>` appears after the leading
+ * position in a paragraph.
+ *
+ * A leading hard page break can be represented as `pageBreakBefore` on the
+ * same paragraph, preserving the DOCX paragraph count through the PM round
+ * trip. Later hard breaks still need a standalone PM `pageBreak` block so
+ * layout keeps forcing a page boundary.
+ */
+export function paragraphHasNonLeadingPageBreak(paragraph: Paragraph): boolean {
+  let consumedLeadingPageBreak = false;
+  let sawVisibleContent = false;
+
+  for (const token of paragraphContentTokens(paragraph)) {
+    if (token === 'pageBreak') {
+      if (sawVisibleContent || consumedLeadingPageBreak) {
+        return true;
       }
-      return false;
+      consumedLeadingPageBreak = true;
+    } else {
+      sawVisibleContent = true;
     }
-    return false;
   }
 
-  for (const item of paragraph.content) {
-    if (visit(item)) return true;
-  }
   return false;
 }

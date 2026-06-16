@@ -246,6 +246,7 @@ function paragraphAttrsToFormatting(attrs: ParagraphAttrs): ParagraphFormatting 
     attrs.tabs ||
     attrs.outlineLevel != null ||
     attrs.contextualSpacing ||
+    attrs.pageBreakBefore ||
     attrs.bidi;
 
   if (!hasFormatting) {
@@ -269,6 +270,7 @@ function paragraphAttrsToFormatting(attrs: ParagraphAttrs): ParagraphFormatting 
     tabs: attrs.tabs || undefined,
     outlineLevel: attrs.outlineLevel ?? undefined,
     contextualSpacing: attrs.contextualSpacing || undefined,
+    pageBreakBefore: attrs.pageBreakBefore || undefined,
     bidi: attrs.bidi || undefined,
   };
 }

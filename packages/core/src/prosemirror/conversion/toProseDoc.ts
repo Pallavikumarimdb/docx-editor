@@ -22,7 +22,7 @@ import { schema } from '../schema';
 import type { Document, BlockContent, StyleDefinitions, Theme } from '../../types/document';
 import { createStyleResolver, type StyleResolver } from '../styles';
 import { getDocumentWatermark } from '../../docx/watermarkApi';
-import { paragraphHasPageBreak } from './toProseDoc/paragraph';
+import { paragraphHasNonLeadingPageBreak } from './toProseDoc/paragraph';
 import { convertTable } from './toProseDoc/tables';
 import { convertParagraphWithTextBoxes } from './toProseDoc/textbox';
 import { sdtPropsToAttrs } from './sdtAttrs';
@@ -49,7 +49,7 @@ function convertBlocksToNodes(
   for (const block of blocks) {
     if (block.type === 'paragraph') {
       nodes.push(...convertParagraphWithTextBoxes(block, styleResolver));
-      if (includePageBreaks && paragraphHasPageBreak(block)) {
+      if (includePageBreaks && paragraphHasNonLeadingPageBreak(block)) {
         nodes.push(schema.node('pageBreak'));
       }
     } else if (block.type === 'table') {
