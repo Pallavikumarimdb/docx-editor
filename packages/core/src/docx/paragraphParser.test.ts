@@ -11,6 +11,37 @@ function parseParagraphXml(xml: string) {
   return parseParagraph(root, null, null, null, null, null);
 }
 
+describe('parseParagraph run-boundary preservation', () => {
+  test('keeps adjacent same-formatting runs and leading empty runs', () => {
+    const paragraph = parseParagraphXml(`
+      <w:p xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+        <w:r>
+          <w:rPr><w:b/></w:rPr>
+        </w:r>
+        <w:r>
+          <w:rPr><w:b/></w:rPr>
+          <w:t>one</w:t>
+        </w:r>
+        <w:r>
+          <w:rPr><w:b/></w:rPr>
+          <w:t>two</w:t>
+        </w:r>
+        <w:r>
+          <w:rPr><w:b/></w:rPr>
+          <w:t>three</w:t>
+        </w:r>
+      </w:p>
+    `);
+
+    const runs = paragraph.content.filter((content) => content.type === 'run');
+    expect(runs).toHaveLength(4);
+    expect(
+      runs.map((run) => run.content.map((item) => (item.type === 'text' ? item.text : '')).join(''))
+    ).toEqual(['', 'one', 'two', 'three']);
+    expect(runs.every((run) => run.formatting?.bold === true)).toBe(true);
+  });
+});
+
 describe('parseParagraph tracked-change hardening', () => {
   test('parses deletion text from w:delText runs', () => {
     const paragraph = parseParagraphXml(`

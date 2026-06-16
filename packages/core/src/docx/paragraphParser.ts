@@ -26,7 +26,6 @@ import type { StyleMap } from './styleParser';
 import { computeListRendering, type NumberingMap } from './numberingParser';
 import { findChild, getAttribute, type XmlElement } from './xmlParser';
 import { parseSectionProperties } from './sectionParser';
-import { consolidateParagraphContent } from './runConsolidator';
 
 import { parseParagraphProperties } from './paragraphParser/properties';
 import {
@@ -147,9 +146,10 @@ export function parseParagraph(
   // Parse paragraph contents (runs, hyperlinks, bookmarks, fields)
   const rawContent = parseParagraphContents(node, styles, theme, numbering, rels, media);
 
-  // Consolidate consecutive runs with identical formatting
-  // This reduces fragmentation (e.g., 252 tiny runs → a few larger runs)
-  paragraph.content = consolidateParagraphContent(rawContent);
+  // Keep source run boundaries intact. Run positions can anchor comments,
+  // tracked changes, and fidelity tooling, so parser-level consolidation would
+  // erase information before later round-trip stages have a chance to preserve it.
+  paragraph.content = rawContent;
 
   // Compute list rendering if this is a list item.
   // numPr can come from inline pPr or from the referenced paragraph style.

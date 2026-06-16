@@ -304,6 +304,7 @@ const paragraphNodeSpec: NodeSpec = {
     outlineLevel: { default: null },
     bookmarks: { default: null },
     _originalFormatting: { default: null },
+    _originalRunBoundaries: { default: null },
     _sectionProperties: { default: null },
     // Tracked structural revisions on the paragraph mark itself.
     // See ECMA-376 §17.13.5 — w:ins / w:del inside w:pPr/w:rPr.
