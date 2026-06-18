@@ -391,3 +391,74 @@ describe('toProseDoc — trailing paragraph after isolating content (#861)', () 
     expect(pmDoc.lastChild?.textContent).toBe('x');
   });
 });
+
+describe('toProseDoc — style-less paragraphs inherit the document Normal (template + agentic creation)', () => {
+  // An uploaded "empty template with styles": a real Normal carries the look.
+  const TEMPLATE_STYLES = {
+    docDefaults: { rPr: { fontSize: 20 } },
+    styles: [
+      {
+        styleId: 'Normal',
+        type: 'paragraph' as const,
+        name: 'Normal',
+        default: true,
+        pPr: { lineSpacing: 276, lineSpacingRule: 'auto' as const, spaceAfter: 40 },
+      },
+    ],
+  };
+
+  function paragraphAttrsByText(
+    pmDoc: ReturnType<typeof toProseDoc>,
+    text: string
+  ): Record<string, unknown> | null {
+    const matches: Array<Record<string, unknown>> = [];
+    pmDoc.descendants((node) => {
+      if (node.type.name === 'paragraph' && node.textContent === text) {
+        matches.push(node.attrs as Record<string, unknown>);
+        return false;
+      }
+      return true;
+    });
+    return matches[0] ?? null;
+  }
+
+  test('an agent-style table cell (style-less paragraph) inherits the template Normal spacing', () => {
+    // Mirrors what the agent's insertTable builds: a cell whose paragraph has no
+    // styleId and no explicit spacing. It must pick up the document Normal.
+    const doc: Document = {
+      package: {
+        document: {
+          content: [
+            {
+              type: 'table',
+              rows: [
+                {
+                  type: 'tableRow',
+                  cells: [
+                    {
+                      type: 'tableCell',
+                      content: [
+                        {
+                          type: 'paragraph',
+                          content: [{ type: 'run', content: [{ type: 'text', text: 'Cell' }] }],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        styles: TEMPLATE_STYLES,
+      },
+    };
+
+    const pmDoc = toProseDoc(doc, { styles: TEMPLATE_STYLES });
+    const attrs = paragraphAttrsByText(pmDoc, 'Cell');
+    expect(attrs).not.toBeNull();
+    // Resolved from the template Normal, not the default-template 259/160.
+    expect(attrs?.lineSpacing).toBe(276);
+    expect(attrs?.spaceAfter).toBe(40);
+  });
+});

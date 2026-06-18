@@ -162,8 +162,10 @@ export function serializeComplexField(field: ComplexField): string {
 
   // Extract formatting from the first result run to apply to structural runs
   // (begin/separate/end). OOXML consumers expect consistent formatting across
-  // all runs in a complex field.
-  const resultFormatting = field.fieldResult?.[0]?.formatting;
+  // all runs in a complex field. When there is no result run, fall back to the
+  // formatting captured from the field's structural runs at parse time so a
+  // PAGE field's w:rPr survives the round-trip.
+  const resultFormatting = field.fieldResult?.[0]?.formatting ?? field.formatting;
   const rPrXml = resultFormatting ? serializeTextFormatting(resultFormatting) : '';
 
   // Begin field character (never set dirty — dirty causes apps to recalculate

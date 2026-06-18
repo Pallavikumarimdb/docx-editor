@@ -206,3 +206,30 @@ describe('parseParagraph SDT content preservation', () => {
     expect(outer.content[0].type).toBe('inlineSdt');
   });
 });
+
+describe('parseParagraph complex field formatting', () => {
+  test('captures run formatting from a PAGE field collapsed into one run with no result', () => {
+    // Footer pattern: begin/instrText/separate/end all in a single run carrying
+    // the w:rPr, with no separate result run. The formatting must survive on the
+    // ComplexField so the rendered page number keeps the footer's size/color.
+    const paragraph = parseParagraphXml(`
+      <w:p xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+        <w:r>
+          <w:rPr><w:color w:val="595959"/><w:sz w:val="14"/><w:szCs w:val="14"/></w:rPr>
+          <w:fldChar w:fldCharType="begin"/>
+          <w:instrText xml:space="preserve">PAGE</w:instrText>
+          <w:fldChar w:fldCharType="separate"/>
+          <w:fldChar w:fldCharType="end"/>
+        </w:r>
+      </w:p>
+    `);
+
+    const field = paragraph.content.find((c) => c.type === 'complexField');
+    expect(field?.type).toBe('complexField');
+    if (!field || field.type !== 'complexField') return;
+    expect(field.fieldType).toBe('PAGE');
+    expect(field.fieldResult).toHaveLength(0);
+    expect(field.formatting?.color).toEqual({ rgb: '595959' });
+    expect(field.formatting?.fontSize).toBe(14); // raw w:sz half-points (7pt)
+  });
+});
