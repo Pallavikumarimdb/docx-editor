@@ -85,6 +85,11 @@
    * dark buttons, badges, tooltips). Inverts in dark mode so contrast holds. */
   --doc-on-primary: #ffffff;
 
+  /* Active toolbar toggle (bold/italic/comments/...): dark slab in light mode,
+   * Word-accent tint in dark mode (where a dark slab would flip light). */
+  --doc-toggle-active-bg: hsl(var(--foreground));
+  --doc-toggle-active-fg: #ffffff;
+
   /* Text */
   --doc-text: #202124; /* primary text */
   --doc-text-muted: #5f6368; /* secondary text */
@@ -189,6 +194,8 @@
   --doc-accent: #4e9dff;
   --doc-accent-bg: #1f3047;
   --doc-on-primary: #1f1f1f; /* text/icon on a filled primary surface */
+  --doc-toggle-active-bg: var(--doc-primary-light);
+  --doc-toggle-active-fg: var(--doc-primary);
   --doc-text: #e8e8e8; /* primary text */
   --doc-text-muted: #a0a0a0; /* secondary text */
   --doc-text-subtle: #6e6e6e; /* tertiary/disabled text */
@@ -698,6 +705,21 @@
 /* Outline heading hover */
 .docx-outline-heading-btn:hover {
   background-color: var(--doc-bg-hover);
+}
+
+/* React toolbar toggle buttons (bold/italic/comments/...). Owned here, not via
+ * Tailwind utilities: `cn` is clsx-only (no tailwind-merge), so competing
+ * hover:bg utilities don't dedupe and the active slab could lose its color on
+ * hover (white icon on a light bg). The `.ep-root` prefix outranks the
+ * single-class Tailwind hover utilities. */
+.ep-root .ep-toolbar-toggle:hover {
+  background-color: var(--doc-bg-hover);
+  color: var(--doc-text);
+}
+.ep-root .ep-toolbar-toggle[data-active='true'],
+.ep-root .ep-toolbar-toggle[data-active='true']:hover {
+  background-color: var(--doc-toggle-active-bg);
+  color: var(--doc-toggle-active-fg);
 }
 
 /* Outline / navigation toggle button (shown when the panel is collapsed).
