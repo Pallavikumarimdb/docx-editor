@@ -1,5 +1,22 @@
 # @eigenpal/docx-editor-core
 
+## 1.7.0
+
+### Minor Changes
+
+- ed04d10: Expose stable `data-para-id` attributes on rendered paragraph fragments and add `scrollToParaId(..., { highlight })` support for custom transient paragraph flashes.
+
+### Patch Changes
+
+- 35b5cee: Fix complex-script-only (RTL) runs rendering at font-size 0pt when copied to the clipboard and showing a blank font-size field in the toolbar. Changing a run's font size now sets both the Latin and complex-script size, matching Word.
+- 186598a: Reserve the document scrollbar gutter on both edges in the React editor so the page stays centered on platforms with classic scrollbars, matching the Vue editor. Fixes #888
+- dfd316f: Fix complex-script font size (w:szCs) and family (w:cs) fallback for RTL/CS runs.
+- 8e95d60: Fix a header (or footer) containing a page/margin-anchored shape — e.g. a full-page letterhead banner — inflating its interactive box to cover the whole page, which blocked clicks into the body text. The header/footer box now tracks the in-flow band height, and its overflowing anchored content is non-interactive in normal mode so the document text underneath stays clickable.
+- f2c9f9f: Add a "Select entire table" option to the table context menu and toolbar, and fix the underlying select-table command so it selects every cell (it previously collapsed the selection).
+- fc95983: Fix repeated table header overlapping body content on continuation pages when a row also breaks mid-content across the page boundary.
+- edd0bc2: Add themeable document-scrollbar CSS variables and apply the styled scrollbar to both React and Vue document scroll containers.
+- d4a27d4: Ensure a document whose last element is an isolating block (a table, text box, or content control) gets a trailing empty paragraph, so the caret can be placed below it and text can be added after it (matches Word, which never lets a body end with a table).
+
 ## 1.6.2
 
 ### Patch Changes
