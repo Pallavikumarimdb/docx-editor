@@ -729,13 +729,12 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     const bodyResult = extractTrackedChanges(pmState);
     const mergedEntries = [...bodyResult.entries];
     const mergedCommentToRevision = new Map(bodyResult.commentToRevision);
-
     const hfViews = pagedEditorRef.current?.getHfPmViews?.();
     if (hfViews) {
       for (const [rId, view] of hfViews.entries()) {
         const hfResult = extractTrackedChanges(view.state);
         for (const entry of hfResult.entries) {
-          (entry as any).hfRid = rId;
+          (entry as { hfRid?: string }).hfRid = rId;
           mergedEntries.push(entry);
         }
         for (const [commentId, revisionId] of hfResult.commentToRevision.entries()) {
@@ -743,11 +742,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
         }
       }
     }
-
-    return {
-      entries: mergedEntries,
-      commentToRevision: mergedCommentToRevision,
-    };
+    return { entries: mergedEntries, commentToRevision: mergedCommentToRevision };
   }, [pmState, hfVersion]);
 
   const [anchorPositions, setAnchorPositions] =
@@ -1570,6 +1565,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   const revisionIdAliasesRef = useRef(revisionIdAliases);
   revisionIdAliasesRef.current = revisionIdAliases;
 
+  // Sync sidebar cards with selection movement by checking cursor marks.
   const handlePagedSelectionChange = useCallback(() => {
     const view = pagedEditorRef.current?.getView();
     // View can be briefly null during layout teardown — don't wipe toolbar list/indent state.
@@ -1626,6 +1622,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     setExpandedSidebarItem(cursorSidebarItem);
   }, [handleSelectionChange]);
 
+  // Auto-open sidebar when a comment or tracked change card is first produced.
   useEffect(() => {
     if (sidebarAutoOpenedRef.current) return;
     if (commentSidebarItems.length === 0) return;
