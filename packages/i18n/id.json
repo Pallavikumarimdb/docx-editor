@@ -595,7 +595,8 @@
     "tablePropertiesChanged": "Mengubah properti tabel",
     "tableInserted": "Menyisipkan tabel",
     "tableDeleted": "Menghapus tabel",
-    "runPropertiesChanged": null
+    "runPropertiesChanged": null,
+    "formatChanged": null
   },
   "contextMenu": {
     "ariaLabel": "Menu tindakan AI",
