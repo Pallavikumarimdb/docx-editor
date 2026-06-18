@@ -24,6 +24,11 @@ import type {
 import { pixelsToEmu } from '../../utils/units';
 import { DEFAULT_TABLE_WIDTH_DXA, distributeColumnWidths } from '../../utils/tableWidth';
 import {
+  createStyleResolver,
+  resolvePreferredNewTableStyleId,
+  DEFAULT_NEW_TABLE_LOOK,
+} from '../../prosemirror/styles';
+import {
   cloneDocument,
   createTextRun,
   deleteTextInParagraph,
@@ -69,6 +74,19 @@ export function executeInsertTable(doc: Document, command: InsertTableCommand): 
     });
   }
 
+  // Adopt the document's default table style when it declares one (settings
+  // `w:defaultTableStyle`, else the type-default table style) so agent-inserted
+  // tables match the document/template, just like the toolbar insert. The
+  // styleId serializes as `<w:tblStyle>` and re-resolves through the same
+  // OOXML cascade (`convertTable`) on render. When no usable default style
+  // exists, the table carries no styleId and inherits the type-default style's
+  // borders via that cascade, preserving prior behavior.
+  const resolver = createStyleResolver(newDoc.package.styles);
+  const preferredStyleId = resolvePreferredNewTableStyleId(
+    newDoc.package.settings?.defaultTableStyle,
+    resolver
+  );
+
   // Give agent-inserted tables an explicit fixed grid so they serialize with a
   // valid w:tblGrid and render with predictable column widths.
   const table: Table = {
@@ -76,6 +94,9 @@ export function executeInsertTable(doc: Document, command: InsertTableCommand): 
     formatting: {
       width: { value: DEFAULT_TABLE_WIDTH_DXA, type: 'dxa' },
       layout: 'fixed',
+      ...(preferredStyleId
+        ? { styleId: preferredStyleId, look: { ...DEFAULT_NEW_TABLE_LOOK } }
+        : {}),
     },
     columnWidths,
     rows,
