@@ -105,6 +105,17 @@ export {
 } from './fontLoader';
 export type { FontDefinition } from './fontLoader';
 
+// Embedded fonts (de-obfuscation + load + picker discovery)
+export { deobfuscateFont, isValidFontKey } from './fontDeobfuscation';
+export { getEmbeddedFontFaces, loadEmbeddedFonts, getEmbeddedFontFamilies } from './embeddedFonts';
+export type { EmbeddedFontFace } from './embeddedFonts';
+export {
+  getRenderableDocumentFonts,
+  selectRenderableFonts,
+  excludeFontsByName,
+} from './documentPickerFonts';
+export type { RenderableFontOptions } from './documentPickerFonts';
+
 // Formatting → CSS style
 export {
   textToStyle,
