@@ -76,8 +76,13 @@ export function marksToTextFormatting(marks: readonly Mark[]): TextFormatting {
         break;
 
       case 'fontSize':
-        formatting.fontSize = mark.attrs.size;
-        formatting.fontSizeCs = mark.attrs.size;
+        if (mark.attrs.size != null) {
+          formatting.fontSize = mark.attrs.size;
+        }
+        const sizeCs = mark.attrs.sizeCs ?? mark.attrs.size;
+        if (sizeCs != null) {
+          formatting.fontSizeCs = sizeCs;
+        }
         break;
 
       case 'fontFamily': {

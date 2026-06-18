@@ -11,7 +11,8 @@ export const FontSizeExtension = createMarkExtension({
   schemaMarkName: 'fontSize',
   markSpec: {
     attrs: {
-      size: { default: 24 },
+      size: { default: null },
+      sizeCs: { default: null },
     },
     parseDOM: [
       {
