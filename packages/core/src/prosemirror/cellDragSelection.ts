@@ -12,9 +12,8 @@ import type { EditorView } from 'prosemirror-view';
 import { CellSelection } from 'prosemirror-tables';
 
 /**
- * Once a text selection has maxed out inside a single cell, the cursor stops
- * moving while the mouse keeps going. Promote to a full-cell selection after
- * the pointer overshoots the last caret position by this many pixels.
+ * Compatibility constant from the previous overflow heuristic. The tracker now
+ * ignores pointer overflow so same-cell drags stay text selections.
  */
 export const CELL_SELECT_OVERFLOW_PX = 5;
 
@@ -76,18 +75,14 @@ export interface CellDragTracker {
 export function createCellDragTracker(): CellDragTracker {
   let anchorCellPos: number | null = null;
   let cellDragging = false;
-  let lastPmPos: number | null = null;
-  let overflowX: number | null = null;
 
   return {
     begin(cellPos) {
       anchorCellPos = cellPos;
       cellDragging = false;
-      lastPmPos = null;
-      overflowX = null;
     },
 
-    update(view, pmPos, clientX) {
+    update(view, pmPos, _clientX) {
       if (anchorCellPos === null) return false;
 
       // Already cell-dragging: keep extending to the cell under the pointer.
@@ -104,25 +99,7 @@ export function createCellDragTracker(): CellDragTracker {
       if (cur !== null && cur !== anchorCellPos) {
         cellDragging = true;
         applyCellSelection(view, anchorCellPos, cur);
-        overflowX = null;
         return true;
-      }
-
-      // Still inside the anchor cell: if the caret has stopped moving but the
-      // mouse keeps overshooting horizontally, the user dragged past the cell
-      // content — promote to a full single-cell selection.
-      if (lastPmPos !== null && pmPos === lastPmPos) {
-        if (overflowX === null) {
-          overflowX = clientX;
-        } else if (Math.abs(clientX - overflowX) >= CELL_SELECT_OVERFLOW_PX) {
-          cellDragging = true;
-          applyCellSelection(view, anchorCellPos, anchorCellPos);
-          overflowX = null;
-          return true;
-        }
-      } else {
-        overflowX = null;
-        lastPmPos = pmPos;
       }
 
       return false;
@@ -130,8 +107,6 @@ export function createCellDragTracker(): CellDragTracker {
 
     end() {
       cellDragging = false;
-      lastPmPos = null;
-      overflowX = null;
     },
 
     get isCellDragging() {
