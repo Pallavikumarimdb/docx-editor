@@ -12,8 +12,9 @@ import type { EditorView } from 'prosemirror-view';
 import { CellSelection } from 'prosemirror-tables';
 
 /**
- * Compatibility constant from the previous overflow heuristic. The tracker now
- * ignores pointer overflow so same-cell drags stay text selections.
+ * @deprecated No longer used. The tracker ignores pointer overflow so same-cell
+ * drags stay text selections. Kept only for backward-compatible imports; will be
+ * removed in a future major.
  */
 export const CELL_SELECT_OVERFLOW_PX = 5;
 
