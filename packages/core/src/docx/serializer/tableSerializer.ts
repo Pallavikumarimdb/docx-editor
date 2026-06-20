@@ -30,7 +30,6 @@ import type {
   TableLook,
   CellMargins,
   FloatingTableProperties,
-  BorderSpec,
   ShadingProperties,
   Paragraph,
 } from '../../types/document';
@@ -38,6 +37,7 @@ import type {
 import { serializeParagraph } from './paragraphSerializer';
 import { serializeConditionalFormatStyle } from './conditionalFormatSerializer';
 import { escapeXml, intAttr } from './xmlUtils';
+import { serializeBorder } from './borderSerializer';
 import { serializeTableGridForTable } from './tableGrid';
 
 function normalizeTrackedChangeInfo(info: { id: number; author: string; date?: string }): {
@@ -97,91 +97,18 @@ function serializeMeasurement(
 // ============================================================================
 
 /**
- * Serialize a single border element
- */
-function serializeBorder(border: BorderSpec | undefined, elementName: string): string {
-  if (!border || border.style === 'none' || border.style === 'nil') {
-    return '';
-  }
-
-  const attrs: string[] = [`w:val="${border.style}"`];
-
-  if (border.size !== undefined) {
-    attrs.push(`w:sz="${intAttr(border.size)}"`);
-  }
-
-  if (border.space !== undefined) {
-    attrs.push(`w:space="${intAttr(border.space)}"`);
-  }
-
-  // Color
-  if (border.color) {
-    if (border.color.auto) {
-      attrs.push('w:color="auto"');
-    } else if (border.color.rgb) {
-      attrs.push(`w:color="${border.color.rgb}"`);
-    }
-
-    if (border.color.themeColor) {
-      attrs.push(`w:themeColor="${border.color.themeColor}"`);
-    }
-
-    if (border.color.themeTint) {
-      attrs.push(`w:themeTint="${border.color.themeTint}"`);
-    }
-
-    if (border.color.themeShade) {
-      attrs.push(`w:themeShade="${border.color.themeShade}"`);
-    }
-  }
-
-  if (border.shadow) {
-    attrs.push('w:shadow="true"');
-  }
-
-  if (border.frame) {
-    attrs.push('w:frame="true"');
-  }
-
-  return `<w:${elementName} ${attrs.join(' ')}/>`;
-}
-
-/**
  * Serialize table borders (w:tblBorders or w:tcBorders)
  */
+// OOXML side order for w:tblBorders / w:tcBorders (CT_TblBorders / CT_TcBorders).
+const TABLE_BORDER_SIDES = ['top', 'left', 'bottom', 'right', 'insideH', 'insideV'] as const;
+
 function serializeTableBorders(borders: TableBorders | undefined, elementName: string): string {
   if (!borders) return '';
 
   const parts: string[] = [];
-
-  if (borders.top) {
-    const topXml = serializeBorder(borders.top, 'top');
-    if (topXml) parts.push(topXml);
-  }
-
-  if (borders.left) {
-    const leftXml = serializeBorder(borders.left, 'left');
-    if (leftXml) parts.push(leftXml);
-  }
-
-  if (borders.bottom) {
-    const bottomXml = serializeBorder(borders.bottom, 'bottom');
-    if (bottomXml) parts.push(bottomXml);
-  }
-
-  if (borders.right) {
-    const rightXml = serializeBorder(borders.right, 'right');
-    if (rightXml) parts.push(rightXml);
-  }
-
-  if (borders.insideH) {
-    const insideHXml = serializeBorder(borders.insideH, 'insideH');
-    if (insideHXml) parts.push(insideHXml);
-  }
-
-  if (borders.insideV) {
-    const insideVXml = serializeBorder(borders.insideV, 'insideV');
-    if (insideVXml) parts.push(insideVXml);
+  for (const side of TABLE_BORDER_SIDES) {
+    const xml = serializeBorder(borders[side], side);
+    if (xml) parts.push(xml);
   }
 
   if (parts.length === 0) return '';
