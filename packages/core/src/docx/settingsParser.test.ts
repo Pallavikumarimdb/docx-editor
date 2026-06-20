@@ -32,3 +32,25 @@ describe('parseSettings — defaultTableStyle (§17.15.1.44)', () => {
     expect(settings.defaultTableStyle).toBe('MyTable');
   });
 });
+
+describe('parseSettings — themeFontLang (§17.15.1.88)', () => {
+  test('reads eastAsia and bidi tags', () => {
+    const xml = `<w:settings ${SETTINGS_NS}><w:themeFontLang w:val="en-US" w:eastAsia="ja-JP" w:bidi="ar-SA"/></w:settings>`;
+    expect(parseSettings(xml).themeFontLang).toEqual({ eastAsia: 'ja-JP', bidi: 'ar-SA' });
+  });
+
+  test('keeps only the EastAsian tag when bidi is absent', () => {
+    const xml = `<w:settings ${SETTINGS_NS}><w:themeFontLang w:val="en-US" w:eastAsia="ja-JP"/></w:settings>`;
+    expect(parseSettings(xml).themeFontLang).toEqual({ eastAsia: 'ja-JP' });
+  });
+
+  test('is undefined when only the primary (w:val) lang is present', () => {
+    const xml = `<w:settings ${SETTINGS_NS}><w:themeFontLang w:val="en-US"/></w:settings>`;
+    expect(parseSettings(xml).themeFontLang).toBeUndefined();
+  });
+
+  test('is undefined when the element is absent', () => {
+    const xml = `<w:settings ${SETTINGS_NS}><w:defaultTabMark w:val="720"/></w:settings>`;
+    expect(parseSettings(xml).themeFontLang).toBeUndefined();
+  });
+});

@@ -179,10 +179,39 @@ const FONT_MAPPINGS: Record<string, FontMapping> = {
     fallbackStack: ['MS Mincho', 'Noto Serif JP', 'serif'],
     singleLineRatio: DEFAULT_SINGLE_LINE_RATIO,
   },
+  // Native Japanese typeface names as they appear in `theme1.xml`'s
+  // `<a:font script="Jpan">` entries (full-width "ＭＳ"). Office stores these
+  // rather than the romanized "MS Mincho"/"MS Gothic" names, so map them too.
+  // NOTE: keys are matched against `name.toLowerCase()`, and full-width Latin
+  // letters lowercase too (Ｍ→ｍ, Ｓ→ｓ, Ｐ→ｐ) — so these keys are lowercased.
+  'ｍｓ 明朝': {
+    googleFont: 'Noto Serif JP',
+    category: 'serif',
+    fallbackStack: ['MS Mincho', 'ＭＳ 明朝', 'Noto Serif JP', 'serif'],
+    singleLineRatio: DEFAULT_SINGLE_LINE_RATIO,
+  },
+  'ｍｓ ｐ明朝': {
+    googleFont: 'Noto Serif JP',
+    category: 'serif',
+    fallbackStack: ['MS PMincho', 'ＭＳ Ｐ明朝', 'Noto Serif JP', 'serif'],
+    singleLineRatio: DEFAULT_SINGLE_LINE_RATIO,
+  },
   'ms gothic': {
     googleFont: 'Noto Sans JP',
     category: 'sans-serif',
     fallbackStack: ['MS Gothic', 'Noto Sans JP', 'sans-serif'],
+    singleLineRatio: DEFAULT_SINGLE_LINE_RATIO,
+  },
+  'ｍｓ ゴシック': {
+    googleFont: 'Noto Sans JP',
+    category: 'sans-serif',
+    fallbackStack: ['MS Gothic', 'ＭＳ ゴシック', 'Noto Sans JP', 'sans-serif'],
+    singleLineRatio: DEFAULT_SINGLE_LINE_RATIO,
+  },
+  'ｍｓ ｐゴシック': {
+    googleFont: 'Noto Sans JP',
+    category: 'sans-serif',
+    fallbackStack: ['MS PGothic', 'ＭＳ Ｐゴシック', 'Noto Sans JP', 'sans-serif'],
     singleLineRatio: DEFAULT_SINGLE_LINE_RATIO,
   },
   simhei: {
@@ -245,6 +274,9 @@ function detectFontCategory(fontName: string): FontCategory {
     lower.includes('bodoni') ||
     lower.includes('cambria') ||
     lower.includes('mincho') ||
+    lower.includes('明朝') ||
+    lower.includes('明體') ||
+    lower.includes('宋') ||
     lower.includes('ming') ||
     lower.includes('song') ||
     lower.includes('serif')

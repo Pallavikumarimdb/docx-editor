@@ -24,6 +24,17 @@ export interface DocumentSettings {
    * sets it so inserted tables pick up the template's table look.
    */
   defaultTableStyle?: string;
+  /**
+   * `w:themeFontLang` (§17.15.1.88) — the language Word uses to pick the
+   * concrete typeface for the *EastAsian* (`w:eastAsia`) and *complex-script*
+   * (`w:bidi`) theme font slots when the theme's `<a:ea>`/`<a:cs>` typeface is
+   * empty (the common case for Office's default theme). The script-specific
+   * `<a:font script="…">` entries are selected by this language. Without it a
+   * CJK document whose runs reference `minorEastAsia` resolves to an empty
+   * font, which breaks both measurement and painting (text overflows the
+   * right margin).
+   */
+  themeFontLang?: { eastAsia?: string; bidi?: string };
 }
 
 /** OOXML default per §17.6.13 when `w:defaultTabMark` is absent. */
@@ -43,8 +54,24 @@ export function parseSettings(xml: string | null): DocumentSettings {
     ? (getAttribute(defaultTableStyleEl, 'w', 'val') ?? undefined) || undefined
     : undefined;
 
+  const themeFontLangEl = root ? findChild(root, 'w', 'themeFontLang') : null;
+  const eastAsiaLang = themeFontLangEl
+    ? getAttribute(themeFontLangEl, 'w', 'eastAsia') || undefined
+    : undefined;
+  const bidiLang = themeFontLangEl
+    ? getAttribute(themeFontLangEl, 'w', 'bidi') || undefined
+    : undefined;
+  const themeFontLang =
+    eastAsiaLang || bidiLang
+      ? {
+          ...(eastAsiaLang ? { eastAsia: eastAsiaLang } : {}),
+          ...(bidiLang ? { bidi: bidiLang } : {}),
+        }
+      : undefined;
+
   return {
     defaultTabMark: valid ? raw : DEFAULT_TAB_STOP_TWIPS,
     ...(defaultTableStyle ? { defaultTableStyle } : {}),
+    ...(themeFontLang ? { themeFontLang } : {}),
   };
 }

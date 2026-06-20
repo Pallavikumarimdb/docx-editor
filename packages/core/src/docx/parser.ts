@@ -34,7 +34,7 @@ import type {
 } from '../types/document';
 import { unzipDocx, getMediaMimeType, type RawDocxContent } from './unzip';
 import { parseRelationships, RELATIONSHIP_TYPES } from './relsParser';
-import { parseTheme } from './themeParser';
+import { parseTheme, applyThemeFontLang } from './themeParser';
 import { parseStyles, parseStyleDefinitions, type StyleMap } from './styleParser';
 import { parseNumbering, type NumberingMap } from './numberingParser';
 import { parseSettings } from './settingsParser';
@@ -151,6 +151,11 @@ export async function parseDocx(input: DocxInput, options: ParseOptions = {}): P
     // ========================================================================
     onProgress('Parsing theme...', 15);
     const theme = timeStage('theme', () => parseTheme(raw.themeXml));
+    // Settings must be read before styles so `w:themeFontLang` can fill the
+    // theme's empty EastAsian/complex-script font slots; styles, body and
+    // header/footer parsing all resolve theme fonts off this object.
+    const settings = timeStage('settings', () => parseSettings(raw.settingsXml));
+    applyThemeFontLang(theme, settings.themeFontLang);
     onProgress('Parsed theme', 20);
 
     // ========================================================================
@@ -176,7 +181,6 @@ export async function parseDocx(input: DocxInput, options: ParseOptions = {}): P
     // ========================================================================
     onProgress('Parsing numbering...', 30);
     const numbering = timeStage('numbering', () => parseNumbering(raw.numberingXml));
-    const settings = timeStage('settings', () => parseSettings(raw.settingsXml));
     onProgress('Parsed numbering', 35);
 
     // ========================================================================
