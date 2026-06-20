@@ -284,3 +284,6 @@ export type { ReadDocxFileResult } from './readDocxFile';
 // + SSR handling stays identical across React, Vue, and future hosts.
 export { prefersColorSchemeDark, resolveIsDark, subscribeSystemDark } from './colorMode';
 export type { ColorMode } from './colorMode';
+
+// URL scheme allowlist for hrefs from untrusted input (DOCX rels, pasted HTML).
+export { sanitizeHref } from './sanitizeHref';
