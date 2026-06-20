@@ -8,6 +8,8 @@
  * - Font availability detection
  */
 
+import { resolveFontFamily } from './fontResolver';
+
 // Track loaded fonts to avoid duplicate requests
 const loadedFonts = new Set<string>();
 
@@ -809,7 +811,13 @@ export const FONT_MAPPING: Record<string, string> = {
  */
 export function getGoogleFontEquivalent(fontName: string): string {
   const trimmed = fontName.trim();
-  return FONT_MAPPING[trimmed] || trimmed;
+  // FONT_MAPPING is the loader's small override table for a few Latin Office
+  // fonts. For everything else — notably CJK, and any-case spellings — defer to
+  // the single source of truth in fontResolver, whose lookup is case-insensitive
+  // and carries the full font→Noto mapping (so the family the loader fetches
+  // matches the one fontResolver puts in the CSS fallback stack). Falls back to
+  // the raw name when neither maps it.
+  return FONT_MAPPING[trimmed] || resolveFontFamily(trimmed).googleFont || trimmed;
 }
 
 /**
