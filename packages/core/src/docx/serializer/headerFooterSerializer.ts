@@ -71,6 +71,11 @@ function serializeBlock(block: BlockContent): string {
  * @returns Complete XML string for header*.xml or footer*.xml
  */
 export function serializeHeaderFooter(hf: HeaderFooter): string {
+  // Unedited headers/footers re-emit their original bytes so constructs the
+  // model can't fully represent (w:object OLE wrappers, smartTag, raw VML)
+  // round-trip byte-identically. The HF editor clears `verbatimXml` on edit.
+  if (hf.verbatimXml) return hf.verbatimXml;
+
   const rootTag = hf.type === 'header' ? 'w:hdr' : 'w:ftr';
   const nsDecl = buildNamespaceDeclarations();
 
