@@ -16,10 +16,46 @@ import type {
 } from '../../types/document';
 
 /**
- * Deep clone a document for immutable updates
+ * Deep clone a document for immutable updates.
+ *
+ * This used `JSON.parse(JSON.stringify())`, which deep-clones the structural
+ * model but silently discards everything JSON can't represent — and the
+ * document holds several such fields:
+ *
+ *   - `package.headers` / `package.footers` / `package.media` —
+ *     `Map`s, which `JSON.stringify` turns into `{}`.
+ *   - `originalBuffer` and each `MediaFile.data` — `ArrayBuffer`s, also `{}`.
+ *   - `package.properties.created` / `modified` — `Date`s, downgraded to
+ *     strings.
+ *
+ * The damage was load-bearing: after the first edit (every edit clones the
+ * doc), `package.headers`/`footers` became `{}`, so export's `collectParts`
+ * threw `map.entries is not a function`; `originalBuffer` became `{}`, so
+ * `repackDocx` → `JSZip.loadAsync` threw `Can't read the data of 'the loaded
+ * zip file'`; and every image was dropped. A no-edit export worked, which
+ * masked the bug.
+ *
+ * `structuredClone` handles Maps, Dates, and ArrayBuffers correctly. We only
+ * special-case the two potentially large binary payloads so they aren't copied
+ * on every edit: `originalBuffer` (the entire source .docx) is read-only —
+ * export only reads it — so it's shared, and `package.media` is shallow-copied
+ * (its `MediaFile` entries are immutable, so sharing them copies no image
+ * bytes while still isolating per-clone additions).
  */
 export function cloneDocument(doc: Document): Document {
-  return JSON.parse(JSON.stringify(doc));
+  const { originalBuffer } = doc;
+  const { media } = doc.package;
+
+  const cloned: Document = structuredClone({
+    ...doc,
+    originalBuffer: undefined,
+    package: { ...doc.package, media: undefined },
+  });
+
+  if (originalBuffer) cloned.originalBuffer = originalBuffer;
+  if (media) cloned.package.media = new Map(media);
+
+  return cloned;
 }
 
 /** A paragraph-relative position used by text-editing commands. */
