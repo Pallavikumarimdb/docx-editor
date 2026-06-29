@@ -67,9 +67,9 @@ describe('package.json exports map', () => {
       './prosemirror/commands',
       './prosemirror/plugins',
       './prosemirror/editor.css',
-      './layout-engine',
-      './layout-painter',
-      './layout-bridge',
+      './pagination-model',
+      './painter-model',
+      './flow-model',
       './plugin-api',
       './types/document',
       './types/content',
@@ -105,9 +105,9 @@ describe('package.json exports map', () => {
       './docx/wrapTypes',
       './docx/serializer',
       './agent',
-      './layout-engine',
-      './layout-painter',
-      './layout-bridge',
+      './pagination-model',
+      './painter-model',
+      './flow-model',
       './plugin-api',
       './plugin-api/RenderedDomContext',
       './plugin-api/resolveItemPositions',
@@ -131,12 +131,12 @@ describe('package.json exports map', () => {
       './utils/units',
       './docx/parser',
       './docx/rezip',
-      './layout-bridge/resolveDomPosition',
-      './layout-bridge/measuring',
-      './layout-bridge/tableInsertHover',
-      './layout-bridge/buildBoxTree',
-      './layout-engine/types',
-      './layout-painter/paintPage',
+      './flow-model/resolveDomPosition',
+      './flow-model/metrics',
+      './flow-model/tableInsertHover',
+      './flow-model/buildBoxTree',
+      './pagination-model/types',
+      './painter-model/paintPage',
       './managers/AutoSaveManager',
       './managers/TableSelectionManager',
       './managers/types',
@@ -170,7 +170,7 @@ describe('package.json exports map', () => {
 
 describe('built dist layout (when present)', () => {
   test('imports from each JS subpath resolve when dist exists', async () => {
-    const distMjs = resolve(pkgRoot, 'dist', 'layout-engine', 'index.mjs');
+    const distMjs = resolve(pkgRoot, 'dist', 'pagination-model', 'index.mjs');
     let distBuilt = false;
     try {
       readFileSync(distMjs);
@@ -184,7 +184,7 @@ describe('built dist layout (when present)', () => {
     expect(typeof layoutEngine.layOutPages).toBe('function');
 
     const layoutPainter = (await import(
-      resolve(pkgRoot, 'dist/layout-painter/index.mjs')
+      resolve(pkgRoot, 'dist/painter-model/index.mjs')
     )) as Record<string, unknown>;
     expect(typeof layoutPainter.paintPage).toBe('function');
 

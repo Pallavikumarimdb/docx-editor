@@ -26,7 +26,7 @@ import {
   type Layout,
   type Measure,
   type PageMargins,
-} from '../layout-engine';
+} from '../pagination-model';
 import {
   buildBoxTree,
   computePerBlockWidths,
@@ -41,12 +41,12 @@ import {
   extendMarginsForHeaderFooter,
   twipsToPixels,
   type FloatPageGeometry,
-} from '../layout-bridge';
+} from '../flow-model';
 import {
   pageGeometryFromPage,
   type FootnoteRenderItem,
   type HeaderFooterContent,
-} from '../layout-painter';
+} from '../painter-model';
 import type {
   Document,
   HeaderFooter,

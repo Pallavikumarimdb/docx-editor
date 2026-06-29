@@ -7,7 +7,7 @@
  *
  * The algorithm walks the items in three priority stages:
  *   1. explicit fixedY (already in scroll-container coords)
- *   2. anchorKey lookup in anchorPositions (layout-engine coords)
+ *   2. anchorKey lookup in anchorPositions (pagination-model coords)
  *   3. DOM-based anchor lookup via renderedDomContext.getRectsForRange
  *   4. last-known cache so cards don't pop out during transient layout
  *

@@ -8,7 +8,7 @@
 import { describe, expect, test } from 'bun:test';
 import { EditorState, TextSelection } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
-import type { Layout } from '../../layout-engine';
+import type { Layout } from '../../pagination-model';
 
 import { singletonManager } from '../schema';
 import {

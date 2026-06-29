@@ -14,7 +14,7 @@
 import { describe, test, expect } from 'bun:test';
 import { toProseDoc } from '../toProseDoc';
 import { fromProseDoc } from '../fromProseDoc';
-import { buildBoxTree } from '../../../layout-bridge/buildBoxTree';
+import { buildBoxTree } from '../../../flow-model/buildBoxTree';
 import type { Document, BlockSdt, Paragraph } from '../../../types/document';
 import type { Node as PMNode } from 'prosemirror-model';
 

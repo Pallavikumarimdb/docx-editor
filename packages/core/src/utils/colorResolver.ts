@@ -326,7 +326,7 @@ export function resolveColor(
  *
  * Shared display-side resolver. Prefer this over reading `.rgb` directly so
  * that `themeColor` + `themeTint`/`themeShade` are honored consistently across
- * all render paths (PM attrs, layout-bridge, clipboard HTML, toolbar swatches).
+ * all render paths (PM attrs, flow-model, clipboard HTML, toolbar swatches).
  *
  * When a themed color is present but `theme` is null/undefined, falls back to
  * `color.rgb` if Word wrote one for compat; otherwise returns `undefined`.

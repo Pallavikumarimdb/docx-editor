@@ -381,7 +381,7 @@ export {
   convertHeaderFooterToContent,
   FOOTNOTE_SEPARATOR_HEIGHT,
   MAX_FOOTNOTE_LAYOUT_PASSES,
-} from './layout-bridge';
+} from './flow-model';
 
 export type {
   FootnoteRefLocation,
@@ -391,6 +391,6 @@ export type {
   StabilizeFootnoteLayoutResult,
   HeaderFooterMetrics,
   ConvertHeaderFooterOptions,
-} from './layout-bridge';
+} from './flow-model';
 
-export type { FlowBlock, Layout, Measure, Page, FootnoteContent } from './layout-engine/types';
+export type { FlowBlock, Layout, Measure, Page, FootnoteContent } from './pagination-model/types';

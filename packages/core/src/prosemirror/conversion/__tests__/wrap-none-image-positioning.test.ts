@@ -6,8 +6,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { Node as PMNode } from 'prosemirror-model';
 import { toProseDoc } from '../toProseDoc';
-import { buildBoxTree } from '../../../layout-bridge/buildBoxTree';
-import type { ParagraphBlock } from '../../../layout-engine/types';
+import { buildBoxTree } from '../../../flow-model/buildBoxTree';
+import type { ParagraphBlock } from '../../../pagination-model/types';
 import type { Document, Image, Paragraph } from '../../../types/document';
 
 function makeWrapNoneImage(wrapType: 'behind' | 'inFront'): Image {

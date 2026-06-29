@@ -3,7 +3,7 @@ import { parseNumbering, formatNumber, createNumberingMap } from '../numberingPa
 import { parseParagraph } from '../paragraphParser';
 import { parseStyles } from '../styleParser';
 import { parseXmlDocument, type XmlElement } from '../xmlParser';
-import { resolveListTemplate } from '../../layout-bridge/buildBoxTree/listMarkers';
+import { resolveListTemplate } from '../../flow-model/buildBoxTree/listMarkers';
 import { listAttrsFromResolvedStyle } from '../../prosemirror/styles/resolvedStyleAttrs';
 import { toProseDoc } from '../../prosemirror/conversion/toProseDoc';
 
