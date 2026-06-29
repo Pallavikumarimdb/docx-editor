@@ -96,7 +96,6 @@ describe('package.json exports map', () => {
       './prosemirror/plugins',
       './prosemirror/utils/ClickPositionResolver',
       './prosemirror/utils/extractTrackedChanges',
-      './prosemirror/utils/SelectionBridge',
       './prosemirror/utils/PointerEventHandler',
       './prosemirror/utils/visualLineNavigation',
       './prosemirror/extensions/nodes/TableExtension',

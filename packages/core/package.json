@@ -62,11 +62,6 @@
       "import": "./dist/prosemirror/utils/extractTrackedChanges.mjs",
       "require": "./dist/prosemirror/utils/extractTrackedChanges.js"
     },
-    "./prosemirror/utils/SelectionBridge": {
-      "types": "./dist/prosemirror/utils/SelectionBridge.d.ts",
-      "import": "./dist/prosemirror/utils/SelectionBridge.mjs",
-      "require": "./dist/prosemirror/utils/SelectionBridge.js"
-    },
     "./prosemirror/utils/PointerEventHandler": {
       "types": "./dist/prosemirror/utils/PointerEventHandler.d.ts",
       "import": "./dist/prosemirror/utils/PointerEventHandler.mjs",
@@ -405,9 +400,6 @@
       ],
       "prosemirror/utils/extractTrackedChanges": [
         "./dist/prosemirror/utils/extractTrackedChanges.d.ts"
-      ],
-      "prosemirror/utils/SelectionBridge": [
-        "./dist/prosemirror/utils/SelectionBridge.d.ts"
       ],
       "prosemirror/utils/PointerEventHandler": [
         "./dist/prosemirror/utils/PointerEventHandler.d.ts"

@@ -17,7 +17,6 @@ export default defineConfig([
       'prosemirror/plugins/index': 'src/prosemirror/plugins/index.ts',
       'prosemirror/utils/ClickPositionResolver': 'src/prosemirror/utils/ClickPositionResolver.ts',
       'prosemirror/utils/extractTrackedChanges': 'src/prosemirror/utils/extractTrackedChanges.ts',
-      'prosemirror/utils/SelectionBridge': 'src/prosemirror/utils/SelectionBridge.ts',
       'prosemirror/utils/PointerEventHandler': 'src/prosemirror/utils/PointerEventHandler.ts',
       'prosemirror/utils/visualLineNavigation': 'src/prosemirror/utils/visualLineNavigation.ts',
       'prosemirror/extensions/nodes/TableExtension':
