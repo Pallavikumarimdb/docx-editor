@@ -103,20 +103,10 @@
       "import": "./dist/agent/index.mjs",
       "require": "./dist/agent/index.js"
     },
-    "./pagination-model": {
-      "types": "./dist/pagination-model/index.d.ts",
-      "import": "./dist/pagination-model/index.mjs",
-      "require": "./dist/pagination-model/index.js"
-    },
-    "./painter-model": {
-      "types": "./dist/painter-model/index.d.ts",
-      "import": "./dist/painter-model/index.mjs",
-      "require": "./dist/painter-model/index.js"
-    },
-    "./flow-model": {
-      "types": "./dist/flow-model/index.d.ts",
-      "import": "./dist/flow-model/index.mjs",
-      "require": "./dist/flow-model/index.js"
+    "./api": {
+      "types": "./dist/api.d.ts",
+      "import": "./dist/api.mjs",
+      "require": "./dist/api.js"
     },
     "./plugin-api": {
       "types": "./dist/plugin-api/index.d.ts",
@@ -238,36 +228,6 @@
       "import": "./dist/docx/rezip.mjs",
       "require": "./dist/docx/rezip.js"
     },
-    "./flow-model/resolveDomPosition": {
-      "types": "./dist/flow-model/resolveDomPosition.d.ts",
-      "import": "./dist/flow-model/resolveDomPosition.mjs",
-      "require": "./dist/flow-model/resolveDomPosition.js"
-    },
-    "./flow-model/metrics": {
-      "types": "./dist/flow-model/metrics/index.d.ts",
-      "import": "./dist/flow-model/metrics/index.mjs",
-      "require": "./dist/flow-model/metrics/index.js"
-    },
-    "./flow-model/tableInsertHover": {
-      "types": "./dist/flow-model/tableInsertHover.d.ts",
-      "import": "./dist/flow-model/tableInsertHover.mjs",
-      "require": "./dist/flow-model/tableInsertHover.js"
-    },
-    "./flow-model/buildBoxTree": {
-      "types": "./dist/flow-model/buildBoxTree.d.ts",
-      "import": "./dist/flow-model/buildBoxTree.mjs",
-      "require": "./dist/flow-model/buildBoxTree.js"
-    },
-    "./pagination-model/types": {
-      "types": "./dist/pagination-model/types.d.ts",
-      "import": "./dist/pagination-model/types.mjs",
-      "require": "./dist/pagination-model/types.js"
-    },
-    "./painter-model/paintPage": {
-      "types": "./dist/painter-model/paintPage.d.ts",
-      "import": "./dist/painter-model/paintPage.mjs",
-      "require": "./dist/painter-model/paintPage.js"
-    },
     "./managers/AutoSaveManager": {
       "types": "./dist/managers/AutoSaveManager.d.ts",
       "import": "./dist/managers/AutoSaveManager.mjs",
@@ -342,11 +302,6 @@
       "types": "./dist/prosemirror/commentIdAllocator.d.ts",
       "import": "./dist/prosemirror/commentIdAllocator.mjs",
       "require": "./dist/prosemirror/commentIdAllocator.js"
-    },
-    "./editor": {
-      "types": "./dist/editor/index.d.ts",
-      "import": "./dist/editor/index.mjs",
-      "require": "./dist/editor/index.js"
     },
     "./prosemirror/conversion/fromProseDoc": {
       "types": "./dist/prosemirror/conversion/fromProseDoc.d.ts",
@@ -425,14 +380,8 @@
       "agent": [
         "./dist/agent/index.d.ts"
       ],
-      "pagination-model": [
-        "./dist/pagination-model/index.d.ts"
-      ],
-      "painter-model": [
-        "./dist/painter-model/index.d.ts"
-      ],
-      "flow-model": [
-        "./dist/flow-model/index.d.ts"
+      "api": [
+        "./dist/api.d.ts"
       ],
       "plugin-api": [
         "./dist/plugin-api/index.d.ts"
@@ -506,24 +455,6 @@
       "docx/rezip": [
         "./dist/docx/rezip.d.ts"
       ],
-      "flow-model/resolveDomPosition": [
-        "./dist/flow-model/resolveDomPosition.d.ts"
-      ],
-      "flow-model/metrics": [
-        "./dist/flow-model/metrics/index.d.ts"
-      ],
-      "flow-model/tableInsertHover": [
-        "./dist/flow-model/tableInsertHover.d.ts"
-      ],
-      "flow-model/buildBoxTree": [
-        "./dist/flow-model/buildBoxTree.d.ts"
-      ],
-      "pagination-model/types": [
-        "./dist/pagination-model/types.d.ts"
-      ],
-      "painter-model/paintPage": [
-        "./dist/painter-model/paintPage.d.ts"
-      ],
       "managers/AutoSaveManager": [
         "./dist/managers/AutoSaveManager.d.ts"
       ],
@@ -568,9 +499,6 @@
       ],
       "prosemirror/commentIdAllocator": [
         "./dist/prosemirror/commentIdAllocator.d.ts"
-      ],
-      "editor": [
-        "./dist/editor/index.d.ts"
       ],
       "prosemirror/conversion/fromProseDoc": [
         "./dist/prosemirror/conversion/fromProseDoc.d.ts"

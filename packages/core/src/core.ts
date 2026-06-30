@@ -8,7 +8,7 @@
  * use; `.` is the convenient aggregate, `./headless` is its mirror with
  * a slightly different name suffix. Adapter authors who only need a
  * specific slice should prefer the smaller subpaths (`./docx`, `./agent`,
- * `./prosemirror`, `./layout-*`, `./utils`) — they tree-shake better.
+ * `./prosemirror`, `./api`, `./utils`) — they tree-shake better.
  *
  * @example
  * ```ts
@@ -360,37 +360,3 @@ export type {
   EditorCoordinatorOptions,
   EditorCoordinatorSnapshot,
 } from './managers';
-
-// ============================================================================
-// LAYOUT BRIDGE (Adapter Authoring)
-// ============================================================================
-//
-// Helpers shared by the React + Vue adapters and available to third-party
-// adapter authors. The full pipeline (page mapping, content conversion,
-// multi-pass convergence) lives in core so every adapter calls the same
-// code and stays in lockstep on layout behaviour.
-
-export {
-  collectFootnoteRefs,
-  mapFootnotesToPages,
-  calculateFootnoteReservedHeights,
-  buildFootnoteContentMap,
-  buildFootnoteRenderItems,
-  footnoteReservedHeightsEqual,
-  stabilizeFootnoteLayout,
-  convertHeaderFooterToContent,
-  FOOTNOTE_SEPARATOR_HEIGHT,
-  MAX_FOOTNOTE_LAYOUT_PASSES,
-} from './flow-model';
-
-export type {
-  FootnoteRefLocation,
-  MeasureBlocksFn,
-  ConvertFootnoteOptions,
-  StabilizeFootnoteLayoutArgs,
-  StabilizeFootnoteLayoutResult,
-  HeaderFooterMetrics,
-  ConvertHeaderFooterOptions,
-} from './flow-model';
-
-export type { FlowBlock, Layout, Measure, Page, FootnoteContent } from './pagination-model/types';
