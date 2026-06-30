@@ -34,6 +34,13 @@ import {
 } from './units';
 
 /**
+ * Widest border we will paint, px. Word caps borders at 6pt; nothing in the
+ * format bounds `w:sz`, so a crafted value would otherwise paint a rule hundreds
+ * of pixels thick.
+ */
+const MAX_BORDER_WIDTH_PX = 12;
+
+/**
  * Convert TextFormatting to CSS properties for a run/span
  *
  * @param formatting - Text formatting from OOXML
@@ -458,7 +465,10 @@ export function borderToStyle(
   const style: CSSProperties = {};
 
   // Width in eighths of a point
-  const widthPx = border.size ? eighthsToPixels(border.size) : 1;
+  // `w:sz` is a file-supplied number with no bound in the format. Clamp it, or a
+  // crafted `w:pgBorders` paints a rule across the page and hides the document
+  // behind it — the same reason `buildBoxTree/borders.ts` clamps.
+  const widthPx = border.size ? Math.min(eighthsToPixels(border.size), MAX_BORDER_WIDTH_PX) : 1;
 
   // Color
   const color = border.color ? resolveColor(border.color, theme) : '#000000';

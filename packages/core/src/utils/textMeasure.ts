@@ -140,12 +140,7 @@ function getMeasureContext(): CanvasRenderingContext2D | null {
 /**
  * Build CSS font string for canvas context
  */
-function buildFontString(
-  fontFamily: string,
-  fontSize: number,
-  bold: boolean,
-  italic: boolean
-): string {
+function toCssFont(fontFamily: string, fontSize: number, bold: boolean, italic: boolean): string {
   const style = italic ? 'italic ' : '';
   const weight = bold ? 'bold ' : '';
   // Use px for canvas measurements
@@ -291,7 +286,7 @@ export async function measureText(
   }
 
   // Set up font
-  const fontString = buildFontString(fontFamily, fontSize, bold, italic);
+  const fontString = toCssFont(fontFamily, fontSize, bold, italic);
   ctx.font = fontString;
   ctx.textBaseline = 'alphabetic';
 
@@ -392,7 +387,7 @@ export function measureTextSync(
   }
 
   // Set up font and measure
-  const fontString = buildFontString(fontFamily, fontSize, bold, italic);
+  const fontString = toCssFont(fontFamily, fontSize, bold, italic);
   ctx.font = fontString;
   ctx.textBaseline = 'alphabetic';
 
@@ -560,7 +555,7 @@ export function measureTextWidth(text: string, formatting?: TextFormatting, them
     return estimateTextMeasurement(text, fontSize).width;
   }
 
-  const fontString = buildFontString(fontFamily, fontSize, bold, italic);
+  const fontString = toCssFont(fontFamily, fontSize, bold, italic);
   ctx.font = fontString;
 
   return ctx.measureText(text).width;
