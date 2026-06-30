@@ -921,7 +921,7 @@
  * ProseMirror decoration forwarding overlay
  *
  * Generic surface for decorations published via PM plugins' `props.decorations`
- * (the layout-painter doesn't render them itself — see `DecorationLayer.tsx`).
+ * (the painter-model doesn't render them itself — see `DecorationLayer.tsx`).
  * Children are absolutely-positioned inside this container; pointer-events
  * are off by default so editing isn't blocked. Plugins that need hover/click
  * on a decoration (e.g. cursor name labels) opt in via inline styles.

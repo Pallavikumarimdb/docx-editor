@@ -103,7 +103,7 @@ describe('opacity helper null-safety (regression: PM null leaks → opacity:0)',
   // `opacity: 0`. The helpers must use `!= null` to catch both.
   // Fixture-tested below via the public API.
   test('hasImageVisualAttrs treats null opacity as "not set"', async () => {
-    const { hasImageVisualAttrs } = await import('../../layout-painter/renderImage');
+    const { hasImageVisualAttrs } = await import('../../painter-model/renderImage');
     // Simulate a PM node with default-null opacity / crop fields.
     expect(
       hasImageVisualAttrs({
@@ -117,7 +117,7 @@ describe('opacity helper null-safety (regression: PM null leaks → opacity:0)',
   });
 
   test('hasImageVisualAttrs detects an explicit opacity < 1', async () => {
-    const { hasImageVisualAttrs } = await import('../../layout-painter/renderImage');
+    const { hasImageVisualAttrs } = await import('../../painter-model/renderImage');
     expect(hasImageVisualAttrs({ opacity: 0.5 })).toBe(true);
     expect(hasImageVisualAttrs({ opacity: 1 })).toBe(false);
   });

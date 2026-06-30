@@ -11,7 +11,7 @@
 
 import { describe, test, expect } from 'bun:test';
 import { footnoteToProseDoc } from '../toProseDoc';
-import { buildBoxTree } from '../../../layout-bridge';
+import { buildBoxTree } from '../../../flow-model';
 import type { Paragraph, Table } from '../../../types/document';
 
 function paragraph(text: string): Paragraph {
@@ -63,7 +63,7 @@ describe('footnoteToProseDoc — body-pipeline routing (#378)', () => {
   });
 
   test('footnote-with-table flows through buildBoxTree as a table block', () => {
-    // End-to-end: the table reaches the layout-bridge as a `kind: 'table'`
+    // End-to-end: the table reaches the flow-model as a `kind: 'table'`
     // block, ready to be measured + rendered like any body table.
     const pmDoc = footnoteToProseDoc([paragraph('intro'), emptyTable()]);
     const blocks = buildBoxTree(pmDoc, {});

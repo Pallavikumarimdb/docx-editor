@@ -10,7 +10,7 @@
 
 import type { EditorView } from 'prosemirror-view';
 import type { Node as ProseMirrorNode } from 'prosemirror-model';
-import type { Layout } from '../layout-engine';
+import type { Layout } from '../pagination-model';
 import { getVanillaNodeText, getVanillaTextBetween } from './paraText';
 import { extractTrackedChanges } from './utils/extractTrackedChanges';
 

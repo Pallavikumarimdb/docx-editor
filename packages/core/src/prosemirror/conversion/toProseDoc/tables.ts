@@ -218,7 +218,7 @@ export function convertTable(
   // Resolve default cell margins via the same cascade as borders. Tables
   // that don't carry a tblStyle reference still inherit cellMargins from the
   // default table style per §17.4.41 + §17.7.4.18; pre-PR such tables had
-  // no cellMargins at all and the layout-bridge fell back to a hardcoded
+  // no cellMargins at all and the flow-model fell back to a hardcoded
   // 7 px. `defaultTableStyle` is shared with the borders cascade above.
   const tableCellMargins =
     table.formatting?.cellMargins ??
