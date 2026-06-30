@@ -8,7 +8,6 @@
 import { describe, expect, test } from 'bun:test';
 import { EditorState, TextSelection } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
-import type { Layout } from '../../pagination-model';
 
 import { singletonManager } from '../schema';
 import {
@@ -240,13 +239,13 @@ describe('clampRangeToDoc', () => {
 });
 
 describe('getPageContent', () => {
-  function layoutFor(state: EditorState): Layout {
+  function layoutFor(state: EditorState): NonNullable<Parameters<typeof getPageContent>[1]> {
     // Minimal layout: one page whose fragments point at the three paragraphs.
     const fragments: Array<{ kind: string; docFrom: number }> = [];
     state.doc.forEach((_node, offset) => {
       fragments.push({ kind: 'paragraph', docFrom: offset });
     });
-    return { pages: [{ fragments }] } as unknown as Layout;
+    return { pages: [{ fragments }] } as NonNullable<Parameters<typeof getPageContent>[1]>;
   }
 
   test('collects page paragraphs deduped by paraId with style', () => {

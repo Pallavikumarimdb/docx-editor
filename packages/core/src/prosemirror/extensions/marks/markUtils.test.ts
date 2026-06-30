@@ -62,7 +62,7 @@ const schema = new Schema({
 function createEmptyParaState() {
   const doc = schema.node('doc', null, [schema.node('paragraph', null, [])]);
   let state = EditorState.create({ doc });
-  // Cursor inside the empty paragraph (pos 1 = inside para).
+  // LayoutCursor inside the empty paragraph (pos 1 = inside para).
   state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, 1)));
   return state;
 }

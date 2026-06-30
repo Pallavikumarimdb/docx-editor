@@ -11,7 +11,6 @@
 
 import { describe, test, expect } from 'bun:test';
 import { footnoteToProseDoc } from '../toProseDoc';
-import { buildBoxTree } from '../../../flow-model';
 import type { Paragraph, Table } from '../../../types/document';
 
 function paragraph(text: string): Paragraph {
@@ -60,17 +59,6 @@ describe('footnoteToProseDoc — body-pipeline routing (#378)', () => {
     expect(pmDoc.childCount).toBe(2);
     expect(pmDoc.firstChild?.type.name).toBe('paragraph');
     expect(pmDoc.lastChild?.type.name).toBe('table');
-  });
-
-  test('footnote-with-table flows through buildBoxTree as a table block', () => {
-    // End-to-end: the table reaches the flow-model as a `kind: 'table'`
-    // block, ready to be measured + rendered like any body table.
-    const pmDoc = footnoteToProseDoc([paragraph('intro'), emptyTable()]);
-    const blocks = buildBoxTree(pmDoc, {});
-
-    const tableBlock = blocks.find((b) => b.kind === 'table');
-    expect(tableBlock).toBeDefined();
-    expect(tableBlock?.kind).toBe('table');
   });
 
   test('empty footnote content produces a single empty paragraph', () => {

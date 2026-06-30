@@ -67,9 +67,7 @@ describe('package.json exports map', () => {
       './prosemirror/commands',
       './prosemirror/plugins',
       './prosemirror/editor.css',
-      './pagination-model',
-      './painter-model',
-      './flow-model',
+      './api',
       './plugin-api',
       './types/document',
       './types/content',
@@ -105,9 +103,7 @@ describe('package.json exports map', () => {
       './docx/wrapTypes',
       './docx/serializer',
       './agent',
-      './pagination-model',
-      './painter-model',
-      './flow-model',
+      './api',
       './plugin-api',
       './plugin-api/RenderedDomContext',
       './plugin-api/resolveItemPositions',
@@ -131,12 +127,6 @@ describe('package.json exports map', () => {
       './utils/units',
       './docx/parser',
       './docx/rezip',
-      './flow-model/resolveDomPosition',
-      './flow-model/metrics',
-      './flow-model/tableInsertHover',
-      './flow-model/buildBoxTree',
-      './pagination-model/types',
-      './painter-model/paintPage',
       './managers/AutoSaveManager',
       './managers/TableSelectionManager',
       './managers/types',
@@ -157,7 +147,6 @@ describe('package.json exports map', () => {
       './prosemirror/commentOps',
       './prosemirror/commentIdAllocator',
       './utils/autoScroll',
-      './editor',
     ]);
     const unexpected = Object.keys(pkg.exports).filter((subpath) => !approved.has(subpath));
     expect(unexpected).toEqual([]);
@@ -170,7 +159,7 @@ describe('package.json exports map', () => {
 
 describe('built dist layout (when present)', () => {
   test('imports from each JS subpath resolve when dist exists', async () => {
-    const distMjs = resolve(pkgRoot, 'dist', 'pagination-model', 'index.mjs');
+    const distMjs = resolve(pkgRoot, 'dist', 'api.mjs');
     let distBuilt = false;
     try {
       readFileSync(distMjs);
@@ -180,13 +169,10 @@ describe('built dist layout (when present)', () => {
     }
     if (!distBuilt) return;
 
-    const layoutEngine = (await import(distMjs)) as Record<string, unknown>;
-    expect(typeof layoutEngine.layOutPages).toBe('function');
-
-    const layoutPainter = (await import(
-      resolve(pkgRoot, 'dist/painter-model/index.mjs')
-    )) as Record<string, unknown>;
-    expect(typeof layoutPainter.paintPage).toBe('function');
+    const api = (await import(distMjs)) as Record<string, unknown>;
+    expect(typeof api.renderDocument).toBe('function');
+    expect(typeof api.caretAt).toBe('function');
+    expect(typeof api.rectsFor).toBe('function');
 
     const extensions = (await import(
       resolve(pkgRoot, 'dist/prosemirror/extensions/index.mjs')
