@@ -20,12 +20,23 @@ export interface ExtractedRaster {
   mimeType: 'image/png' | 'image/jpeg';
 }
 
+// NOTE: deliberately written without a labelled `continue`. Minifiers rename
+// loop labels to single characters, and Vite's SSR module-runner transform
+// (vite-node, used by Nuxt's dev server) rewrites references to imported
+// bindings into `__vite_ssr_import_N__.<name>` *including in label position*.
+// A minified label that collides with an imported binding of the same name
+// therefore emits `__vite_ssr_import_6__.e: for (...)`, which is a syntax
+// error that 500s every SSR render. Keep this loop label-free.
 function indexOfBytes(haystack: Uint8Array, needle: number[], from = 0): number {
-  outer: for (let i = from; i + needle.length <= haystack.length; i++) {
+  for (let i = from; i + needle.length <= haystack.length; i++) {
+    let matched = true;
     for (let j = 0; j < needle.length; j++) {
-      if (haystack[i + j] !== needle[j]) continue outer;
+      if (haystack[i + j] !== needle[j]) {
+        matched = false;
+        break;
+      }
     }
-    return i;
+    if (matched) return i;
   }
   return -1;
 }

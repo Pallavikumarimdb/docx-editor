@@ -882,6 +882,21 @@
   background-color: transparent;
 }
 
+/* Body caret blink for the Vue adapter's painted caret (useSelectionSync sets
+   `animation: ep-caret-blink ...` inline). React drives its caret's blink from a
+   JS timer instead; both land on the same 530ms half-period, which is the
+   platform default. Defined here so the keyframes aren't duplicated per adapter. */
+@keyframes ep-caret-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
 /* HF caret overlay blink. Used by the painted HF caret in both adapters
    (DocxEditorPagedArea.tsx / DocxEditor.vue set `animation: hf-caret-blink ...`
    inline). Defined once here so the keyframes aren't duplicated per adapter. */
@@ -921,7 +936,7 @@
  * ProseMirror decoration forwarding overlay
  *
  * Generic surface for decorations published via PM plugins' `props.decorations`
- * (the painter-model doesn't render them itself — see `DecorationLayer.tsx`).
+ * (the painter doesn't render them itself — see `DecorationLayer.tsx`).
  * Children are absolutely-positioned inside this container; pointer-events
  * are off by default so editing isn't blocked. Plugins that need hover/click
  * on a decoration (e.g. cursor name labels) opt in via inline styles.

@@ -45,7 +45,7 @@ function normalizedDurationMs(options?: ParagraphHighlightOptions): number {
  *
  * @public
  */
-export function findParagraphFragmentsByParaId(root: ParentNode, paraId: string): HTMLElement[] {
+export function findParagraphBoxesByParaId(root: ParentNode, paraId: string): HTMLElement[] {
   if (!paraId || !paraId.trim()) return [];
   const escaped = escapeAttributeValue(paraId);
   return Array.from(
@@ -97,11 +97,11 @@ export function flashParagraphElements(
  * @returns whether at least one rendered fragment was found
  * @public
  */
-export function flashParagraphFragmentsByParaId(
+export function flashParagraphBoxesByParaId(
   root: ParentNode,
   paraId: string,
   options?: ParagraphHighlightOptions
 ): boolean {
-  const fragments = findParagraphFragmentsByParaId(root, paraId);
+  const fragments = findParagraphBoxesByParaId(root, paraId);
   return flashParagraphElements(fragments, options) > 0;
 }
