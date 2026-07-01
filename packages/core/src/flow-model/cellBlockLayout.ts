@@ -22,6 +22,8 @@ export interface CellContentLayout {
    * bottom) — the clean break points for the pageComposer.
    */
   flatBottoms: number[];
+  /** Line/atomic-block ranges a horizontal page cut must never cross. */
+  unbreakableRanges: Array<{ top: number; bottom: number }>;
   /** Total stacked height incl. the last block's trailing space-after. */
   contentHeight: number;
 }
@@ -36,6 +38,7 @@ export function layoutCellContent(
 ): CellContentLayout {
   const lineTops: number[][] = [];
   const flatBottoms: number[] = [];
+  const unbreakableRanges: Array<{ top: number; bottom: number }> = [];
   let y = startY;
   let prevAfter = 0;
   const n = nodeMetrics?.length ?? 0;
@@ -49,17 +52,21 @@ export function layoutCellContent(
       const tops: number[] = [];
       for (const line of measure.lines) {
         y += line.floatSkipBefore ?? 0;
+        const top = y;
         tops.push(y);
         y += line.lineHeight;
         flatBottoms.push(y);
+        unbreakableRanges.push({ top, bottom: y });
       }
       lineTops.push(tops);
       prevAfter = spacing?.after ?? 0;
     } else if (measure && 'totalHeight' in measure && typeof measure.totalHeight === 'number') {
       // Nested table / non-paragraph: one atomic block (break only at its bottom).
+      const top = y + prevAfter;
       y += prevAfter + measure.totalHeight;
       lineTops.push([]);
       flatBottoms.push(y);
+      unbreakableRanges.push({ top, bottom: y });
       prevAfter = 0;
     } else {
       lineTops.push([]);
@@ -67,5 +74,10 @@ export function layoutCellContent(
   }
 
   // The painter renders the final block's trailing space-after as paddingBottom.
-  return { lineTops, flatBottoms, contentHeight: y - startY + prevAfter };
+  return {
+    lineTops,
+    flatBottoms,
+    unbreakableRanges,
+    contentHeight: y - startY + prevAfter,
+  };
 }
