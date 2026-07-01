@@ -46,6 +46,12 @@ export interface FontStyle {
   fontSize: number;
   bold?: boolean;
   italic?: boolean;
+  /** CSS px added between painted grapheme clusters. */
+  letterSpacing?: number;
+  /** OOXML `w:w`, as a percentage (100 = normal width). */
+  horizontalScale?: number;
+  allCaps?: boolean;
+  smallCaps?: boolean;
 }
 
 /**
@@ -162,6 +168,7 @@ export function resetCanvasContext(): void {
 export function toCssFont(style: FontStyle): string {
   const parts: string[] = [];
   if (style.italic) parts.push('italic');
+  if (style.smallCaps) parts.push('small-caps');
   if (style.bold) parts.push('bold');
   parts.push(`${pointsToPixels(style.fontSize)}px`);
   parts.push(quoteFamily(style.fontFamily));
@@ -240,6 +247,18 @@ export function measureTextWidth(text: string, style: FontStyle): number {
   if (text === '') return 0;
 
   const fontString = toCssFont(style);
+  const paintedText = style.allCaps ? text.toUpperCase() : text;
+  const letterSpacing =
+    typeof style.letterSpacing === 'number' && Number.isFinite(style.letterSpacing)
+      ? style.letterSpacing
+      : 0;
+  const horizontalScale =
+    typeof style.horizontalScale === 'number' &&
+    Number.isFinite(style.horizontalScale) &&
+    style.horizontalScale > 0
+      ? style.horizontalScale / 100
+      : 1;
+  const widthStyleKey = `${fontString};ls:${letterSpacing};sx:${horizontalScale};caps:${style.allCaps ? 1 : 0}`;
 
   // Long strings are measured but not memoised. The cache is keyed by the string
   // itself, so a long string is a long key — and the hit rate on them is near
@@ -248,14 +267,14 @@ export function measureTextWidth(text: string, style: FontStyle): number {
   // keys of O(n) length for one click on one run, which for a pathological
   // single-`w:t` document is hundreds of megabytes of keys.
   if (text.length > MAX_MEMOISED_RUN_CHARS) {
-    return canvasWidth(text, fontString);
+    return decoratedWidth(paintedText, fontString, letterSpacing, horizontalScale);
   }
 
-  const key = cacheKey(fontString, text);
+  const key = cacheKey(widthStyleKey, text);
   const cached = getCachedTextWidth(key);
   if (cached !== undefined) return cached;
 
-  const width = canvasWidth(text, fontString);
+  const width = decoratedWidth(paintedText, fontString, letterSpacing, horizontalScale);
   setCachedTextWidth(key, width);
   return width;
 }
@@ -289,7 +308,24 @@ function canvasWidth(text: string, fontString: string): number {
 }
 
 /**
- * LayoutMetrics a string: width plus the vertical metrics of its font.
+ * Apply the same post-glyph inline geometry as CSS. Letter spacing is applied
+ * once per painted grapheme (never inside a combining/emoji sequence), then
+ * OOXML horizontal scaling scales the complete tracked run.
+ */
+function decoratedWidth(
+  paintedText: string,
+  fontString: string,
+  letterSpacing: number,
+  horizontalScale: number
+): number {
+  const glyphWidth = canvasWidth(paintedText, fontString);
+  const graphemeCount =
+    letterSpacing === 0 ? 0 : Math.max(0, graphemeBoundaries(paintedText).length - 1);
+  return Math.max(0, glyphWidth + graphemeCount * letterSpacing) * horizontalScale;
+}
+
+/**
+ * Measure a string: width plus the vertical metrics of its font.
  *
  * @public
  */
@@ -326,12 +362,21 @@ export function measureRun(text: string, style: FontStyle): RunMeasurement {
  */
 export function prefixAdvances(text: string, style: FontStyle): number[] {
   const advances: number[] = [];
-  for (let i = 1; i <= text.length; i++) {
-    // Snap off the low half of a surrogate pair. Slicing through an emoji
-    // metrics a lone surrogate — which the canvas renders as tofu, not as
-    // nothing — so the advance would be wrong AND the boundary would be one no
-    // caret may occupy.
-    advances.push(measureTextWidth(text.slice(0, snapToCodePoint(text, i)), style));
+  const boundaries = graphemeBoundaries(text);
+  let previousBoundary = 0;
+  let previousWidth = 0;
+
+  for (let b = 1; b < boundaries.length; b++) {
+    const boundary = boundaries[b];
+    // Preserve the historical one-entry-per-UTF-16-code-unit shape. Interior
+    // code units repeat the previous legal caret advance; only the grapheme's
+    // final code unit receives its painted width.
+    for (let i = previousBoundary + 1; i < boundary; i++) {
+      advances.push(previousWidth);
+    }
+    previousWidth = measureTextWidth(text.slice(0, boundary), style);
+    advances.push(previousWidth);
+    previousBoundary = boundary;
   }
   return advances;
 }
@@ -356,29 +401,21 @@ export function charIndexAtX(text: string, style: FontStyle, x: number): number 
   if (text.length === 0 || x <= 0) return 0;
   if (x >= measureTextWidth(text, style)) return text.length;
 
-  // Smallest boundary whose prefix width is >= x. Monotonic, because advances
-  // are non-negative.
-  let lo = 0;
-  let hi = text.length;
+  const boundaries = graphemeBoundaries(text);
+  // Smallest grapheme boundary whose prefix width is >= x.
+  let lo = 1;
+  let hi = boundaries.length - 1;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
-    if (prefixWidth(text, style, mid) < x) lo = mid + 1;
+    if (prefixWidth(text, style, boundaries[mid]) < x) lo = mid + 1;
     else hi = mid;
   }
 
-  // `lo` is the boundary at or past x. Snap to whichever side of the straddled
-  // character is nearer — that is what puts the caret on the side of the glyph
-  // the user actually clicked.
-  if (lo === 0) return 0;
-  const leftEdge = prefixWidth(text, style, lo - 1);
-  const rightEdge = prefixWidth(text, style, lo);
-  const nearest = x - leftEdge <= rightEdge - x ? lo - 1 : lo;
-
-  // The prefixes were measured at code-point boundaries, but the INDEX still has
-  // to be one: clicking the left half of a lone emoji lands on index 1, between
-  // its two surrogate halves. Handing that to ProseMirror as a document position
-  // puts the caret inside a character.
-  return snapToCodePoint(text, nearest);
+  const leftBoundary = boundaries[lo - 1];
+  const rightBoundary = boundaries[lo];
+  const leftEdge = prefixWidth(text, style, leftBoundary);
+  const rightEdge = prefixWidth(text, style, rightBoundary);
+  return x - leftEdge <= rightEdge - x ? leftBoundary : rightBoundary;
 }
 
 /**
@@ -390,23 +427,130 @@ export function charIndexAtX(text: string, style: FontStyle, x: number): number 
  * every boundary a real one.
  */
 function prefixWidth(text: string, style: FontStyle, count: number): number {
-  return measureTextWidth(text.slice(0, snapToCodePoint(text, count)), style);
+  return measureTextWidth(text.slice(0, snapToGrapheme(text, count)), style);
 }
 
 /**
- * Move `index` off the low half of a surrogate pair, if it landed there.
+ * Move `index` to the preceding legal grapheme boundary.
  *
  * @public
  */
-export function snapToCodePoint(text: string, index: number): number {
+export function snapToGrapheme(text: string, index: number): number {
   if (index <= 0) return 0;
   if (index >= text.length) return text.length;
 
-  const code = text.charCodeAt(index);
-  // A trailing surrogate at `index` means `index - 1` is its leading half, and
-  // the boundary is really one character earlier.
-  const isTrailingSurrogate = code >= 0xdc00 && code <= 0xdfff;
-  return isTrailingSurrogate ? index - 1 : index;
+  const boundaries = graphemeBoundaries(text);
+  let lo = 0;
+  let hi = boundaries.length - 1;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (boundaries[mid] <= index) lo = mid;
+    else hi = mid - 1;
+  }
+  return boundaries[lo];
+}
+
+/** First legal grapheme boundary strictly after `index`. */
+export function nextGraphemeBoundary(text: string, index: number): number {
+  if (index < 0) return 0;
+  if (index >= text.length) return text.length;
+  const boundaries = graphemeBoundaries(text);
+  for (const boundary of boundaries) {
+    if (boundary > index) return boundary;
+  }
+  return text.length;
+}
+
+interface SegmentPart {
+  index: number;
+}
+
+interface SegmenterLike {
+  segment(input: string): Iterable<SegmentPart>;
+}
+
+type SegmenterConstructor = new (
+  locales?: string | string[],
+  options?: { granularity: 'grapheme' }
+) => SegmenterLike;
+
+/**
+ * UTF-16 indices at every caret-safe grapheme boundary, including 0 and length.
+ * `Intl.Segmenter` supplies Unicode's full algorithm where available; the
+ * fallback covers combining marks, emoji modifiers, flags, and ZWJ sequences.
+ */
+export function graphemeBoundaries(text: string): number[] {
+  if (text.length === 0) return [0];
+
+  const Segmenter = (Intl as unknown as { Segmenter?: SegmenterConstructor }).Segmenter;
+  if (Segmenter) {
+    const boundaries: number[] = [];
+    for (const part of new Segmenter(undefined, { granularity: 'grapheme' }).segment(text)) {
+      boundaries.push(part.index);
+    }
+    if (boundaries[0] !== 0) boundaries.unshift(0);
+    if (boundaries[boundaries.length - 1] !== text.length) boundaries.push(text.length);
+    return boundaries;
+  }
+
+  return fallbackGraphemeBoundaries(text);
+}
+
+function fallbackGraphemeBoundaries(text: string): number[] {
+  const boundaries = [0];
+  let index = 0;
+  while (index < text.length) {
+    const first = codePointAt(text, index);
+    index += first.length;
+
+    if (first.value === 0x0d && codePointAt(text, index).value === 0x0a) {
+      index += 1;
+    } else if (isRegionalIndicator(first.value)) {
+      const second = codePointAt(text, index);
+      if (isRegionalIndicator(second.value)) index += second.length;
+    }
+
+    index = consumeExtenders(text, index);
+    while (codePointAt(text, index).value === 0x200d) {
+      index += 1;
+      if (index >= text.length) break;
+      index += codePointAt(text, index).length;
+      index = consumeExtenders(text, index);
+    }
+    boundaries.push(index);
+  }
+  return boundaries;
+}
+
+function codePointAt(text: string, index: number): { value: number; length: number } {
+  if (index >= text.length) return { value: -1, length: 0 };
+  const value = text.codePointAt(index) ?? -1;
+  return { value, length: value > 0xffff ? 2 : 1 };
+}
+
+function consumeExtenders(text: string, from: number): number {
+  let index = from;
+  while (index < text.length) {
+    const point = codePointAt(text, index);
+    if (!isGraphemeExtender(point.value)) break;
+    index += point.length;
+  }
+  return index;
+}
+
+function isGraphemeExtender(value: number): boolean {
+  if (value < 0) return false;
+  const char = String.fromCodePoint(value);
+  return (
+    /\p{Mark}/u.test(char) ||
+    (value >= 0xfe00 && value <= 0xfe0f) ||
+    (value >= 0xe0100 && value <= 0xe01ef) ||
+    (value >= 0x1f3fb && value <= 0x1f3ff)
+  );
+}
+
+function isRegionalIndicator(value: number): boolean {
+  return value >= 0x1f1e6 && value <= 0x1f1ff;
 }
 
 /**
@@ -418,7 +562,7 @@ export function snapToCodePoint(text: string, index: number): number {
 export function getXForCharacter(text: string, style: FontStyle, index: number): number {
   const clamped = Math.max(0, Math.min(index, text.length));
   if (clamped === 0) return 0;
-  return measureTextWidth(text.slice(0, clamped), style);
+  return measureTextWidth(text.slice(0, snapToGrapheme(text, clamped)), style);
 }
 
 /**
@@ -428,7 +572,18 @@ export function getXForCharacter(text: string, style: FontStyle, index: number):
  * @public
  */
 export function resolveFontStyle(
-  run: { fontSize?: number; fontFamily?: string; bold?: boolean; italic?: boolean } | undefined,
+  run:
+    | {
+        fontSize?: number;
+        fontFamily?: string;
+        bold?: boolean;
+        italic?: boolean;
+        letterSpacing?: number;
+        horizontalScale?: number;
+        allCaps?: boolean;
+        smallCaps?: boolean;
+      }
+    | undefined,
   defaults?: { fontSize?: number; fontFamily?: string }
 ): FontStyle {
   return {
@@ -436,6 +591,10 @@ export function resolveFontStyle(
     fontSize: run?.fontSize ?? defaults?.fontSize ?? FALLBACK_FONT_SIZE_PT,
     bold: run?.bold,
     italic: run?.italic,
+    letterSpacing: run?.letterSpacing,
+    horizontalScale: run?.horizontalScale,
+    allCaps: run?.allCaps,
+    smallCaps: run?.smallCaps,
   };
 }
 

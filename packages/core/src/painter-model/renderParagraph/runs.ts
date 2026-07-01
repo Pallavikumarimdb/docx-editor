@@ -22,6 +22,7 @@ import { applyImageVisualAttrs, hasImageVisualAttrs } from '../renderImage';
 import { resolveFontFamily } from '../../utils/fontResolver';
 import { sanitizeHref } from '../../utils/sanitizeHref';
 import { sanitizeImageSrc } from '../../utils/sanitizeImageSrc';
+import { measureTextWidth, resolveFontStyle } from '../../flow-model/metrics/textMetrics';
 import {
   PARAGRAPH_CLASS_NAMES,
   isTextRun,
@@ -65,7 +66,7 @@ function styleRunElement(
   }
 
   // Letter spacing
-  if (run.letterSpacing) {
+  if (run.letterSpacing !== undefined) {
     element.style.letterSpacing = `${run.letterSpacing}px`;
   }
 
@@ -88,9 +89,20 @@ function styleRunElement(
   // Horizontal scale (OOXML w:w). Stored as a percent (100 = normal). Apply
   // via scaleX on an inline-block so the transform actually takes effect.
   if (run.horizontalScale && run.horizontalScale !== 100) {
+    const text = 'text' in run ? run.text : '';
+    const naturalWidth = measureTextWidth(text, {
+      ...resolveFontStyle(run),
+      horizontalScale: 100,
+    });
+    const paintedWidth = measureTextWidth(text, resolveFontStyle(run));
     element.style.display = 'inline-block';
     element.style.transform = `scaleX(${run.horizontalScale / 100})`;
     element.style.transformOrigin = 'left center';
+    // CSS transforms are paint-only: without compensating the inline margin,
+    // following runs still start at the unscaled advance and either overlap a
+    // wide run or leave a gap after a condensed one. The margin makes flow
+    // consume the same width the shared measurer reserved.
+    element.style.marginRight = `${paintedWidth - naturalWidth}px`;
   }
 
   // Kerning gate (OOXML w:kern). Enable font-kerning when the run's font

@@ -22,7 +22,7 @@ import {
   type TabRuler,
   type TabMark as TabCalcStop,
 } from '../../prosemirror/utils/tabMetrics';
-import { resolveFontFamily } from '../../utils/fontResolver';
+import { measureTextWidth, resolveFontStyle } from '../../flow-model/metrics/textMetrics';
 import {
   PARAGRAPH_CLASS_NAMES,
   isTextRun,
@@ -225,13 +225,6 @@ const RIGHT_EDGE_EPSILON_PX = 0.5;
 function measureFollowingContentWidth(
   runs: Run[],
   tabRunIndex: number,
-  measureText: (
-    text: string,
-    fontSize?: number,
-    fontFamily?: string,
-    bold?: boolean,
-    italic?: boolean
-  ) => number,
   context?: RenderContext
 ): number {
   let width = 0;
@@ -239,7 +232,7 @@ function measureFollowingContentWidth(
     const run = runs[i];
     if (isTabRun(run) || isLineBreakRun(run)) break;
     if (isTextRun(run)) {
-      width += measureText(run.text || '', run.fontSize, run.fontFamily, run.bold, run.italic);
+      width += measureTextWidth(run.text || '', resolveFontStyle(run));
     } else if (isFieldRun(run)) {
       let fieldText: string;
       if (run.fieldType === 'PAGE' && context) {
@@ -249,7 +242,7 @@ function measureFollowingContentWidth(
       } else {
         fieldText = run.fallback ?? '';
       }
-      width += measureText(fieldText, run.fontSize, run.fontFamily, run.bold, run.italic);
+      width += measureTextWidth(fieldText, resolveFontStyle(run));
     } else if (isImageRun(run) && !isFloatingImageRun(run)) {
       // Floating images render at the page level — they contribute 0 inline
       // width, so don't count them in the right-edge clamp budget.
@@ -260,39 +253,10 @@ function measureFollowingContentWidth(
 }
 
 /**
- * Create a text measurement function using a temporary canvas
- * Uses the same font fallback chain as textMetrics.ts
+ * Measure unformatted helper text used only for a tab's decimal probe.
  */
-function createTextMeasurer(
-  doc: Document
-): (
-  text: string,
-  fontSize?: number,
-  fontFamily?: string,
-  bold?: boolean,
-  italic?: boolean
-) => number {
-  const canvas = doc.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-
-  return (text: string, fontSize = 11, fontFamily = 'Calibri', bold = false, italic = false) => {
-    if (!ctx) return text.length * 7; // Fallback estimate
-    // Font resolver for category-appropriate fallback stacks, matching
-    // textMetrics.ts. Include weight + style: `styleRunElement` sets
-    // `font-weight: bold` / `font-style: italic` on the painted span, but
-    // if the canvas font string omits them the browser metrics the
-    // *regular* face. For TOC entries (whose runs carry inline <w:b/>)
-    // that under-counts the painted width by a few px per run and the
-    // page-number drifts off the right margin.
-    const cssFallback = resolveFontFamily(fontFamily).cssFallback;
-    const fontSizePx = (fontSize * 96) / 72;
-    const parts: string[] = [];
-    if (italic) parts.push('italic');
-    if (bold) parts.push('bold');
-    parts.push(`${fontSizePx}px`, cssFallback);
-    ctx.font = parts.join(' ');
-    return ctx.measureText(text).width;
-  };
+function measureDefaultText(text: string): number {
+  return measureTextWidth(text, resolveFontStyle(undefined));
 }
 
 /**
@@ -404,9 +368,6 @@ export function paintLine(
   const hasTabRuns = runsForLine.some(isTabRun);
   let tabRuler: TabRuler | undefined;
 
-  // Always create text measurer for accurate X position tracking
-  const measureText = createTextMeasurer(doc);
-
   if (hasTabRuns) {
     // Convert tab stops from layout engine format to tab calculator format
     const explicitStops = config?.tabMarks?.map(convertTabMarkToCalc);
@@ -452,16 +413,11 @@ export function paintLine(
       // LayoutMetrics the content after this tab so end/center/decimal stops can
       // anchor it to the stop. Per-run measurement (not a single-font pass)
       // keeps the tab width accurate when trailing runs differ in font/size.
-      const followingWidth = measureFollowingContentWidth(
-        runsForLine,
-        i,
-        measureText,
-        config?.context
-      );
-      const followingText = getTextAfterTab(runsForLine, i, config?.context);
+      const followingWidth = measureFollowingContentWidth(runsForLine, i, options?.context);
+      const followingText = getTextAfterTab(runsForLine, i, options?.context);
       const decimalIndex = followingText.indexOf('.');
       const decimalPrefixWidth =
-        decimalIndex >= 0 ? measureText(followingText.slice(0, decimalIndex)) : 0;
+        decimalIndex >= 0 ? measureDefaultText(followingText.slice(0, decimalIndex)) : 0;
 
       // The measurer already resolved this tab's advance and recorded it on the
       // line (`MeasuredLine.advances`). Read it back rather than re-deriving it.
@@ -598,10 +554,8 @@ export function paintLine(
 
       lineEl.appendChild(runEl);
 
-      // LayoutMetrics text width for accurate tab position tracking
-      const fontSize = run.fontSize || 11;
-      const fontFamily = run.fontFamily || 'Calibri';
-      currentX += measureText(run.text, fontSize, fontFamily, run.bold, run.italic);
+      // Measure text width for accurate tab position tracking
+      currentX += measureTextWidth(run.text, resolveFontStyle(run));
     } else if (isImageRun(run)) {
       // Skip floating images - they're rendered separately at page level.
       // Exception: inside table cells, floating images must render in-flow
@@ -631,11 +585,9 @@ export function paintLine(
       lineEl.appendChild(runEl);
       // Estimate field text width for tab calculations
       let fieldText = run.fallback ?? '';
-      if (run.fieldType === 'PAGE') fieldText = String(config.context.pageNumber);
-      else if (run.fieldType === 'NUMPAGES') fieldText = String(config.context.totalPages);
-      const fontSize = run.fontSize || 11;
-      const fontFamily = run.fontFamily || 'Calibri';
-      currentX += measureText(fieldText, fontSize, fontFamily, run.bold, run.italic);
+      if (run.fieldType === 'PAGE') fieldText = String(options.context.pageNumber);
+      else if (run.fieldType === 'NUMPAGES') fieldText = String(options.context.totalPages);
+      currentX += measureTextWidth(fieldText, resolveFontStyle(run));
     } else {
       // Fallback for unknown run types
       const runEl = paintRun(run, doc, config?.context);
