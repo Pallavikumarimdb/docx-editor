@@ -9,6 +9,8 @@
 
 import type { ImageFragment, ImageBlock, ImageMetrics } from '../pagination-model/types';
 import type { RenderContext } from './paintPage';
+import { sanitizeHref } from '../utils/sanitizeHref';
+import { sanitizeImageSrc } from '../utils/sanitizeImageSrc';
 
 /**
  * CSS class names for image elements
@@ -172,7 +174,7 @@ export function paintImageFragment(
   // schemes — image bytes come from the (untrusted) document as data: URLs, so
   // anything else (e.g. a smuggled javascript:/external scheme) is dropped.
   const imgEl = doc.createElement('img');
-  imgEl.src = /^(?:data:|blob:|https?:)/i.test(block.src) ? block.src : '';
+  imgEl.src = sanitizeImageSrc(block.src) ?? '';
   imgEl.alt = block.alt ?? '';
 
   // Image sizing
@@ -190,9 +192,10 @@ export function paintImageFragment(
   imgEl.draggable = false;
 
   // Wrap in hyperlink if image has a link
-  if (block.hlinkHref) {
+  const hlinkHref = sanitizeHref(block.hlinkHref);
+  if (hlinkHref) {
     const linkEl = doc.createElement('a');
-    linkEl.href = block.hlinkHref;
+    linkEl.href = hlinkHref;
     linkEl.target = '_blank';
     linkEl.rel = 'noopener noreferrer';
     linkEl.style.display = 'block';

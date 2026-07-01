@@ -151,8 +151,10 @@ export const HyperlinkExtension = createMarkExtension({
     ],
     toDOM(mark) {
       const attrs = mark.attrs as HyperlinkAttrs;
+      const href = sanitizeHref(attrs.href);
+      if (!href) return ['span', {}, 0];
       const domAttrs: Record<string, string> = {
-        href: attrs.href,
+        href,
         target: '_blank',
         rel: 'noopener noreferrer',
       };
@@ -167,12 +169,14 @@ export const HyperlinkExtension = createMarkExtension({
 
     const setHyperlink = (href: string, tooltip?: string): Command => {
       return (state, dispatch) => {
+        const safeHref = sanitizeHref(href);
+        if (!safeHref) return false;
         const { from, to, empty } = state.selection;
 
         if (empty) return false;
 
         if (dispatch) {
-          const mark = hlType.create({ href, tooltip: tooltip || null });
+          const mark = hlType.create({ href: safeHref, tooltip: tooltip || null });
           let tr = state.tr.addMark(from, to, mark);
           // Remove any explicit text color so the default hyperlink blue (#0563c1)
           // shows through, matching MS Word behavior
@@ -231,8 +235,10 @@ export const HyperlinkExtension = createMarkExtension({
 
     const insertHyperlink = (text: string, href: string, tooltip?: string): Command => {
       return (state, dispatch) => {
+        const safeHref = sanitizeHref(href);
+        if (!safeHref) return false;
         if (dispatch) {
-          const mark = hlType.create({ href, tooltip: tooltip || null });
+          const mark = hlType.create({ href: safeHref, tooltip: tooltip || null });
           const textNode = state.schema.text(text, [mark]);
           dispatch(state.tr.replaceSelectionWith(textNode, false).scrollIntoView());
         }

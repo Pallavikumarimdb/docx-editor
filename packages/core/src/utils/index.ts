@@ -287,3 +287,4 @@ export type { ColorMode } from './colorMode';
 
 // URL scheme allowlist for hrefs from untrusted input (DOCX rels, pasted HTML).
 export { sanitizeHref } from './sanitizeHref';
+export { sanitizeImageSrc } from './sanitizeImageSrc';

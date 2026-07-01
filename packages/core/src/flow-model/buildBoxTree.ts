@@ -30,6 +30,8 @@ import { DEFAULT_TEXTBOX_MARGINS, DEFAULT_TEXTBOX_WIDTH } from '../pagination-mo
 import type { ParagraphAttrs as PMParagraphAttrs } from '../prosemirror/schema/nodes';
 import type { Theme, SectionProperties } from '../types/document';
 import { resolveColorToHex } from '../utils/colorResolver';
+import { sanitizeHref } from '../utils/sanitizeHref';
+import { sanitizeImageSrc } from '../utils/sanitizeImageSrc';
 
 import { twipsToPixels, constrainImageToPage, allocBoxId } from './buildBoxTree/shared';
 import { AUTO_PARAGRAPH_SPACING_PX } from '../utils/units';
@@ -614,7 +616,7 @@ function convertImage(node: PMNode, startPos: number, pageContentHeight?: number
   return {
     kind: 'image',
     id: allocBoxId(),
-    src: attrs.src as string,
+    src: sanitizeImageSrc(attrs.src as string) ?? '',
     width: constrained.width,
     height: constrained.height,
     alt: attrs.alt as string | undefined,
@@ -627,7 +629,7 @@ function convertImage(node: PMNode, startPos: number, pageContentHeight?: number
           behindDoc: wrapType === 'behind',
         }
       : undefined,
-    hlinkHref: attrs.hlinkHref as string | undefined,
+    hlinkHref: sanitizeHref(attrs.hlinkHref as string | undefined),
     docFrom: startPos,
     docTo: startPos + node.nodeSize,
   };

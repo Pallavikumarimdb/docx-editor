@@ -20,6 +20,8 @@ import type { RenderContext } from '../paintPage';
 import { isFloatingImageRun } from '../floatingImageFlow';
 import { applyImageVisualAttrs, hasImageVisualAttrs } from '../renderImage';
 import { resolveFontFamily } from '../../utils/fontResolver';
+import { sanitizeHref } from '../../utils/sanitizeHref';
+import { sanitizeImageSrc } from '../../utils/sanitizeImageSrc';
 import {
   PARAGRAPH_CLASS_NAMES,
   isTextRun,
@@ -299,12 +301,13 @@ export function paintTextRun(
   applyInlineSdtWidgetAttrs(span, run);
 
   // Handle hyperlinks
-  if (run.hyperlink) {
+  const hyperlinkHref = sanitizeHref(run.hyperlink?.href);
+  if (run.hyperlink && hyperlinkHref) {
     const anchor = doc.createElement('a');
-    anchor.href = run.hyperlink.href;
+    anchor.href = hyperlinkHref;
     // Internal bookmark links (starting with #) should scroll within the document
     // External links should open in a new tab
-    if (!run.hyperlink.href.startsWith('#')) {
+    if (!hyperlinkHref.startsWith('#')) {
       anchor.target = '_blank';
       anchor.rel = 'noopener noreferrer';
     }
@@ -454,7 +457,7 @@ function renderInlineImageRun(run: ImageRun, doc: Document): HTMLElement {
   const img = doc.createElement('img');
   img.className = `${PARAGRAPH_CLASS_NAMES.run} ${PARAGRAPH_CLASS_NAMES.image}`;
 
-  img.src = run.src;
+  img.src = sanitizeImageSrc(run.src) ?? '';
   img.width = run.width;
   img.height = run.height;
   // Lock dimensions explicitly: when only the width/height attributes are set,
@@ -543,7 +546,7 @@ function renderBlockImage(run: ImageRun, doc: Document): HTMLElement {
   container.style.marginBottom = `${run.distBottom ?? 6}px`;
 
   const img = doc.createElement('img');
-  img.src = run.src;
+  img.src = sanitizeImageSrc(run.src) ?? '';
   img.width = run.width;
   img.height = run.height;
   // Global CSS reset (Tailwind preflight) sets img { display: block },

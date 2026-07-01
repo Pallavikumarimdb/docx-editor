@@ -25,6 +25,7 @@ import { paintTableFragment } from '../renderTable';
 import { paintImageFragment } from '../renderImage';
 import { paintTextBoxFragment } from '../renderTextBox';
 import { emuToPixels } from '../../utils/units';
+import { sanitizeImageSrc } from '../../utils/sanitizeImageSrc';
 import type { RenderContext, RenderPageOptions } from '../paintPage';
 
 /**
@@ -480,7 +481,7 @@ export function renderHeaderFooterContent(
   // Render floating images with absolute positioning
   for (const floatImg of floatingImages) {
     const img = doc.createElement('img');
-    img.src = floatImg.src;
+    img.src = sanitizeImageSrc(floatImg.src) ?? '';
     img.width = floatImg.width;
     img.height = floatImg.height;
     if (floatImg.alt) img.alt = floatImg.alt;

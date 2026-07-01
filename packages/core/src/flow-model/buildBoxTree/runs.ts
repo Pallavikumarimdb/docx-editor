@@ -25,6 +25,8 @@ import type {
 } from '../../prosemirror/schema/marks';
 import type { Theme } from '../../types/document';
 import { resolveColor, resolveHighlightToCss } from '../../utils/colorResolver';
+import { sanitizeHref } from '../../utils/sanitizeHref';
+import { sanitizeImageSrc } from '../../utils/sanitizeImageSrc';
 import { halfPointsToPixels, halfPointsToPoints } from '../../utils/units';
 import { twipsToPixels, constrainImageToPage } from './shared';
 import type { BuildBoxTreeOptions } from './shared';
@@ -206,10 +208,13 @@ function extractRunFormatting(marks: readonly Mark[], theme?: Theme | null): Run
 
       case 'hyperlink': {
         const attrs = mark.attrs as { href: string; tooltip?: string };
-        formatting.hyperlink = {
-          href: attrs.href,
-          tooltip: attrs.tooltip,
-        };
+        const href = sanitizeHref(attrs.href);
+        if (href) {
+          formatting.hyperlink = {
+            href,
+            tooltip: attrs.tooltip,
+          };
+        }
         break;
       }
 
@@ -392,7 +397,7 @@ export function paragraphToRuns(
       const changeFmt = extractRunFormatting(child.marks, theme);
       const run: ImageRun = {
         kind: 'image',
-        src: attrs.src as string,
+        src: sanitizeImageSrc(attrs.src as string) ?? '',
         width: constrained.width,
         height: constrained.height,
         alt: attrs.alt as string | undefined,

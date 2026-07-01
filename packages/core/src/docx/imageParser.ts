@@ -46,6 +46,7 @@ import {
 } from './xmlParser';
 import { resolveTarget } from './relsParser';
 import { sanitizeHref } from '../utils/sanitizeHref';
+import { sanitizeImageSrc } from '../utils/sanitizeImageSrc';
 import { isTextBoxDrawing } from './textBoxParser';
 import { emuToPixels } from '../utils/units';
 import {
@@ -525,7 +526,8 @@ function parseInline(
   if (props.alt) image.alt = props.alt;
   if (props.title) image.title = props.title;
   if (props.decorative) image.decorative = true;
-  if (imageData.src) image.src = imageData.src;
+  const src = sanitizeImageSrc(imageData.src);
+  if (src) image.src = src;
   if (imageData.mimeType) image.mimeType = imageData.mimeType;
   if (imageData.filename) image.filename = imageData.filename;
   if (padding) image.padding = padding;
@@ -629,7 +631,8 @@ function parseAnchor(
   if (props.alt) image.alt = props.alt;
   if (props.title) image.title = props.title;
   if (props.decorative) image.decorative = true;
-  if (imageData.src) image.src = imageData.src;
+  const src = sanitizeImageSrc(imageData.src);
+  if (src) image.src = src;
   if (imageData.mimeType) image.mimeType = imageData.mimeType;
   if (imageData.filename) image.filename = imageData.filename;
   if (position) image.position = position;
