@@ -223,11 +223,11 @@ export function paintParagraphFragment(
     // Track indent values for line-level application
     // For RTL paragraphs, swap left/right indentation
     if (isRtl) {
-      if (indent.left && indent.left > 0) indentRight = indent.left;
-      if (indent.right && indent.right > 0) indentLeft = indent.right;
+      indentRight = indent.left ?? 0;
+      indentLeft = indent.right ?? 0;
     } else {
-      if (indent.left && indent.left > 0) indentLeft = indent.left;
-      if (indent.right && indent.right > 0) indentRight = indent.right;
+      indentLeft = indent.left ?? 0;
+      indentRight = indent.right ?? 0;
     }
   }
 
@@ -498,6 +498,14 @@ export function paintParagraphFragment(
 
     if (indentRight > 0) {
       lineEl.style.paddingRight = `${indentRight}px`;
+    } else if (indentRight < 0) {
+      const existingMargin = Number.parseFloat(lineEl.style.marginRight || '0');
+      lineEl.style.marginRight = `${existingMargin + indentRight}px`;
+    }
+
+    if (indentLeft < 0) {
+      const existingMargin = Number.parseFloat(lineEl.style.marginLeft || '0');
+      lineEl.style.marginLeft = `${existingMargin + indentLeft}px`;
     }
 
     // First-line list marker. The marker occupies a `hanging`-wide slot
