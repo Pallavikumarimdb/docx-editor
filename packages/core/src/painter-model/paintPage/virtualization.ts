@@ -19,6 +19,7 @@ import {
 } from '../paintPage';
 import type { FootnoteRenderItem } from './footnotes';
 import { semanticDigest } from '../semanticDigest';
+import { getPageFurniture } from '../pageFurnitureRegistry';
 
 type FullPageOptions = RenderPageOptions & {
   pageGap?: number;
@@ -43,8 +44,19 @@ function buildPageRenderArgs(
     resolvedCommentIds: options.resolvedCommentIds,
   };
   const pageOptions: RenderPageOptions = { ...options };
+  const furniture = getPageFurniture(page);
+  if (furniture) {
+    pageOptions.headerContent = furniture.headerContent;
+    pageOptions.footerContent = furniture.footerContent;
+    pageOptions.firstPageHeaderContent = undefined;
+    pageOptions.firstPageFooterContent = undefined;
+    pageOptions.titlePg = false;
+    pageOptions.headerDistance = furniture.headerDistance;
+    pageOptions.footerDistance = furniture.footerDistance;
+    pageOptions.pageBorders = furniture.pageBorders;
+  }
   // Per-page header/footer selection when titlePg is enabled
-  if (options.titlePg && page.number === 1) {
+  if (!furniture && options.titlePg && page.number === 1) {
     pageOptions.headerContent = options.firstPageHeaderContent;
     pageOptions.footerContent = options.firstPageFooterContent;
   }
@@ -61,6 +73,7 @@ function buildPageRenderArgs(
 interface PageShellState {
   element: HTMLElement;
   fingerprint: string;
+  furnitureFingerprint: string;
 }
 
 interface PageContainerState {
@@ -93,7 +106,16 @@ function computePageFingerprint(page: Page, options: FullPageOptions): string {
       (entry ? semanticDigest(entry.block, entry.measure) : `missing:${String(fragment.blockId)}`)
     );
   });
-  return semanticDigest(page, blockVersions, options.footnotesByPage?.get(page.number));
+  return semanticDigest(
+    page,
+    blockVersions,
+    options.footnotesByPage?.get(page.number),
+    getPageFurniture(page)
+  );
+}
+
+function computePageFurnitureFingerprint(page: Page): string {
+  return semanticDigest(getPageFurniture(page));
 }
 
 /**
@@ -195,8 +217,10 @@ export function paintPages(
 
     // Compute new fingerprints
     const newFingerprints: string[] = [];
+    const newFurnitureFingerprints: string[] = [];
     for (const page of pages) {
       newFingerprints.push(computePageFingerprint(page, options));
+      newFurnitureFingerprints.push(computePageFurnitureFingerprint(page));
     }
 
     // If total page count changed, NUMPAGES fields in headers/footers are stale.
@@ -209,6 +233,8 @@ export function paintPages(
     for (let i = 0; i < commonCount; i++) {
       const prev = prevShells[i];
       const newFp = newFingerprints[i];
+      const newFurnitureFp = newFurnitureFingerprints[i];
+      const pageFurnitureChanged = prev.furnitureFingerprint !== newFurnitureFp;
 
       if (prev.fingerprint === newFp && !totalPagesChanged && !headerFooterChanged) {
         // Page unchanged — update data map with new page data (references may differ)
@@ -228,7 +254,7 @@ export function paintPages(
         data.page = pages[i];
 
         if (data.rendered) {
-          if (totalPagesChanged || headerFooterChanged) {
+          if (totalPagesChanged || headerFooterChanged || pageFurnitureChanged) {
             // NUMPAGES and semantic HF edits affect the page chrome, so replace
             // the entire populated shell. Empty virtualized shells stay lazy.
             repopulatePageShell(shell, prevDataMap, totalPages, options);
@@ -243,6 +269,7 @@ export function paintPages(
 
       // Update fingerprint
       prev.fingerprint = newFp;
+      prev.furnitureFingerprint = newFurnitureFp;
 
       // Update page styles in case size changed
       applyPageStyles(shell, pages[i].size.w, pages[i].size.h, options);
@@ -262,7 +289,11 @@ export function paintPages(
         container.appendChild(pageEl);
         didPaint = true;
 
-        prevShells.push({ element: pageEl, fingerprint: newFingerprints[i] });
+        prevShells.push({
+          element: pageEl,
+          fingerprint: newFingerprints[i],
+          furnitureFingerprint: newFurnitureFingerprints[i],
+        });
         prevDataMap.set(pageEl, { page, index: i, rendered: false });
 
         if (observer) {
@@ -320,10 +351,12 @@ export function paintPages(
   // Build all page shells
   const pageShells: HTMLElement[] = [];
   const fingerprints: string[] = [];
+  const furnitureFingerprints: string[] = [];
 
   for (let i = 0; i < pages.length; i++) {
     const page = pages[i];
     fingerprints.push(computePageFingerprint(page, options));
+    furnitureFingerprints.push(computePageFurnitureFingerprint(page));
 
     if (!useVirtualization) {
       // Small document: render all pages eagerly
@@ -446,7 +479,11 @@ export function paintPages(
   // so the populatePageShell calls below can find state if needed.
   pc.__pageObserver = observer;
   pc.__pageRenderState = {
-    pageCursors: pageShells.map((el, i) => ({ element: el, fingerprint: fingerprints[i] })),
+    pageCursors: pageShells.map((el, i) => ({
+      element: el,
+      fingerprint: fingerprints[i],
+      furnitureFingerprint: furnitureFingerprints[i],
+    })),
     totalPages,
     optionsHash: currentOptionsHash,
     headerFooterHash: currentHeaderFooterHash,
@@ -478,6 +515,7 @@ function populatePageShell(
 
   const { context, pageOptions } = buildPageRenderArgs(data.page, totalPages, options);
   const fullPageEl = paintPage(data.page, context, pageOptions);
+  syncPageShellMetadata(shell, fullPageEl);
 
   while (fullPageEl.firstChild) {
     shell.appendChild(fullPageEl.firstChild);
@@ -499,8 +537,17 @@ function repopulatePageShell(
 
   const { context, pageOptions } = buildPageRenderArgs(data.page, totalPages, options);
   const fullPageEl = paintPage(data.page, context, pageOptions);
+  syncPageShellMetadata(shell, fullPageEl);
   shell.replaceChildren(...Array.from(fullPageEl.childNodes));
   data.rendered = true;
+}
+
+function syncPageShellMetadata(shell: HTMLElement, painted: HTMLElement): void {
+  for (const key of ['sectionIndex', 'sectionPageNumber'] as const) {
+    const value = painted.dataset[key];
+    if (value === undefined) delete shell.dataset[key];
+    else shell.dataset[key] = value;
+  }
 }
 
 /**
