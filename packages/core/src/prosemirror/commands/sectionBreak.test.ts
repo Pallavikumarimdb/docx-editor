@@ -36,7 +36,7 @@ describe('insertSectionBreak commands', () => {
     // The new section's first paragraph does not itself carry a break.
     expect(doc.child(1).attrs.sectionBreakType).toBeNull();
     expect(doc.child(1).textContent).toBe('World');
-    // Cursor is inside the second paragraph (the start of the new section).
+    // LayoutCursor is inside the second paragraph (the start of the new section).
     expect(selection.$from.parent.textContent).toBe('World');
   });
 

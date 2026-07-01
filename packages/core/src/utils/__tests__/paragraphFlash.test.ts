@@ -2,8 +2,8 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
   PARAGRAPH_FLASH_CLASS_NAME,
-  findParagraphFragmentsByParaId,
-  flashParagraphFragmentsByParaId,
+  findParagraphBoxesByParaId,
+  flashParagraphBoxesByParaId,
 } from '../paragraphFlash';
 
 beforeAll(() => GlobalRegistrator.register());
@@ -18,7 +18,7 @@ describe('paragraph flash helpers', () => {
       <div class="layout-paragraph" data-para-id="DEADBEEF"></div>
     `;
 
-    expect(findParagraphFragmentsByParaId(root, '1A2B3C4D')).toHaveLength(2);
+    expect(findParagraphBoxesByParaId(root, '1A2B3C4D')).toHaveLength(2);
   });
 
   test('applies flash class and CSS variables to matching fragments', () => {
@@ -26,7 +26,7 @@ describe('paragraph flash helpers', () => {
     root.innerHTML = `<div class="layout-paragraph" data-para-id="1A2B3C4D"></div>`;
 
     expect(
-      flashParagraphFragmentsByParaId(root, '1A2B3C4D', {
+      flashParagraphBoxesByParaId(root, '1A2B3C4D', {
         color: 'rgba(255, 200, 0, 0.5)',
         durationMs: 25,
       })

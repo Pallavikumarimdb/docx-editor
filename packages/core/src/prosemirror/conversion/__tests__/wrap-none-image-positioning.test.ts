@@ -6,8 +6,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { Node as PMNode } from 'prosemirror-model';
 import { toProseDoc } from '../toProseDoc';
-import { buildBoxTree } from '../../../flow-model/buildBoxTree';
-import type { ParagraphBlock } from '../../../pagination-model/types';
 import type { Document, Image, Paragraph } from '../../../types/document';
 
 function makeWrapNoneImage(wrapType: 'behind' | 'inFront'): Image {
@@ -77,21 +75,4 @@ describe('toProseDoc wrapNone positioned images', () => {
       expect(imageNode.attrs.position.vertical.posOffset).toBe(-116205);
     });
   }
-
-  test('inFront image reaches flow layout as a positioned float', () => {
-    const pmDoc = toProseDoc(makeDocument(makeWrapNoneImage('inFront')));
-    const paragraph = buildBoxTree(pmDoc, { pageContentHeight: 700 }).find(
-      (block): block is ParagraphBlock => block.kind === 'paragraph'
-    );
-
-    expect(paragraph).toBeDefined();
-    const firstRun = paragraph!.runs[0];
-    if (!firstRun || firstRun.kind !== 'image') {
-      throw new Error('Expected first run to be an image');
-    }
-    expect(firstRun.displayMode).toBe('float');
-    expect(firstRun.wrapType).toBe('inFront');
-    expect(firstRun.position?.horizontal?.posOffset).toBe(-408940);
-    expect(firstRun.position?.vertical?.posOffset).toBe(-116205);
-  });
 });

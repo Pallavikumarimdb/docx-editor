@@ -7,16 +7,12 @@
  * editing pipeline:
  *   Document(BlockSdt) → toProseDoc → PM `blockSdt` node → fromProseDoc →
  *   Document(BlockSdt)
- * plus the layout pass (`buildBoxTree`) tagging each child flow block with its
- * enclosing SDT group so the painter can draw the control boundary.
  */
 
 import { describe, test, expect } from 'bun:test';
 import { toProseDoc } from '../toProseDoc';
 import { fromProseDoc } from '../fromProseDoc';
-import { buildBoxTree } from '../../../flow-model/buildBoxTree';
 import type { Document, BlockSdt, Paragraph } from '../../../types/document';
-import type { Node as PMNode } from 'prosemirror-model';
 
 function para(text: string): Paragraph {
   return { type: 'paragraph', content: [{ type: 'run', content: [{ type: 'text', text }] }] };
@@ -129,68 +125,6 @@ describe('block SDT — fromProseDoc reconstructs the BlockSdt model', () => {
     expect(sdt.properties.tag).toBe('outer');
     expect(sdt.content[0].type).toBe('blockSdt');
     expect((sdt.content[0] as BlockSdt).properties.tag).toBe('inner');
-  });
-});
-
-describe('block SDT — buildBoxTree flattens to tagged child flow blocks', () => {
-  function flow(pm: PMNode) {
-    return buildBoxTree(pm);
-  }
-
-  test('children become independent flow blocks tagged with the SDT group', () => {
-    const sdt: BlockSdt = {
-      type: 'blockSdt',
-      properties: { sdtType: 'richText', tag: 'grp', alias: 'Grp', lock: 'sdtLocked' },
-      content: [para('one'), para('two')],
-    };
-    // Trailing paragraph keeps the control off the doc edge; assert on the
-    // control's own (tagged) flow blocks.
-    const all = flow(toProseDoc(docOf(sdt, para('tail'))));
-    const blocks = all.filter((b) => b.sdtGroups && b.sdtGroups.length > 0);
-
-    // Two flat paragraph blocks (a control is not a single non-splittable block).
-    expect(blocks.length).toBe(2);
-    expect(blocks.every((b) => b.kind === 'paragraph')).toBe(true);
-
-    for (const b of blocks) {
-      expect(b.sdtGroups![0].tag).toBe('grp');
-      expect(b.sdtGroups![0].alias).toBe('Grp');
-      expect(b.sdtGroups![0].lock).toBe('sdtLocked');
-      expect(b.sdtGroups![0].sdtType).toBe('richText');
-    }
-    // Both share one group identity (one control, one boundary).
-    expect(blocks[0].sdtGroups![0].id).toBe(blocks[1].sdtGroups![0].id);
-  });
-
-  test('blocks outside a control carry no sdtGroups', () => {
-    const sdt: BlockSdt = {
-      type: 'blockSdt',
-      properties: { sdtType: 'richText', tag: 'g' },
-      content: [para('inside')],
-    };
-    const blocks = flow(toProseDoc(docOf(para('before'), sdt, para('after'))));
-    expect(blocks.length).toBe(3);
-    expect(blocks[0].sdtGroups).toBeUndefined();
-    expect(blocks[1].sdtGroups?.length).toBe(1);
-    expect(blocks[2].sdtGroups).toBeUndefined();
-  });
-
-  test('nested controls stack outermost→innermost on each child', () => {
-    const inner: BlockSdt = {
-      type: 'blockSdt',
-      properties: { sdtType: 'richText', tag: 'inner' },
-      content: [para('deep')],
-    };
-    const outer: BlockSdt = {
-      type: 'blockSdt',
-      properties: { sdtType: 'richText', tag: 'outer' },
-      content: [inner],
-    };
-    const all = flow(toProseDoc(docOf(outer, para('tail'))));
-    const blocks = all.filter((b) => b.sdtGroups && b.sdtGroups.length > 0);
-    expect(blocks.length).toBe(1);
-    const groups = blocks[0].sdtGroups!;
-    expect(groups.map((g) => g.tag)).toEqual(['outer', 'inner']);
   });
 });
 

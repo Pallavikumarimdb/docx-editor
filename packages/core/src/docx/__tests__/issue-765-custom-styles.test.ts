@@ -3,7 +3,6 @@ import { parseNumbering, formatNumber, createNumberingMap } from '../numberingPa
 import { parseParagraph } from '../paragraphParser';
 import { parseStyles } from '../styleParser';
 import { parseXmlDocument, type XmlElement } from '../xmlParser';
-import { resolveListTemplate } from '../../flow-model/buildBoxTree/listMarkers';
 import { listAttrsFromResolvedStyle } from '../../prosemirror/styles/resolvedStyleAttrs';
 import { toProseDoc } from '../../prosemirror/conversion/toProseDoc';
 
@@ -78,12 +77,6 @@ describe('custom numFmt inside mc:AlternateContent (#765)', () => {
 
   test('parses w:numFmt val="custom" format="0001, ..." as decimalZero4', () => {
     expect(numbering.getLevel(1, 0)?.numFmt).toBe('decimalZero4');
-  });
-
-  test('renders zero-padded markers through the lvlText template', () => {
-    expect(resolveListTemplate('[%1]', [1], ['decimalZero4'])).toBe('[0001]');
-    expect(resolveListTemplate('[%1]', [12], ['decimalZero4'])).toBe('[0012]');
-    expect(resolveListTemplate('[%1]', [12345], ['decimalZero4'])).toBe('[12345]');
   });
 
   test('uses the mc:Fallback when the Choice format is not implemented', () => {

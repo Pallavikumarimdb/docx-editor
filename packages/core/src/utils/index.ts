@@ -235,9 +235,9 @@ export {
   DEFAULT_PARAGRAPH_FLASH_COLOR,
   DEFAULT_PARAGRAPH_FLASH_DURATION_MS,
   PARAGRAPH_FLASH_CLASS_NAME,
-  findParagraphFragmentsByParaId,
+  findParagraphBoxesByParaId,
   flashParagraphElements,
-  flashParagraphFragmentsByParaId,
+  flashParagraphBoxesByParaId,
 } from './paragraphFlash';
 export type { ParagraphHighlightOptions, ScrollToParaIdOptions } from './paragraphFlash';
 
