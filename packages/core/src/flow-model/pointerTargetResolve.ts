@@ -256,7 +256,7 @@ export function resolveTableCellTarget(
   // `topClip` when it began on the previous page. Local Y is measured from the
   // fragment's top, so the clipped part has to be added back to land in the
   // table's own coordinate space.
-  const tableY = hit.localY + rowTop(tableMetrics, fragment.fromRow) - (fragment.topClip ?? 0);
+  const tableY = hit.localY + rowTop(measure, fragment.fromRow) + (fragment.topClip ?? 0);
   const tableX = hit.localX;
 
   const rowIndex = rowAt(tableMetrics, tableY, fragment.fromRow, fragment.toRow);
