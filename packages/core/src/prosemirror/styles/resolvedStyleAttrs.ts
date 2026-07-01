@@ -38,6 +38,7 @@ export function paragraphAttrsFromResolvedStyle(
     contextualSpacing: ppr?.contextualSpacing ?? null,
     keepNext: ppr?.keepNext ?? null,
     keepLines: ppr?.keepLines ?? null,
+    widowControl: ppr?.widowControl ?? null,
     pageBreakBefore: ppr?.pageBreakBefore ?? null,
     outlineLevel: ppr?.outlineLevel ?? null,
     // The style's run defaults drive the caret height in an empty paragraph

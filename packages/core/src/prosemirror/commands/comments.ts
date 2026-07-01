@@ -512,8 +512,8 @@ function applyPriorParagraphFormattingToAttrs(
   //     SKIPPED.
   //   - `runProperties` — model rPr; PM uses resolved `defaultTextFormatting`
   //     via a style cascade — SKIPPED (would overwrite resolved data).
-  //   - `widowControl`, `suppressLineNumbers`, `suppressAutoHyphens` — model
-  //     has them but PM does not surface as attrs — SKIPPED until plumbed.
+  //   - `suppressLineNumbers`, `suppressAutoHyphens` — model has them but PM
+  //     does not surface them as attrs — SKIPPED until plumbed.
   //
   // Fields below are confirmed congruent in both shapes. Adding a new
   // ParagraphFormatting field requires verifying its PM attr shape (see
@@ -538,6 +538,7 @@ function applyPriorParagraphFormattingToAttrs(
     'pageBreakBefore',
     'keepNext',
     'keepLines',
+    'widowControl',
     'contextualSpacing',
     'bidi',
     'outlineLevel',

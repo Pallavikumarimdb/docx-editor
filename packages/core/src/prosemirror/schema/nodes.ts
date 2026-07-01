@@ -133,6 +133,8 @@ export interface ParagraphAttrs {
   renderedPageBreakBefore?: boolean;
   keepNext?: boolean;
   keepLines?: boolean;
+  /** Widow/orphan control. Undefined is Word's enabled default; false disables it. */
+  widowControl?: boolean;
   /** Contextual spacing — suppress space between same-style paragraphs */
   contextualSpacing?: boolean;
 

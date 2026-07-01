@@ -221,6 +221,9 @@ function convertParagraphAttrs(
   if (pmAttrs.keepLines) {
     attrs.keepLines = true;
   }
+  if (pmAttrs.widowControl != null) {
+    attrs.widowControl = pmAttrs.widowControl;
+  }
   if (pmAttrs.contextualSpacing) {
     attrs.contextualSpacing = true;
   }

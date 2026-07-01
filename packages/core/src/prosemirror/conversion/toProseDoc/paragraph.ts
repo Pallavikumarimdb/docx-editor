@@ -344,6 +344,7 @@ function paragraphFormattingToAttrs(
     attrs.pageBreakBefore = formatting?.pageBreakBefore ?? stylePpr?.pageBreakBefore;
     attrs.keepNext = formatting?.keepNext ?? stylePpr?.keepNext;
     attrs.keepLines = formatting?.keepLines ?? stylePpr?.keepLines;
+    attrs.widowControl = formatting?.widowControl ?? stylePpr?.widowControl;
     attrs.contextualSpacing = formatting?.contextualSpacing ?? stylePpr?.contextualSpacing;
 
     // Outline level (for TOC)
@@ -396,6 +397,7 @@ function paragraphFormattingToAttrs(
     attrs.pageBreakBefore = formatting?.pageBreakBefore;
     attrs.keepNext = formatting?.keepNext;
     attrs.keepLines = formatting?.keepLines;
+    attrs.widowControl = formatting?.widowControl;
 
     // Outline level
     attrs.outlineLevel = formatting?.outlineLevel;
