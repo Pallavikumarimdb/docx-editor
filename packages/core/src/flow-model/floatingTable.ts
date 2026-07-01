@@ -20,7 +20,7 @@
  * below the threshold and stay floating.
  */
 
-import type { FlowBlock, TableBlock } from '../pagination-model/types';
+import type { ContentNode, TableBlock } from '../pagination-model/types';
 import { MIN_WRAP_SEGMENT_WIDTH } from './metrics/floatingZones';
 import { resolveTableTotalWidthPx } from './tableWidthUtils';
 
@@ -76,18 +76,18 @@ export function isBlockLikeFloatingTable(block: TableBlock, contentWidth: number
  * @internal
  */
 export function demoteBlockLikeFloatingTables(
-  blocks: FlowBlock[],
+  nodes: ContentNode[],
   blockWidths: number[],
   fallbackWidth: number
 ): void {
-  for (let i = 0; i < blocks.length; i++) {
-    const block = blocks[i];
+  for (let i = 0; i < nodes.length; i++) {
+    const block = nodes[i];
     if (
       block.kind === 'table' &&
       block.floating &&
       isBlockLikeFloatingTable(block, blockWidths[i] ?? fallbackWidth)
     ) {
-      blocks[i] = { ...block, floating: undefined };
+      nodes[i] = { ...block, floating: undefined };
     }
   }
 }

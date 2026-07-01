@@ -1,5 +1,5 @@
 /**
- * Vertical layout of a table cell's stacked blocks.
+ * Vertical layout of a table cell's stacked nodes.
  *
  * Single source of truth for *where the lines of a cell's content sit*, used by
  * the row-break pageComposer (`tableRowBreak`), the selection-rect mapper
@@ -12,10 +12,10 @@
  * lines.
  */
 
-import type { FlowBlock, Measure } from '../pagination-model/types';
+import type { ContentNode, LayoutMetrics } from '../pagination-model/types';
 
 export interface CellContentLayout {
-  /** Per block, the top y of each line (relative to `startY`). Atomic/non-paragraph blocks → []. */
+  /** Per block, the top y of each line (relative to `startY`). Atomic/non-paragraph nodes → []. */
   lineTops: number[][];
   /**
    * All line bottoms in document order, plus one entry per atomic block (its
@@ -27,22 +27,22 @@ export interface CellContentLayout {
 }
 
 /**
- * Compute the collapsed vertical layout of a cell's blocks starting at `startY`.
+ * Compute the collapsed vertical layout of a cell's nodes starting at `startY`.
  */
 export function layoutCellContent(
-  blocks: readonly FlowBlock[] | undefined,
-  blockMeasures: readonly Measure[] | undefined,
+  nodes: readonly ContentNode[] | undefined,
+  nodeMetrics: readonly LayoutMetrics[] | undefined,
   startY: number
 ): CellContentLayout {
   const lineTops: number[][] = [];
   const flatBottoms: number[] = [];
   let y = startY;
   let prevAfter = 0;
-  const n = blockMeasures?.length ?? 0;
+  const n = nodeMetrics?.length ?? 0;
 
   for (let i = 0; i < n; i++) {
-    const measure = blockMeasures![i];
-    const block = blocks?.[i];
+    const measure = nodeMetrics![i];
+    const block = nodes?.[i];
     if (block?.kind === 'paragraph' && measure?.kind === 'paragraph') {
       const spacing = block.attrs?.spacing;
       y += Math.max(prevAfter, spacing?.before ?? 0);

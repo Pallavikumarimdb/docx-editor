@@ -12,7 +12,7 @@
  * line that still fits.
  */
 
-import type { TableBlock, TableMeasure } from './types';
+import type { TableBlock, TableMetrics } from './types';
 import { resolveCellGrid } from '../flow-model/tableWidthUtils';
 import { layoutCellContent } from '../flow-model/cellBlockLayout';
 
@@ -31,13 +31,10 @@ export interface TableRowBreakInfo {
 }
 
 /**
- * Build break geometry for a table from its block + measure.
+ * Build break geometry for a table from its node + metrics.
  */
-export function buildTableRowBreakInfo(
-  block: TableBlock,
-  measure: TableMeasure
-): TableRowBreakInfo {
-  const rowCount = measure.rows.length;
+export function buildTableRowBreakInfo(node: TableBlock, metrics: TableMetrics): TableRowBreakInfo {
+  const rowCount = metrics.rows.length;
   // True (unrounded) cumulative row offsets — the pageComposer splits against
   // exact measured heights. The painter has a sibling `buildRowYPositions`
   // that rounds to whole pixels for crisp borders; keep the two SEPARATE
@@ -46,7 +43,7 @@ export function buildTableRowBreakInfo(
   let acc = 0;
   for (let r = 0; r < rowCount; r++) {
     rowTops.push(acc);
-    acc += measure.rows[r]?.height ?? 0;
+    acc += metrics.rows[r]?.height ?? 0;
   }
   rowTops.push(acc);
 
@@ -54,21 +51,21 @@ export function buildTableRowBreakInfo(
   // measurer and painter. A cell starting in row `sr` with rowSpan covers
   // rows [sr, sr + rowSpan); a merged cell spills its line bottoms into the
   // rows below its restart row.
-  const resolved = resolveCellGrid(block);
+  const resolved = resolveCellGrid(node);
   const breakOffsets: number[][] = [];
   for (let r = 0; r < rowCount; r++) {
-    const rowHeight = measure.rows[r]?.height ?? 0;
+    const rowHeight = metrics.rows[r]?.height ?? 0;
     const offsets = new Set<number>();
     offsets.add(rowHeight); // a row boundary is always a clean break
 
     for (const g of resolved) {
       if (g.rowIndex > r || g.rowIndex + g.rowSpan - 1 < r) continue;
-      const sourceCell = block.rows[g.rowIndex]?.cells?.[g.cellIndex];
-      const measuredCell = measure.rows[g.rowIndex]?.cells?.[g.cellIndex];
+      const sourceCell = node.rows[g.rowIndex]?.cells?.[g.cellIndex];
+      const measuredCell = metrics.rows[g.rowIndex]?.cells?.[g.cellIndex];
       if (!sourceCell || !measuredCell) continue;
       // OOXML/TableNormal default top padding is 0 (matches measureTable).
       const padTop = sourceCell.padding?.top ?? 0;
-      const { flatBottoms } = layoutCellContent(sourceCell.blocks, measuredCell.blocks, padTop);
+      const { flatBottoms } = layoutCellContent(sourceCell.nodes, measuredCell.metrics, padTop);
       // Map cell-content y (relative to the cell/region top at rowTops[startRow])
       // into this row's coordinate space (relative to rowTops[r]).
       const shift = rowTops[r] - rowTops[g.rowIndex];

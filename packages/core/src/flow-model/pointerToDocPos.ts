@@ -15,16 +15,16 @@
  */
 
 import type {
-  FlowBlock,
+  ContentNode,
   Fragment,
-  Measure,
+  LayoutMetrics,
   MeasuredLine,
   ParagraphBlock,
   ParagraphFragment,
   ParagraphMetrics,
   Run,
 } from '../pagination-model/types';
-import type { FragmentHit, Point, TableCellHit } from './pointerHitResolve';
+import type { FragmentTarget, Point, TableCellTarget } from './pointerTargetResolve';
 import { charIndexAtX, getXForCharacter, resolveFontStyle } from './metrics/textMetrics';
 import { getListMarkerInlineWidth } from './metrics/listMarkerWidth';
 
@@ -50,24 +50,24 @@ export interface PositionResult {
  * @public
  */
 export function pointerToDocPos(
-  fragmentHit: FragmentHit,
-  tableCellHit?: TableCellHit | null
+  fragmentTarget: FragmentTarget,
+  tableCellTarget?: TableCellTarget | null
 ): number | null {
-  if (tableCellHit) {
+  if (tableCellTarget) {
     return (
-      pointerToDocPosInTableCell(tableCellHit, {
-        x: tableCellHit.localX,
-        y: tableCellHit.localY,
+      pointerToDocPosInTableCell(tableCellTarget, {
+        x: tableCellTarget.localX,
+        y: tableCellTarget.localY,
       })?.pos ?? null
     );
   }
 
-  const { fragment, block, measure } = fragmentHit;
+  const { fragment, node, metrics } = fragmentTarget;
 
-  if (fragment.kind === 'paragraph' && block.kind === 'paragraph' && measure.kind === 'paragraph') {
-    const result = pointerToDocPosInParagraph(block, measure, fragment, {
-      x: fragmentHit.localX,
-      y: fragmentHit.localY,
+  if (fragment.kind === 'paragraph' && node.kind === 'paragraph' && metrics.kind === 'paragraph') {
+    const result = pointerToDocPosInParagraph(node, metrics, fragment, {
+      x: fragmentTarget.localX,
+      y: fragmentTarget.localY,
     });
     return result?.pos ?? null;
   }
@@ -75,11 +75,11 @@ export function pointerToDocPos(
   // An image or a text box is an atom: clicking it selects it, and the position
   // that means "this node" is the one just before it. Nearer the right edge means
   // the caret goes after it — which is how you get a caret past a trailing image.
-  if (block.docFrom === undefined) return null;
-  if (block.docTo !== undefined && fragmentHit.localX > fragment.width / 2) {
-    return block.docTo;
+  if (node.docFrom === undefined) return null;
+  if (node.docTo !== undefined && fragmentTarget.localX > fragment.width / 2) {
+    return node.docTo;
   }
-  return block.docFrom;
+  return node.docFrom;
 }
 
 /**
@@ -119,21 +119,21 @@ export function pointerToDocPosInParagraph(
  * @public
  */
 export function pointerToDocPosInTableCell(
-  cellHit: TableCellHit,
+  cellTarget: TableCellTarget,
   point: Point
 ): PositionResult | null {
   // A cell holds a block flow of its own, so walk it the way a page walks its
-  // blocks: down, accumulating heights, until the point is inside one. The last
+  // nodes: down, accumulating heights, until the point is inside one. The last
   // block absorbs anything below it, so a click in the cell's bottom padding
   // lands at the end of its text rather than nowhere.
-  const blocks = cellHit.cell.blocks;
-  const metrics = cellHit.metrics.blocks;
+  const nodes = cellTarget.cell.nodes;
+  const metrics = cellTarget.metrics.metrics;
 
   let y = 0;
   let last: PositionResult | null = null;
 
-  for (let i = 0; i < blocks.length; i++) {
-    const block = blocks[i];
+  for (let i = 0; i < nodes.length; i++) {
+    const block = nodes[i];
     const measure = metrics[i];
     const height = blockHeight(measure);
 
@@ -143,10 +143,10 @@ export function pointerToDocPosInTableCell(
       const local: Point = { x: point.x, y: point.y - y };
       const wholeBlock: ParagraphFragment = {
         kind: 'paragraph',
-        blockId: block.id,
+        nodeId: block.id,
         x: 0,
         y: 0,
-        width: cellHit.contentWidth,
+        width: cellTarget.contentWidth,
         height,
         fromLine: 0,
         toLine: measure.lines.length,
@@ -175,7 +175,7 @@ export function pointerToDocPosInTableCell(
 }
 
 /** Vertical footprint of one block inside a cell. */
-function blockHeight(measure: Measure | undefined): number {
+function blockHeight(measure: LayoutMetrics | undefined): number {
   if (!measure) return 0;
   switch (measure.kind) {
     case 'paragraph':
@@ -231,8 +231,8 @@ export function positionToX(
  * @public
  */
 export function getPositionRect(
-  block: FlowBlock,
-  measure: Measure,
+  block: ContentNode,
+  measure: LayoutMetrics,
   fragment: Fragment,
   pmPos: number
 ): { x: number; y: number; width: number; height: number } | null {

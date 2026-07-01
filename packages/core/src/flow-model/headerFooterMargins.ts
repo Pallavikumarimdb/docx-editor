@@ -23,7 +23,7 @@
  *     warning instead of aborting pagination.
  */
 
-import type { FlowBlock, PageMargins, SectionMarkerBlock } from '../pagination-model/types';
+import type { ContentNode, PageMargins, SectionMarkerBlock } from '../pagination-model/types';
 import type { HeaderFooterContent } from '../painter-model/paintPage';
 
 /** Word's default `w:header` / `w:footer` distance (0.5in = 48px). */
@@ -50,11 +50,11 @@ export interface ExtendMarginsForHeaderFooterInput {
   /** Final-section margins (last `sectPr`). */
   finalMargins: PageMargins;
   /**
-   * Body flow blocks. Each `sectionBreak` block's `margins` is extended IN
+   * Body flow nodes. Each `sectionBreak` block's `margins` is extended IN
    * PLACE so multi-section documents paginate with the same band growth (the
    * layout engine prefers `sectionBreak.margins` over the body fallback).
    */
-  bodyBlocks?: FlowBlock[];
+  bodyNodes?: ContentNode[];
   /** Header variants in play this layout (e.g. default + first-page). */
   headers?: Array<HeaderFooterContent | undefined>;
   /** Footer variants in play this layout. */
@@ -80,7 +80,7 @@ export interface ExtendMarginsForHeaderFooterResult {
 export function extendMarginsForHeaderFooter(
   input: ExtendMarginsForHeaderFooterInput
 ): ExtendMarginsForHeaderFooterResult {
-  const { pageSize, margins, finalMargins, bodyBlocks, headers, footers, warn } = input;
+  const { pageSize, margins, finalMargins, bodyNodes, headers, footers, warn } = input;
 
   const headerContentHeight = Math.max(0, ...(headers ?? []).map(bandHeight));
   const footerContentHeight = Math.max(0, ...(footers ?? []).map(bandHeight));
@@ -126,8 +126,8 @@ export function extendMarginsForHeaderFooter(
 
   const extendedMargins = extend(margins);
   const extendedFinal = extend(finalMargins);
-  if (bodyBlocks) {
-    for (const block of bodyBlocks) {
+  if (bodyNodes) {
+    for (const block of bodyNodes) {
       if (block.kind !== 'sectionBreak') continue;
       const sb = block as SectionMarkerBlock;
       if (sb.margins) sb.margins = extend(sb.margins);

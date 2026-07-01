@@ -1,5 +1,5 @@
 /**
- * Header / Footer Layout Utilities
+ * Header / Footer PageLayout Utilities
  *
  * The header/footer rendering pipeline lives here so any rendering adapter
  * (React, Vue, etc.) can share the conversion logic and just supply its
@@ -9,7 +9,7 @@
  * Pipeline:
  *   HF.content → headerFooterToProseDoc → buildBoxTree
  *     → measureBlocks (caller-supplied, Canvas-aware)
- *     → HeaderFooterContent (blocks, measures, height, visualTop/Bottom)
+ *     → HeaderFooterContent (nodes, metrics, height, visualTop/Bottom)
  *
  * The render side uses the normalized block list so paint and measurement stay
  * in lockstep. Visual-bounds calculation still inspects the original block
@@ -20,9 +20,9 @@
 import type { Node as PMNode } from 'prosemirror-model';
 import type { EditorView } from 'prosemirror-view';
 import type {
-  FlowBlock,
+  ContentNode,
   ImageRun,
-  Measure,
+  LayoutMetrics,
   PageMargins,
   TableBlock,
 } from '../pagination-model/types';
@@ -47,13 +47,13 @@ export type HeaderFooterMetrics = {
 // 2. Measurement-time block normalization
 // ============================================================================
 //
-// Two transforms are applied to the FlowBlock list before measurement/render:
+// Two transforms are applied to the ContentNode list before measurement/render:
 //
 // 1. **Strip style-inherited paragraph spacing** (#380) — Word visibly
 //    does NOT honor inherited `spaceBefore` / `spaceAfter` (e.g. Normal's
 //    default 8pt-after) inside the HF text frame. Inline `<w:spacing>`
 //    set explicitly on the HF paragraph IS honored. The parser flags
-//    inline spacing via `spacingExplicit.before` / `.after`; anything
+//    inline spacing via `spacingOverrides.before` / `.after`; anything
 //    not flagged was inherited from the style chain and is zeroed for
 //    both measurement and painting.
 //
@@ -68,27 +68,27 @@ export type HeaderFooterMetrics = {
 //    the cursor in the trailing paragraph, matching Word) but the
 //    measure returns zero height. Empty paragraphs with authored
 //    `pBdr` (e.g. a horizontal rule under the header) or
-//    `spacingExplicit` are NOT suppressed — they exist for their
+//    `spacingOverrides` are NOT suppressed — they exist for their
 //    visual side effect, not just as a structural anchor.
 
-function hasAuthoredVisualContent(block: FlowBlock): boolean {
+function hasAuthoredVisualContent(block: ContentNode): boolean {
   if (block.kind !== 'paragraph') return false;
   const attrs = block.attrs;
   if (!attrs) return false;
   if (attrs.borders?.top || attrs.borders?.bottom) return true;
-  if (attrs.spacingExplicit?.before || attrs.spacingExplicit?.after) return true;
+  if (attrs.spacingOverrides?.before || attrs.spacingOverrides?.after) return true;
   return false;
 }
 
-export function normalizeHeaderFooterMeasureBlocks(blocks: FlowBlock[]): FlowBlock[] {
-  return normalizeFlowBlockArray(blocks);
+export function normalizeHeaderFooterMeasureBlocks(nodes: ContentNode[]): ContentNode[] {
+  return normalizeFlowBlockArray(nodes);
 }
 
-function normalizeFlowBlockArray(blocks: FlowBlock[]): FlowBlock[] {
+function normalizeFlowBlockArray(nodes: ContentNode[]): ContentNode[] {
   const trailingEmptyAfterTable = new Set<number>();
-  for (let i = 1; i < blocks.length; i++) {
-    const prev = blocks[i - 1];
-    const cur = blocks[i];
+  for (let i = 1; i < nodes.length; i++) {
+    const prev = nodes[i - 1];
+    const cur = nodes[i];
     if (prev.kind !== 'table') continue;
     if (cur.kind !== 'paragraph') continue;
     if (cur.runs.length > 0) continue;
@@ -96,7 +96,7 @@ function normalizeFlowBlockArray(blocks: FlowBlock[]): FlowBlock[] {
     trailingEmptyAfterTable.add(i);
   }
 
-  return blocks.map((block, index) => {
+  return nodes.map((block, index) => {
     if (block.kind === 'table') {
       return normalizeTableBlock(block);
     }
@@ -104,7 +104,7 @@ function normalizeFlowBlockArray(blocks: FlowBlock[]): FlowBlock[] {
 
     const isTrailingEmpty = trailingEmptyAfterTable.has(index);
 
-    const explicit = block.attrs?.spacingExplicit;
+    const explicit = block.attrs?.spacingOverrides;
     const hasResolvedBefore = block.attrs?.spacing?.before != null;
     const hasResolvedAfter = block.attrs?.spacing?.after != null;
     const beforeIsInherited = hasResolvedBefore && !explicit?.before;
@@ -138,13 +138,13 @@ function normalizeTableBlock(block: TableBlock): TableBlock {
   const rows = block.rows.map((row) => {
     let rowChanged = false;
     const cells = row.cells.map((cell) => {
-      const normalizedBlocks = normalizeFlowBlockArray(cell.blocks);
-      const cellChanged = normalizedBlocks.some(
-        (normalizedBlock, idx) => normalizedBlock !== cell.blocks[idx]
+      const normalizedNodes = normalizeFlowBlockArray(cell.nodes);
+      const cellChanged = normalizedNodes.some(
+        (normalizedBlock, idx) => normalizedBlock !== cell.nodes[idx]
       );
       if (!cellChanged) return cell;
       rowChanged = true;
-      return { ...cell, blocks: normalizedBlocks };
+      return { ...cell, nodes: normalizedNodes };
     });
     if (!rowChanged) return row;
     changed = true;
@@ -221,13 +221,13 @@ export function resolveHeaderFooterVisualTop(
  * (`wp:anchor` DrawingML or an absolutely-positioned VML shape, e.g. a
  * full-page letterhead anchored to the page in a header) is removed from the
  * text flow and positioned on the page; it does NOT grow the band or push the
- * body. So only inline-flow blocks count here. Anchored image *runs* inside a
+ * body. So only inline-flow nodes count here. Anchored image *runs* inside a
  * paragraph are likewise out of flow, but they don't contribute to the
  * paragraph's measured line height, so paragraphs need no special handling.
  *
  * @public
  */
-export function contributesToHeaderFooterFlowHeight(block: FlowBlock): boolean {
+export function contributesToHeaderFooterFlowHeight(block: ContentNode): boolean {
   switch (block.kind) {
     case 'paragraph':
     case 'table':
@@ -245,7 +245,7 @@ export function contributesToHeaderFooterFlowHeight(block: FlowBlock): boolean {
   }
 }
 
-function measureFlowHeight(measure: Measure | undefined): number {
+function measureFlowHeight(measure: LayoutMetrics | undefined): number {
   if (!measure) return 0;
   if (measure.kind === 'paragraph') return measure.totalHeight;
   if (measure.kind === 'table') return measure.totalHeight;
@@ -255,13 +255,13 @@ function measureFlowHeight(measure: Measure | undefined): number {
 }
 
 export function calculateHeaderFooterVisualBounds(
-  blocks: FlowBlock[],
-  measures: Measure[],
+  nodes: ContentNode[],
+  layoutMetrics: LayoutMetrics[],
   flowHeight: number,
-  metrics: HeaderFooterMetrics
+  pageMetrics: HeaderFooterMetrics
 ): { visualTop: number; visualBottom: number } {
   let visualTop = 0;
-  // Accumulate the real extent from the blocks below. Do NOT seed with the
+  // Accumulate the real extent from the nodes below. Do NOT seed with the
   // caller's `flowHeight` arg (it is the float-inclusive `totalHeight`): when a
   // floating box doesn't advance the cursor, seeding with the stacked total
   // would keep `visualBottom` artificially tall and the header container/hover
@@ -269,9 +269,9 @@ export function calculateHeaderFooterVisualBounds(
   let visualBottom = 0;
   let cursorY = 0;
 
-  for (let i = 0; i < blocks.length; i++) {
-    const block = blocks[i];
-    const measure = measures[i];
+  for (let i = 0; i < nodes.length; i++) {
+    const block = nodes[i];
+    const measure = layoutMetrics[i];
     if (!block || !measure) continue;
 
     if (block.kind === 'paragraph' && measure.kind === 'paragraph') {
@@ -282,7 +282,7 @@ export function calculateHeaderFooterVisualBounds(
 
       for (const run of block.runs) {
         if (run.kind !== 'image' || !run.position) continue;
-        const runTop = resolveHeaderFooterVisualTop(run, paragraphStartY, flowHeight, metrics);
+        const runTop = resolveHeaderFooterVisualTop(run, paragraphStartY, flowHeight, pageMetrics);
         visualTop = Math.min(visualTop, runTop);
         visualBottom = Math.max(visualBottom, runTop + run.height);
       }
@@ -345,18 +345,18 @@ export function convertHeaderFooterToContent(
   headerFooter: HeaderFooter | null | undefined,
   contentWidth: number,
   metrics: HeaderFooterMetrics,
-  options: ConvertHeaderFooterOptions
+  config: ConvertHeaderFooterOptions
 ): HeaderFooterContent | undefined {
   if (!headerFooter || !headerFooter.content || headerFooter.content.length === 0) {
     return undefined;
   }
 
   const pmDoc = headerFooterToProseDoc(headerFooter.content, {
-    styles: options.styles ?? undefined,
-    theme: options.theme ?? null,
-    defaultTabMarkTwips: options.defaultTabMarkTwips ?? null,
+    styles: config.styles ?? undefined,
+    theme: config.theme ?? null,
+    defaultTabMarkTwips: config.defaultTabMarkTwips ?? null,
   });
-  return convertHeaderFooterPmDocToContent(pmDoc, contentWidth, metrics, options);
+  return convertHeaderFooterPmDocToContent(pmDoc, contentWidth, metrics, config);
 }
 
 /**
@@ -377,34 +377,34 @@ export function convertHeaderFooterToContent(
 export function convertHeaderFooterPmDocToContent(
   pmDoc: PMNode,
   contentWidth: number,
-  metrics: HeaderFooterMetrics,
-  options: ConvertHeaderFooterOptions
+  pageMetrics: HeaderFooterMetrics,
+  config: ConvertHeaderFooterOptions
 ): HeaderFooterContent | undefined {
-  const blocks = buildBoxTree(pmDoc, { theme: options.theme ?? undefined });
-  if (blocks.length === 0) return undefined;
+  const nodes = buildBoxTree(pmDoc, { theme: config.theme ?? undefined });
+  if (nodes.length === 0) return undefined;
 
-  const blocksForMeasure = normalizeHeaderFooterMeasureBlocks(blocks);
-  const measures = options.measureBlocks(blocksForMeasure, contentWidth);
+  const nodesForMetrics = normalizeHeaderFooterMeasureBlocks(nodes);
+  const layoutMetrics = config.measureBlocks(nodesForMetrics, contentWidth);
   let totalHeight = 0;
   let flowHeight = 0;
-  for (let i = 0; i < blocksForMeasure.length; i++) {
-    const h = measureFlowHeight(measures[i]);
+  for (let i = 0; i < nodesForMetrics.length; i++) {
+    const h = measureFlowHeight(layoutMetrics[i]);
     totalHeight += h;
-    if (contributesToHeaderFooterFlowHeight(blocksForMeasure[i])) flowHeight += h;
+    if (contributesToHeaderFooterFlowHeight(nodesForMetrics[i])) flowHeight += h;
   }
-  // Use `blocksForMeasure` (the normalized list the `measures` were computed
-  // from), NOT the raw `blocks` — otherwise block[i] and measure[i] can desync
+  // Use `nodesForMetrics` (the normalized list the `metrics` were computed
+  // from), NOT the raw `nodes` — otherwise block[i] and measure[i] can desync
   // and per-block flags like `displayMode` are read off the wrong block.
   const { visualTop, visualBottom } = calculateHeaderFooterVisualBounds(
-    blocksForMeasure,
-    measures,
+    nodesForMetrics,
+    layoutMetrics,
     totalHeight,
-    metrics
+    pageMetrics
   );
 
   return {
-    blocks: blocksForMeasure,
-    measures,
+    nodes: nodesForMetrics,
+    metrics: layoutMetrics,
     height: totalHeight,
     flowHeight,
     visualTop,

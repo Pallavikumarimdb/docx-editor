@@ -1,5 +1,5 @@
 /**
- * The vertical gap between two blocks.
+ * The vertical gap between two content nodes.
  *
  * OOXML gives a paragraph a `spacing.before` and a `spacing.after`, and says
  * nothing about what happens where one paragraph's `after` meets the next one's
@@ -14,20 +14,20 @@
  * @packageDocumentation
  */
 
-import type { FlowBlock, ParagraphBlock } from './types';
+import type { ContentNode, ParagraphBlock } from './types';
 
 /**
- * Space a block asks for above itself, px.
+ * Space a content node asks for above itself, px.
  */
-export function spaceBefore(block: FlowBlock): number {
-  return block.kind === 'paragraph' ? (block.attrs?.spacing?.before ?? 0) : 0;
+export function spaceBefore(node: ContentNode): number {
+  return node.kind === 'paragraph' ? (node.attrs?.spacing?.before ?? 0) : 0;
 }
 
 /**
- * Space a block asks for below itself, px.
+ * Space a content node asks for below itself, px.
  */
-export function spaceAfter(block: FlowBlock): number {
-  return block.kind === 'paragraph' ? (block.attrs?.spacing?.after ?? 0) : 0;
+export function spaceAfter(node: ContentNode): number {
+  return node.kind === 'paragraph' ? (node.attrs?.spacing?.after ?? 0) : 0;
 }
 
 /**
@@ -43,10 +43,10 @@ export function spaceAfter(block: FlowBlock): number {
  *     with no `styleId` has no style to match, so it never suppresses.
  *  2. **Collapse** — otherwise the gap is `max(prev.after, next.before)`.
  *
- * @param prev - the block above, or null at the top of the flow
- * @param next - the block below
+ * @param prev - the content node above, or null at the top of the flow
+ * @param next - the content node below
  */
-export function collapsedGap(prev: FlowBlock | null, next: FlowBlock): number {
+export function collapsedGap(prev: ContentNode | null, next: ContentNode): number {
   if (!prev) return spaceBefore(next);
 
   if (isContextuallySuppressed(prev, next)) return 0;
@@ -57,7 +57,7 @@ export function collapsedGap(prev: FlowBlock | null, next: FlowBlock): number {
 /**
  * True when `w:contextualSpacing` cancels the gap between these two.
  */
-function isContextuallySuppressed(prev: FlowBlock, next: FlowBlock): boolean {
+function isContextuallySuppressed(prev: ContentNode, next: ContentNode): boolean {
   if (prev.kind !== 'paragraph' || next.kind !== 'paragraph') return false;
 
   const a = prev as ParagraphBlock;

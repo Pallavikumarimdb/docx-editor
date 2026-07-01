@@ -8,7 +8,7 @@
  */
 
 import { collectSectionConfigs, type SectionLayoutConfig } from '../pagination-model';
-import type { ColumnLayout, FlowBlock, PageMargins } from '../pagination-model/types';
+import type { ColumnLayout, ContentNode, PageMargins } from '../pagination-model/types';
 import type { Document, SectionProperties } from '../types/document';
 import type { HeaderFooter } from '../types/content';
 
@@ -167,12 +167,12 @@ export function columnWidthForSection(config: SectionLayoutConfig): number {
  * geometry without remeasuring.
  */
 export function computePerBlockWidths(
-  blocks: FlowBlock[],
+  nodes: ContentNode[],
   initialConfig: SectionLayoutConfig,
   finalConfig: SectionLayoutConfig
 ): number[] {
   const { configs: sectionConfigs, breakIndices } = collectSectionConfigs(
-    blocks,
+    nodes,
     initialConfig,
     finalConfig
   );
@@ -180,7 +180,7 @@ export function computePerBlockWidths(
   let sectionIdx = 0;
   const widths: number[] = [];
 
-  for (let i = 0; i < blocks.length; i++) {
+  for (let i = 0; i < nodes.length; i++) {
     widths.push(columnWidthForSection(sectionConfigs[sectionIdx] ?? initialConfig));
 
     if (sectionIdx < breakIndices.length && i === breakIndices[sectionIdx]) {

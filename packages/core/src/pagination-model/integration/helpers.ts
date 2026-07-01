@@ -2,7 +2,7 @@
  * Shared helpers for the integration test suites.
  *
  * Factories that build paragraph blocks and their measured lines without each
- * test having to redeclare the full FlowBlock/Measure shape. Kept in their
+ * test having to redeclare the full ContentNode/LayoutMetrics shape. Kept in their
  * own non-`.test.ts` file so the test files can import them and bun test
  * doesn't try to run this file as a suite.
  */
@@ -12,7 +12,7 @@ import type {
   ParagraphMetrics,
   MeasuredLine,
   PageMargins,
-  LayoutOptions,
+  LayoutConfig,
 } from '../types';
 
 /**
@@ -73,7 +73,7 @@ export function createLine(
 }
 
 /**
- * Create a paragraph measure from lines.
+ * Create paragraph metrics from measured lines.
  */
 export function makeParagraphMetrics(lines: MeasuredLine[]): ParagraphMetrics {
   const totalHeight = lines.reduce((sum, line) => sum + line.lineHeight, 0);
@@ -96,9 +96,9 @@ export const DEFAULT_MARGINS: PageMargins = {
 };
 
 /**
- * Create default layout options.
+ * Create the default layout config.
  */
-export function makeLayoutOptions(overrides: Partial<LayoutOptions> = {}): LayoutOptions {
+export function makeLayoutConfig(overrides: Partial<LayoutConfig> = {}): LayoutConfig {
   return {
     pageSize: DEFAULT_PAGE_SIZE,
     margins: DEFAULT_MARGINS,

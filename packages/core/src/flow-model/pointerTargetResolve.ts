@@ -3,7 +3,7 @@
  *
  * The painted-DOM path (`resolveDomPosition.ts`) is the one the editor uses for
  * clicks, because only the browser knows where a glyph really landed. This is
- * the other path: the same question answered from the `Layout` value alone.
+ * the other path: the same question answered from the `PageLayout` value alone.
  *
  * It earns its place twice. It is the **fallback** when the DOM can't answer — a
  * click in the page margin, in the gutter between pages, below the last line —
@@ -19,15 +19,15 @@
  */
 
 import type {
-  FlowBlock,
+  ContentNode,
   Fragment,
-  Layout,
-  Measure,
+  PageLayout,
+  LayoutMetrics,
   Page,
   TableBlock,
   TableCell,
   TableCellMetrics,
-  TableMeasure,
+  TableMetrics,
 } from '../pagination-model/types';
 import { resolveCellGrid } from './tableWidthUtils';
 
@@ -49,7 +49,7 @@ export interface Point {
  *
  * @public
  */
-export interface PageHit {
+export interface PageTarget {
   pageIndex: number;
   page: Page;
   /** Y within the page, from its top edge. */
@@ -61,10 +61,10 @@ export interface PageHit {
  *
  * @public
  */
-export interface FragmentHit {
+export interface FragmentTarget {
   fragment: Fragment;
-  block: FlowBlock;
-  measure: Measure;
+  node: ContentNode;
+  metrics: LayoutMetrics;
   pageIndex: number;
   /** The point, relative to the fragment's top-left. */
   localX: number;
@@ -76,11 +76,11 @@ export interface FragmentHit {
  *
  * @public
  */
-export interface TableCellHit {
+export interface TableCellTarget {
   rowIndex: number;
   columnIndex: number;
   cell: TableCell;
-  /** The cell's measured content, index-aligned with `cell.blocks`. */
+  /** The cell's measured content, index-aligned with `cell.nodes`. */
   metrics: TableCellMetrics;
   /** The point, relative to the cell's content box (inside its padding). */
   localX: number;
@@ -94,10 +94,10 @@ export interface TableCellHit {
  *
  * @public
  */
-export interface PointerHitResult {
-  pageHit: PageHit;
-  fragmentHit?: FragmentHit;
-  tableCellHit?: TableCellHit;
+export interface PointerTargetResult {
+  pageTarget: PageTarget;
+  fragmentTarget?: FragmentTarget;
+  tableCellTarget?: TableCellTarget;
 }
 
 /**
@@ -105,25 +105,25 @@ export interface PointerHitResult {
  *
  * @public
  */
-export function pointerHitResolve(
-  layout: Layout,
-  blocks: FlowBlock[],
-  measures: Measure[],
+export function pointerTargetResolve(
+  layout: PageLayout,
+  nodes: ContentNode[],
+  metrics: LayoutMetrics[],
   point: Point
-): PointerHitResult | null {
-  const pageHit = locatePageHit(layout, point);
-  if (!pageHit) return null;
+): PointerTargetResult | null {
+  const pageTarget = locatePageTarget(layout, point);
+  if (!pageTarget) return null;
 
-  const pagePoint: Point = { x: point.x, y: pageHit.pageY };
-  const fragmentHit = resolveFragmentHit(pageHit, blocks, measures, pagePoint);
-  if (!fragmentHit) return { pageHit };
+  const pagePoint: Point = { x: point.x, y: pageTarget.pageY };
+  const fragmentTarget = resolveFragmentTarget(pageTarget, nodes, metrics, pagePoint);
+  if (!fragmentTarget) return { pageTarget };
 
-  const tableCellHit =
-    fragmentHit.fragment.kind === 'table'
-      ? (resolveTableCellHit(pageHit, blocks, measures, pagePoint) ?? undefined)
+  const tableCellTarget =
+    fragmentTarget.fragment.kind === 'table'
+      ? (resolveTableCellTarget(pageTarget, nodes, metrics, pagePoint) ?? undefined)
       : undefined;
 
-  return { pageHit, fragmentHit, tableCellHit };
+  return { pageTarget, fragmentTarget, tableCellTarget };
 }
 
 /**
@@ -137,7 +137,7 @@ export function pointerHitResolve(
  *
  * @public
  */
-export function locatePageHit(layout: Layout, point: Point): PageHit | null {
+export function locatePageTarget(layout: PageLayout, point: Point): PageTarget | null {
   if (layout.pages.length === 0) return null;
 
   let top = 0;
@@ -169,19 +169,19 @@ export function locatePageHit(layout: Layout, point: Point): PageHit | null {
  *
  * @public
  */
-export function resolveFragmentHit(
-  pageHit: PageHit,
-  blocks: FlowBlock[],
-  measures: Measure[],
+export function resolveFragmentTarget(
+  pageTarget: PageTarget,
+  nodes: ContentNode[],
+  metrics: LayoutMetrics[],
   point: Point
-): FragmentHit | null {
-  const index = blockIndex(blocks, measures);
+): FragmentTarget | null {
+  const index = nodeIndex(nodes, metrics);
 
-  let best: FragmentHit | null = null;
+  let best: FragmentTarget | null = null;
   let bestDistance = Infinity;
 
-  for (const fragment of pageHit.page.fragments) {
-    const at = index.get(String(fragment.blockId));
+  for (const fragment of pageTarget.page.fragments) {
+    const at = index.get(String(fragment.nodeId));
     if (!at) continue;
 
     const distance = distanceToBox(point, fragment);
@@ -190,9 +190,9 @@ export function resolveFragmentHit(
     bestDistance = distance;
     best = {
       fragment,
-      block: at.block,
-      measure: at.measure,
-      pageIndex: pageHit.pageIndex,
+      node: at.node,
+      metrics: at.metrics,
+      pageIndex: pageTarget.pageIndex,
       localX: point.x - fragment.x,
       localY: point.y - fragment.y,
     };
@@ -204,25 +204,25 @@ export function resolveFragmentHit(
 }
 
 /**
- * Same as {@link resolveFragmentHit}, restricted to image fragments — for
+ * Same as {@link resolveFragmentTarget}, restricted to image fragments — for
  * picking up an image to drag without the paragraph under it stealing the hit.
  *
  * @public
  */
-export function resolveImageFragmentHit(
-  pageHit: PageHit,
-  blocks: FlowBlock[],
-  measures: Measure[],
+export function resolveImageFragmentTarget(
+  pageTarget: PageTarget,
+  nodes: ContentNode[],
+  metrics: LayoutMetrics[],
   point: Point
-): FragmentHit | null {
-  const imagesOnly: PageHit = {
-    ...pageHit,
+): FragmentTarget | null {
+  const imagesOnly: PageTarget = {
+    ...pageTarget,
     page: {
-      ...pageHit.page,
-      fragments: pageHit.page.fragments.filter((f) => f.kind === 'image'),
+      ...pageTarget.page,
+      fragments: pageTarget.page.fragments.filter((f) => f.kind === 'image'),
     },
   };
-  const hit = resolveFragmentHit(imagesOnly, blocks, measures, point);
+  const hit = resolveFragmentTarget(imagesOnly, nodes, metrics, point);
   // Only a *direct* hit counts: an image you didn't click on isn't one you meant
   // to grab.
   return hit && distanceToBox(point, hit.fragment) === 0 ? hit : null;
@@ -238,36 +238,36 @@ export function resolveImageFragmentHit(
  *
  * @public
  */
-export function resolveTableCellHit(
-  pageHit: PageHit,
-  blocks: FlowBlock[],
-  measures: Measure[],
+export function resolveTableCellTarget(
+  pageTarget: PageTarget,
+  nodes: ContentNode[],
+  allMetrics: LayoutMetrics[],
   point: Point
-): TableCellHit | null {
-  const hit = resolveFragmentHit(pageHit, blocks, measures, point);
+): TableCellTarget | null {
+  const hit = resolveFragmentTarget(pageTarget, nodes, allMetrics, point);
   if (!hit || hit.fragment.kind !== 'table') return null;
-  if (hit.block.kind !== 'table' || hit.measure.kind !== 'table') return null;
+  if (hit.node.kind !== 'table' || hit.metrics.kind !== 'table') return null;
 
-  const block = hit.block as TableBlock;
-  const measure = hit.measure as TableMeasure;
+  const node = hit.node as TableBlock;
+  const tableMetrics = hit.metrics as TableMetrics;
   const fragment = hit.fragment;
 
   // The fragment paints rows [fromRow, toRow), with the first one clipped by
   // `topClip` when it began on the previous page. Local Y is measured from the
   // fragment's top, so the clipped part has to be added back to land in the
   // table's own coordinate space.
-  const tableY = hit.localY + rowTop(measure, fragment.fromRow) - (fragment.topClip ?? 0);
+  const tableY = hit.localY + rowTop(tableMetrics, fragment.fromRow) - (fragment.topClip ?? 0);
   const tableX = hit.localX;
 
-  const rowIndex = rowAt(measure, tableY, fragment.fromRow, fragment.toRow);
+  const rowIndex = rowAt(tableMetrics, tableY, fragment.fromRow, fragment.toRow);
   if (rowIndex === null) return null;
 
-  const columnIndex = columnAt(measure, tableX);
+  const columnIndex = columnAt(tableMetrics, tableX);
   if (columnIndex === null) return null;
 
   // The grid tells us which authored cell actually *covers* this (row, column) —
   // which is not the cell at that index when anything above it is merged down.
-  const covering = resolveCellGrid(block).find(
+  const covering = resolveCellGrid(node).find(
     (g) =>
       g.columnIndex <= columnIndex &&
       columnIndex < g.columnIndex + (g.colSpan ?? 1) &&
@@ -276,21 +276,21 @@ export function resolveTableCellHit(
   );
   if (!covering) return null;
 
-  const cell = block.rows[covering.rowIndex]?.cells?.[covering.cellIndex];
-  const metrics = measure.rows[covering.rowIndex]?.cells?.[covering.cellIndex];
-  if (!cell || !metrics) return null;
+  const cell = node.rows[covering.rowIndex]?.cells?.[covering.cellIndex];
+  const cellMetrics = tableMetrics.rows[covering.rowIndex]?.cells?.[covering.cellIndex];
+  if (!cell || !cellMetrics) return null;
 
   const padLeft = cell.padding?.left ?? 0;
   const padTop = cell.padding?.top ?? 0;
-  const cellWidth = columnWidth(measure, covering.columnIndex, covering.colSpan ?? 1);
+  const cellWidth = columnWidth(tableMetrics, covering.columnIndex, covering.colSpan ?? 1);
 
   return {
     rowIndex: covering.rowIndex,
     columnIndex: covering.columnIndex,
     cell,
-    metrics,
-    localX: tableX - columnLeft(measure, covering.columnIndex) - padLeft,
-    localY: tableY - rowTop(measure, covering.rowIndex) - padTop,
+    metrics: cellMetrics,
+    localX: tableX - columnLeft(tableMetrics, covering.columnIndex) - padLeft,
+    localY: tableY - rowTop(tableMetrics, covering.rowIndex) - padTop,
     contentWidth: Math.max(0, cellWidth - padLeft - (cell.padding?.right ?? 0)),
   };
 }
@@ -304,7 +304,7 @@ export function resolveTableCellHit(
  *
  * @public
  */
-export function pageTopOffset(layout: Layout, pageIndex: number): number {
+export function pageTopOffset(layout: PageLayout, pageIndex: number): number {
   const gap = pageGap(layout);
   let y = 0;
   for (let i = 0; i < pageIndex && i < layout.pages.length; i++) {
@@ -318,7 +318,7 @@ export function pageTopOffset(layout: Layout, pageIndex: number): number {
  *
  * @public
  */
-export function pageIndexForY(layout: Layout, y: number): number {
+export function pageIndexForY(layout: PageLayout, y: number): number {
   const gap = pageGap(layout);
   let top = 0;
   for (let i = 0; i < layout.pages.length; i++) {
@@ -334,7 +334,7 @@ export function pageIndexForY(layout: Layout, y: number): number {
  *
  * @public
  */
-export function getTotalDocumentHeight(layout: Layout): number {
+export function getTotalDocumentHeight(layout: PageLayout): number {
   const gap = pageGap(layout);
   const pages = layout.pages.reduce((h, page) => h + page.size.h, 0);
   return pages + Math.max(0, layout.pages.length - 1) * gap;
@@ -345,7 +345,7 @@ export function getTotalDocumentHeight(layout: Layout): number {
  *
  * @public
  */
-export function getScrollYForPage(layout: Layout, pageIndex: number): number {
+export function getScrollYForPage(layout: PageLayout, pageIndex: number): number {
   return pageTopOffset(layout, clamp(pageIndex, 0, layout.pages.length - 1));
 }
 
@@ -355,7 +355,7 @@ export function getScrollYForPage(layout: Layout, pageIndex: number): number {
  * @public
  */
 export function getPageBounds(
-  layout: Layout,
+  layout: PageLayout,
   pageIndex: number
 ): {
   top: number;
@@ -383,7 +383,7 @@ export function getPageBounds(
 // Helpers
 // ---------------------------------------------------------------------------
 
-function pageGap(layout: Layout): number {
+function pageGap(layout: PageLayout): number {
   return layout.pageGap ?? DEFAULT_PAGE_GAP_PX;
 }
 
@@ -408,22 +408,22 @@ function distanceToBox(
 /**
  * `block.id → (block, measure)`, so a fragment can find what it paints.
  *
- * A fragment carries a `blockId`, not an index, because a paragraph that split
+ * A fragment carries a `nodeId`, not an index, because a paragraph that split
  * across three pages produces three fragments that all point at the same block.
  */
-function blockIndex(
-  blocks: FlowBlock[],
-  measures: Measure[]
-): Map<string, { block: FlowBlock; measure: Measure }> {
-  const map = new Map<string, { block: FlowBlock; measure: Measure }>();
-  for (let i = 0; i < blocks.length; i++) {
-    const measure = measures[i];
-    if (measure) map.set(String(blocks[i].id), { block: blocks[i], measure });
+function nodeIndex(
+  nodes: ContentNode[],
+  metrics: LayoutMetrics[]
+): Map<string, { node: ContentNode; metrics: LayoutMetrics }> {
+  const map = new Map<string, { node: ContentNode; metrics: LayoutMetrics }>();
+  for (let i = 0; i < nodes.length; i++) {
+    const nodeMetrics = metrics[i];
+    if (nodeMetrics) map.set(String(nodes[i].id), { node: nodes[i], metrics: nodeMetrics });
   }
   return map;
 }
 
-function rowTop(measure: TableMeasure, rowIndex: number): number {
+function rowTop(measure: TableMetrics, rowIndex: number): number {
   let y = 0;
   for (let i = 0; i < rowIndex && i < measure.rows.length; i++) {
     y += measure.rows[i].height;
@@ -431,7 +431,7 @@ function rowTop(measure: TableMeasure, rowIndex: number): number {
   return y;
 }
 
-function rowAt(measure: TableMeasure, y: number, fromRow: number, toRow: number): number | null {
+function rowAt(measure: TableMetrics, y: number, fromRow: number, toRow: number): number | null {
   if (measure.rows.length === 0) return null;
 
   let top = rowTop(measure, fromRow);
@@ -443,7 +443,7 @@ function rowAt(measure: TableMeasure, y: number, fromRow: number, toRow: number)
   return Math.min(toRow, measure.rows.length) - 1;
 }
 
-function columnLeft(measure: TableMeasure, columnIndex: number): number {
+function columnLeft(measure: TableMetrics, columnIndex: number): number {
   let x = 0;
   for (let i = 0; i < columnIndex && i < measure.columnWidths.length; i++) {
     x += measure.columnWidths[i];
@@ -451,7 +451,7 @@ function columnLeft(measure: TableMeasure, columnIndex: number): number {
   return x;
 }
 
-function columnWidth(measure: TableMeasure, columnIndex: number, span: number): number {
+function columnWidth(measure: TableMetrics, columnIndex: number, span: number): number {
   let w = 0;
   for (let i = columnIndex; i < columnIndex + span && i < measure.columnWidths.length; i++) {
     w += measure.columnWidths[i];
@@ -459,7 +459,7 @@ function columnWidth(measure: TableMeasure, columnIndex: number, span: number): 
   return w;
 }
 
-function columnAt(measure: TableMeasure, x: number): number | null {
+function columnAt(measure: TableMetrics, x: number): number | null {
   if (measure.columnWidths.length === 0) return null;
 
   let left = 0;

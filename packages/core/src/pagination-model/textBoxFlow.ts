@@ -22,11 +22,11 @@ export type TextBoxFlowAttrs = Pick<TextBoxBlock, 'displayMode' | 'wrapType'>;
  *
  * @public
  */
-export function isFloatingTextBoxBlock(block: TextBoxFlowAttrs): boolean {
+export function isFloatingTextBoxBlock(node: TextBoxFlowAttrs): boolean {
   return (
-    block.displayMode === 'float' ||
-    isFloatingWrapType(block.wrapType) ||
-    block.wrapType === 'topAndBottom'
+    node.displayMode === 'float' ||
+    isFloatingWrapType(node.wrapType) ||
+    node.wrapType === 'topAndBottom'
   );
 }
 
@@ -37,8 +37,8 @@ export function isFloatingTextBoxBlock(block: TextBoxFlowAttrs): boolean {
  *
  * @public
  */
-export function floatingTextBoxReservesBand(block: TextBoxFlowAttrs): boolean {
-  return isFloatingTextBoxBlock(block) && block.wrapType === 'topAndBottom';
+export function floatingTextBoxReservesBand(node: TextBoxFlowAttrs): boolean {
+  return isFloatingTextBoxBlock(node) && node.wrapType === 'topAndBottom';
 }
 
 /**
@@ -48,10 +48,8 @@ export function floatingTextBoxReservesBand(block: TextBoxFlowAttrs): boolean {
  *
  * @public
  */
-export function floatingTextBoxWrapsText(block: TextBoxFlowAttrs): boolean {
+export function floatingTextBoxWrapsText(node: TextBoxFlowAttrs): boolean {
   return (
-    isFloatingTextBoxBlock(block) &&
-    !isWrapNone(block.wrapType) &&
-    block.wrapType !== 'topAndBottom'
+    isFloatingTextBoxBlock(node) && !isWrapNone(node.wrapType) && node.wrapType !== 'topAndBottom'
   );
 }

@@ -42,14 +42,14 @@ export interface FloatingImagesLayerOptions {
 export function paintFloatingImagesLayer(
   floatingImages: FloatingImagePaintRecord[],
   doc: Document,
-  options: FloatingImagesLayerOptions
+  config: FloatingImagesLayerOptions
 ): HTMLElement {
   const layer = doc.createElement('div');
-  layer.className = options.layerClass;
+  layer.className = config.layerClass;
   layer.style.position = 'absolute';
   layer.style.top = '0';
   layer.style.left = '0';
-  if (options.sizing === 'inset0') {
+  if (config.sizing === 'inset0') {
     layer.style.right = '0';
     layer.style.bottom = '0';
   } else {
@@ -58,13 +58,13 @@ export function paintFloatingImagesLayer(
     layer.style.overflow = 'hidden';
   }
   layer.style.pointerEvents = 'none';
-  if (options.layerMode === 'front') {
+  if (config.layerMode === 'front') {
     layer.style.zIndex = '10';
   }
 
   for (const floatImg of floatingImages) {
     const container = doc.createElement('div');
-    container.className = options.itemClass;
+    container.className = config.itemClass;
     container.style.position = 'absolute';
     container.style.pointerEvents = 'auto';
     container.style.top = `${floatImg.y}px`;

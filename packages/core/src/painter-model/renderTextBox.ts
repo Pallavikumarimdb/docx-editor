@@ -12,7 +12,7 @@ import {
   DEFAULT_TEXTBOX_MARGINS,
   type TextBoxFragment,
   type TextBoxBlock,
-  type TextBoxMeasure,
+  type TextBoxMetrics,
 } from '../pagination-model/types';
 import type { RenderContext } from './paintPage';
 import { paintParagraphFragment } from './renderParagraph';
@@ -37,11 +37,11 @@ export interface RenderTextBoxFragmentOptions {
 export function paintTextBoxFragment(
   fragment: TextBoxFragment,
   block: TextBoxBlock,
-  measure: TextBoxMeasure,
+  measure: TextBoxMetrics,
   context: RenderContext,
-  options: RenderTextBoxFragmentOptions = {}
+  config: RenderTextBoxFragmentOptions = {}
 ): HTMLElement {
-  const doc = options.document ?? document;
+  const doc = config.document ?? document;
 
   const containerEl = doc.createElement('div');
   containerEl.className = TEXTBOX_CLASS_NAMES.textBox;
@@ -71,7 +71,7 @@ export function paintTextBoxFragment(
   containerEl.style.padding = `${margins.top}px ${margins.right}px ${margins.bottom}px ${margins.left}px`;
 
   // Store metadata
-  containerEl.dataset.blockId = String(fragment.blockId);
+  containerEl.dataset.blockId = String(fragment.nodeId);
   if (fragment.docFrom !== undefined) {
     containerEl.dataset.docFrom = String(fragment.docFrom);
   }
@@ -85,12 +85,12 @@ export function paintTextBoxFragment(
 
   for (let i = 0; i < block.content.length; i++) {
     const paraBlock = block.content[i];
-    const paraMeasure = measure.innerMeasures[i];
+    const paraMeasure = measure.innerMetrics[i];
     if (!paraMeasure) continue;
 
     const paraFragment = {
       kind: 'paragraph' as const,
-      blockId: paraBlock.id,
+      nodeId: paraBlock.id,
       x: 0,
       y: yOffset,
       width: innerWidth,

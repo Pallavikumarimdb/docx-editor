@@ -1,4 +1,4 @@
-import type { Layout } from './types';
+import type { PageLayout } from './types';
 
 /**
  * Page index (0-based) whose layout fragments cover `pmPos`, or null if none.
@@ -10,7 +10,7 @@ import type { Layout } from './types';
  * fragment wins (avoids returning the previous page for the start of the
  * next paragraph).
  */
-export function findPageIndexContainingPmPos(layout: Layout, pmPos: number): number | null {
+export function findPageIndexContainingPmPos(layout: PageLayout, pmPos: number): number | null {
   for (let pi = 0; pi < layout.pages.length; pi++) {
     for (const frag of layout.pages[pi].fragments) {
       if (frag.docFrom == null) continue;

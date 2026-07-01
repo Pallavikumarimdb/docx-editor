@@ -4,7 +4,7 @@
  *
  * This is the 6-step pass from React's `useLayoutPipeline` minus the DOM paint
  * + scroll/event side-effects (which stay adapter-side, where the framework
- * timing lives): PM doc → flow blocks → measure → header/footer resolve →
+ * timing lives): PM doc → flow nodes → measure → header/footer resolve →
  * margin extension → `layOutPages` (+ two-pass footnote stabilization) →
  * footnote render items. It is pure (no DOM, no refs, no rAF) and returns
  * everything the adapter needs to paint.
@@ -21,10 +21,10 @@ import type { Node as PMNode } from 'prosemirror-model';
 import {
   layOutPages,
   type ColumnLayout,
-  type FlowBlock,
+  type ContentNode,
   type FootnoteContent,
-  type Layout,
-  type Measure,
+  type PageLayout,
+  type LayoutMetrics,
   type PageMargins,
 } from '../pagination-model';
 import {
@@ -63,10 +63,10 @@ interface PageSizePx {
 
 /** Adapter-supplied block measurer (React's is caching). */
 export type MeasureBlocksFn = (
-  blocks: FlowBlock[],
+  nodes: ContentNode[],
   contentWidth: number | number[],
   pageGeometry?: FloatPageGeometry
-) => Measure[];
+) => LayoutMetrics[];
 
 export interface ComputeLayoutInputs {
   state: EditorState;
@@ -94,9 +94,9 @@ export interface ComputeLayoutInputs {
 }
 
 export interface LayoutComputation {
-  blocks: FlowBlock[];
-  measures: Measure[];
-  layout: Layout;
+  nodes: ContentNode[];
+  metrics: LayoutMetrics[];
+  layout: PageLayout;
   headerContentForRender: HeaderFooterContent | undefined;
   footerContentForRender: HeaderFooterContent | undefined;
   firstPageHeaderForRender: HeaderFooterContent | undefined;
@@ -176,13 +176,13 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
     getHfPmDoc,
   } = inputs;
 
-  // Step 1: PM doc → flow blocks.
+  // Step 1: PM doc → flow nodes.
   const pageContentHeight = pageSize.h - margins.top - margins.bottom;
-  const blocks = buildBoxTree(state.doc, { theme, pageContentHeight });
+  const nodes = buildBoxTree(state.doc, { theme, pageContentHeight });
 
-  // Step 2: Measure all blocks (per-section widths; full measure for float context).
+  // Step 2: LayoutMetrics all nodes (per-section widths; full measure for float context).
   const blockWidths = computePerBlockWidths(
-    blocks,
+    nodes,
     { pageSize, margins, columns },
     { pageSize: finalPageSize, margins: finalMargins, columns: finalColumns }
   );
@@ -196,16 +196,16 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
   // it through `layoutTable` (which breaks rows across pages) and suppresses the
   // wrap zone. Purely a layout transform on the ephemeral FlowBlocks; the PM doc
   // and the saved DOCX keep the original floating table.
-  demoteBlockLikeFloatingTables(blocks, blockWidths, contentWidth);
+  demoteBlockLikeFloatingTables(nodes, blockWidths, contentWidth);
 
-  const measures = measureBlocks(
-    blocks,
+  const metrics = measureBlocks(
+    nodes,
     blockWidths,
     pageGeometryFromPage({ size: pageSize, margins })
   );
 
   // Step 2.5: Footnote references.
-  const footnoteRefs = collectFootnoteRefs(blocks);
+  const footnoteRefs = collectFootnoteRefs(nodes);
   const hasFootnotes = footnoteRefs.length > 0 && !!document?.package?.footnotes;
 
   // Step 2.75: Header/footer content for rendering (needed before layout to
@@ -213,7 +213,7 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
   const hfMetricsHeader = { section: 'header' as const, pageSize, margins };
   const hfMetricsFooter = { section: 'footer' as const, pageSize, margins };
   const defaultTabMarkTwips = state.doc.attrs?.defaultTabMarkTwips as number | null;
-  const hfOptions = { styles, theme, measureBlocks, defaultTabMarkTwips };
+  const hfConfig = { styles, theme, measureBlocks, defaultTabMarkTwips };
 
   // HF unification phase 1: prefer the persistent PM doc when mounted.
   const convertHf = (
@@ -223,9 +223,9 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
     if (!hf) return undefined;
     const pmDoc = getHfPmDoc(hf);
     if (pmDoc) {
-      return convertHeaderFooterPmDocToContent(pmDoc, contentWidth, metrics, hfOptions);
+      return convertHeaderFooterPmDocToContent(pmDoc, contentWidth, metrics, hfConfig);
     }
-    return convertHeaderFooterToContent(hf, contentWidth, metrics, hfOptions);
+    return convertHeaderFooterToContent(hf, contentWidth, metrics, hfConfig);
   };
 
   const headerContentForRender = convertHf(headerContent, hfMetricsHeader);
@@ -251,20 +251,20 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
       pageSize,
       margins,
       finalMargins,
-      bodyBlocks: blocks,
+      bodyNodes: nodes,
       headers: [headerContentForRender, firstPageHeaderForRender],
       footers: [footerContentForRender, firstPageFooterForRender],
       warn: (msg) => console.warn(`[computeLayout] ${msg}`),
     });
 
-  // Step 3: Layout onto pages (two-pass when footnotes exist).
+  // Step 3: PageLayout onto pages (two-pass when footnotes exist).
   const bodyBreakType = finalSectionProperties?.sectionStart as
     | 'continuous'
     | 'nextPage'
     | 'evenPage'
     | 'oddPage'
     | undefined;
-  const layoutOpts = {
+  const layoutConfig = {
     pageSize,
     margins: effectiveMargins,
     finalPageSize,
@@ -274,12 +274,12 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
     pageGap,
   };
 
-  let layout: Layout;
+  let layout: PageLayout;
   let pageFootnoteMap = new Map<number, number[]>();
   let footnoteContentMap = new Map<number, FootnoteContent>();
 
   if (hasFootnotes) {
-    const pass1Layout = layOutPages(blocks, measures, layoutOpts);
+    const pass1Layout = layOutPages(nodes, metrics, layoutConfig);
     // w15:footnoteColumns: when a section lays its footnotes out in multiple
     // columns, measure each footnote at the column width (so it wraps the way
     // it will paint) rather than the full content width.
@@ -297,9 +297,9 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
       }
     );
     const stabilized = stabilizeFootnoteLayout({
-      blocks,
-      measures,
-      layoutOpts,
+      nodes,
+      metrics,
+      layoutConfig,
       footnoteRefs,
       footnoteContentMap,
       initialLayout: pass1Layout,
@@ -308,7 +308,7 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
     layout = stabilized.layout;
     pageFootnoteMap = stabilized.pageFootnoteMap;
   } else {
-    layout = layOutPages(blocks, measures, layoutOpts);
+    layout = layOutPages(nodes, metrics, layoutConfig);
   }
 
   const footnotesByPage = hasFootnotes
@@ -316,8 +316,8 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
     : undefined;
 
   return {
-    blocks,
-    measures,
+    nodes,
+    metrics,
     layout,
     headerContentForRender,
     footerContentForRender,

@@ -57,7 +57,7 @@ export type { FloatingImageZone } from './floatingZones';
 
 /**
  * Canvas advance widths and browser layout disagree in the last fraction of a
- * pixel. Without a tolerance, a line whose content measures 0.2px over the
+ * pixel. Without a tolerance, a line whose content metrics 0.2px over the
  * available width wraps a word the browser would have fitted — visible as a
  * lone word dropped to its own line. Wrap only on a real overflow.
  */
@@ -122,16 +122,16 @@ export function getRunCharWidths(run: Run, defaults: Partial<FontStyle> = {}): n
 }
 
 /**
- * Measure several paragraphs at one width.
+ * LayoutMetrics several paragraphs at one width.
  *
  * @public
  */
 export function paragraphLayouts(
-  blocks: ParagraphBlock[],
+  nodes: ParagraphBlock[],
   availableWidth: number,
-  options?: ParagraphLayoutOptions
+  config?: ParagraphLayoutOptions
 ): ParagraphMetrics[] {
-  return blocks.map((block) => paragraphLayout(block, availableWidth, options));
+  return nodes.map((block) => paragraphLayout(block, availableWidth, config));
 }
 
 /**
@@ -149,7 +149,7 @@ export function paragraphLayouts(
 export function paragraphLayout(
   block: ParagraphBlock,
   availableWidth: number,
-  options: ParagraphLayoutOptions = {}
+  config: ParagraphLayoutOptions = {}
 ): ParagraphMetrics {
   const attrs = block.attrs;
   const defaults: Partial<FontStyle> = {
@@ -171,7 +171,7 @@ export function paragraphLayout(
   }
 
   const tokens = tokenise(block.runs, defaults);
-  const lines = fillLines(block, tokens, availableWidth, defaults, options);
+  const lines = fillLines(block, tokens, availableWidth, defaults, config);
 
   // The float skip is space the paragraph OCCUPIES — a line pushed 120px down to
   // clear an image sits 120px lower, and everything after it does too. Omitting
@@ -385,11 +385,11 @@ function fillLines(
   tokens: Token[],
   availableWidth: number,
   defaults: Partial<FontStyle>,
-  options: ParagraphLayoutOptions
+  config: ParagraphLayoutOptions
 ): MeasuredLine[] {
   const attrs = block.attrs;
-  const zones = options.floatingZones;
-  const paragraphY = options.paragraphYOffset ?? 0;
+  const zones = config.floatingZones;
+  const paragraphY = config.paragraphYOffset ?? 0;
 
   const indentLeft = attrs?.indent?.left ?? 0;
   const indentRight = attrs?.indent?.right ?? 0;

@@ -106,7 +106,7 @@ function paragraphBaseIsRtl(block: ParagraphBlock): boolean {
  * @param block - The paragraph block
  * @param measure - The paragraph measurement
  * @param context - Rendering context
- * @param options - Rendering options
+ * @param config - Rendering config
  * @returns The fragment DOM element
  */
 export function paintParagraphFragment(
@@ -114,9 +114,9 @@ export function paintParagraphFragment(
   block: ParagraphBlock,
   measure: ParagraphMetrics,
   context: RenderContext,
-  options: RenderParagraphOptions = {}
+  config: RenderParagraphOptions = {}
 ): HTMLElement {
-  const doc = options.document ?? document;
+  const doc = config.document ?? document;
 
   const fragmentEl = doc.createElement('div');
   fragmentEl.className = PARAGRAPH_CLASS_NAMES.fragment;
@@ -130,7 +130,7 @@ export function paintParagraphFragment(
   fragmentEl.style.position = context.positioning === 'absolute' ? 'absolute' : 'relative';
 
   // Store block and fragment metadata
-  fragmentEl.dataset.blockId = String(fragment.blockId);
+  fragmentEl.dataset.blockId = String(fragment.nodeId);
   if (block.paraId) {
     fragmentEl.dataset.paraId = block.paraId;
   }
@@ -274,8 +274,8 @@ export function paintParagraphFragment(
     // - bottom border → only on the last paragraph of the group
     // - between border → rendered as borderTop on interior paragraphs
     // - left/right → on every paragraph in the group
-    const groupedWithPrev = bordersFormGroup(options.prevBorders, borders);
-    const groupedWithNext = bordersFormGroup(borders, options.nextBorders);
+    const groupedWithPrev = bordersFormGroup(config.prevBorders, borders);
+    const groupedWithNext = bordersFormGroup(borders, config.nextBorders);
 
     const renderedTopBorder = groupedWithPrev ? borders.between : borders.top;
     const renderedBottomBorder = !groupedWithNext ? borders.bottom : undefined;
@@ -348,7 +348,7 @@ export function paintParagraphFragment(
   }
 
   // Render each line with per-line floating margin calculation
-  const renderedInlineImageKeys = options.renderedInlineImageKeys ?? new Set<string>();
+  const renderedInlineImageKeys = config.renderedInlineImageKeys ?? new Set<string>();
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];

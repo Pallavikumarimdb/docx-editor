@@ -1,5 +1,5 @@
 /**
- * The flow — blocks and their measures in, positioned pages out.
+ * The flow — nodes and their metrics in, positioned pages out.
  *
  * This is a fold. The layout cursor (which page, which column, where the pen
  * sits) is a **value** threaded through the placement functions, not an object
@@ -16,21 +16,21 @@
  */
 
 import type {
-  FlowBlock,
+  ContentNode,
   ImageBlock,
-  ImageMeasure,
-  Layout,
-  LayoutOptions,
-  Measure,
+  ImageMetrics,
+  PageLayout,
+  LayoutConfig,
+  LayoutMetrics,
   Page,
   ParagraphBlock,
   ParagraphMetrics,
   SectionLayoutConfig,
-  TableMeasure,
+  TableMetrics,
   TextBoxBlock,
-  TextBoxMeasure,
+  TextBoxMetrics,
 } from './types';
-import { assertExhaustiveFlowBlock } from './types';
+import { assertExhaustiveContentNode } from './types';
 import { collectSectionConfigs } from './sectionPlan';
 import {
   FIT_TOLERANCE_PX,
@@ -55,38 +55,38 @@ import { balancedColumnBottom } from './columnBalancing';
 const DEFAULT_PAGE_GAP_PX = 24;
 
 /**
- * Flow measured blocks onto pages.
+ * Flow measured nodes onto pages.
  *
- * `blocks` and `measures` are index-aligned: `measures[i]` is how tall
- * `blocks[i]` is at the width it will be laid out in. Measurement has already
+ * `nodes` and `metrics` are index-aligned: `metrics[i]` is how tall
+ * `nodes[i]` is at the width it will be laid out in. Measurement has already
  * happened — this function never measures anything, which is what lets the
- * whole flow be tested with synthetic measures and no canvas.
+ * whole flow be tested with synthetic metrics and no canvas.
  *
  * @public
  */
 export function layOutPages(
-  blocks: FlowBlock[],
-  measures: Measure[],
-  options: LayoutOptions
-): Layout {
+  nodes: ContentNode[],
+  metrics: LayoutMetrics[],
+  config: LayoutConfig
+): PageLayout {
   const initial: SectionLayoutConfig = {
-    pageSize: options.pageSize,
-    margins: options.margins,
-    columns: options.columns,
+    pageSize: config.pageSize,
+    margins: config.margins,
+    columns: config.columns,
   };
   const final: SectionLayoutConfig = {
-    pageSize: options.finalPageSize ?? options.pageSize,
-    margins: options.finalMargins ?? options.margins,
-    columns: options.columns,
-    startType: options.bodyBreakType,
+    pageSize: config.finalPageSize ?? config.pageSize,
+    margins: config.finalMargins ?? config.margins,
+    columns: config.columns,
+    startType: config.bodyBreakType,
   };
 
-  const schedule = collectSectionConfigs(blocks, initial, final);
+  const schedule = collectSectionConfigs(nodes, initial, final);
 
   const ctx: FlowContext = {
-    blocks,
-    measures,
-    options,
+    nodes,
+    metrics,
+    config,
     pages: [],
     // The first section's geometry is the *first* schedule entry, which is the
     // one closed by the first break — not `initial`, which is only the
@@ -99,15 +99,15 @@ export function layOutPages(
   let cursor = startPage(ctx);
   let sectionIndex = 0;
 
-  for (let i = 0; i < blocks.length; i++) {
-    const block = blocks[i];
-    const measure = measures[i];
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    const nodeMetrics = metrics[i];
 
-    switch (block.kind) {
+    switch (node.kind) {
       case 'sectionBreak': {
         sectionIndex++;
         const next = schedule.configs[sectionIndex] ?? ctx.section;
-        const sectionEnd = schedule.breakIndices[sectionIndex] ?? blocks.length;
+        const sectionEnd = schedule.breakIndices[sectionIndex] ?? nodes.length;
         cursor = crossSectionBoundary(ctx, cursor, next, i + 1, sectionEnd);
         break;
       }
@@ -121,27 +121,27 @@ export function layOutPages(
         break;
 
       case 'paragraph':
-        cursor = placeParagraph(ctx, cursor, block, measure as ParagraphMetrics, i);
+        cursor = placeParagraph(ctx, cursor, node, nodeMetrics as ParagraphMetrics, i);
         break;
 
       case 'table':
-        cursor = layoutTable(ctx, cursor, block, measure as TableMeasure, i);
+        cursor = layoutTable(ctx, cursor, node, nodeMetrics as TableMetrics, i);
         break;
 
       case 'image':
-        cursor = placeImage(ctx, cursor, block, measure as ImageMeasure, i);
+        cursor = placeImage(ctx, cursor, node, nodeMetrics as ImageMetrics, i);
         break;
 
       case 'textBox':
-        cursor = placeTextBox(ctx, cursor, block, measure as TextBoxMeasure, i);
+        cursor = placeTextBox(ctx, cursor, node, nodeMetrics as TextBoxMetrics, i);
         break;
 
       default:
-        assertExhaustiveFlowBlock(block, 'layOutPages');
+        assertExhaustiveContentNode(node, 'layOutPages');
     }
   }
 
-  return finish(ctx, options);
+  return finish(ctx, config);
 }
 
 /**
@@ -206,7 +206,7 @@ function crossSectionBoundary(
         // sit side by side BELOW whatever single-column text precedes them.
         page.columnRegionTop = cursor.y;
 
-        const bottom = balancedColumnBottom(ctx.blocks, ctx.measures, sectionStart, sectionEnd, {
+        const bottom = balancedColumnBottom(ctx.nodes, ctx.metrics, sectionStart, sectionEnd, {
           top: cursor.y,
           bottom: page.size.h - page.margins.bottom - (page.footnoteReservedHeight ?? 0),
           columns: page.columns,
@@ -259,36 +259,36 @@ function crossSectionBoundary(
  */
 const MIN_LINES_EITHER_SIDE = 2;
 
-function widowControlEnabled(block: ParagraphBlock): boolean {
-  return block.attrs?.widowControl !== false;
+function widowControlEnabled(node: ParagraphBlock): boolean {
+  return node.attrs?.widowControl !== false;
 }
 
 function placeParagraph(
   ctx: FlowContext,
   cursorIn: LayoutCursor,
-  block: ParagraphBlock,
-  measure: ParagraphMetrics,
+  node: ParagraphBlock,
+  metrics: ParagraphMetrics,
   index: number
 ): LayoutCursor {
   // `w:pageBreakBefore` (§17.3.1.23) — start a new page even when this one has
   // room. Unless the page has nothing on it yet: the break has already happened,
   // and honouring it again would emit a blank page.
   let cursor = cursorIn;
-  if (block.attrs?.pageBreakBefore && !pageIsEmpty(ctx, cursor)) {
+  if (node.attrs?.pageBreakBefore && !pageIsEmpty(ctx, cursor)) {
     cursor = startPage(ctx, cursor.prev);
   }
 
   cursor = applyKeepNext(ctx, cursor, index);
 
-  const lines = measure.lines;
+  const lines = metrics.lines;
   if (lines.length === 0) {
-    return { ...cursor, prev: block };
+    return { ...cursor, prev: node };
   }
 
   // `w:keepLines` (§17.3.1.14) — keep the whole paragraph on one page, if it
   // can fit on one at all. Also best-effort; see the note above.
-  if (block.attrs?.keepLines) {
-    cursor = honourKeepLines(ctx, cursor, measure);
+  if (node.attrs?.keepLines) {
+    cursor = honourKeepLines(ctx, cursor, metrics);
   }
 
   let lineIndex = 0;
@@ -300,7 +300,7 @@ function placeParagraph(
     // `spacing.before` from every paragraph that widow control moved to the next
     // page — the commonest thing widow control does.
     const isFirstLine = lineIndex === 0;
-    const gap = isFirstLine ? collapsedGap(cursor.prev, block) : 0;
+    const gap = isFirstLine ? collapsedGap(cursor.prev, node) : 0;
     const top = cursor.y + gap;
 
     let count = countLinesThatFit(lines, lineIndex, region.bottom - top);
@@ -324,7 +324,7 @@ function placeParagraph(
       count = 1;
     }
 
-    count = applyWidowControl(block, lines, lineIndex, count, isFirstLine, ctx, cursor);
+    count = applyWidowControl(node, lines, lineIndex, count, isFirstLine, ctx, cursor);
     if (count === 0) {
       cursor = overflow(ctx, cursor);
       continue;
@@ -335,7 +335,7 @@ function placeParagraph(
 
     ctx.pages[cursor.pageIndex].fragments.push({
       kind: 'paragraph',
-      blockId: block.id,
+      nodeId: node.id,
       x: region.left,
       y: top,
       width: region.width,
@@ -345,10 +345,10 @@ function placeParagraph(
       columnIndex: cursor.columnIndex,
       ...(lineIndex > 0 ? { continuesFromPrev: true } : {}),
       ...(endLine < lines.length ? { continuesOnNext: true } : {}),
-      ...fragmentRange(block, measure, lineIndex, endLine),
+      ...fragmentRange(node, metrics, lineIndex, endLine),
     });
 
-    cursor = { ...cursor, y: top + height, prev: block };
+    cursor = { ...cursor, y: top + height, prev: node };
     lineIndex = endLine;
 
     if (lineIndex < lines.length) {
@@ -394,7 +394,7 @@ function sliceHeight(lines: ParagraphMetrics['lines'], from: number, to: number)
  * stranded line. Returns 0 to mean "move the whole thing to the next region".
  */
 function applyWidowControl(
-  block: ParagraphBlock,
+  node: ParagraphBlock,
   lines: ParagraphMetrics['lines'],
   from: number,
   count: number,
@@ -402,7 +402,7 @@ function applyWidowControl(
   ctx: FlowContext,
   cursor: LayoutCursor
 ): number {
-  if (!widowControlEnabled(block)) return count;
+  if (!widowControlEnabled(node)) return count;
 
   const remaining = lines.length - from;
   if (count >= remaining) return count; // No break here — nothing to strand.
@@ -433,10 +433,10 @@ function applyWidowControl(
 function honourKeepLines(
   ctx: FlowContext,
   cursor: LayoutCursor,
-  measure: ParagraphMetrics
+  metrics: ParagraphMetrics
 ): LayoutCursor {
   const region = currentRegion(ctx, cursor);
-  const total = sliceHeight(measure.lines, 0, measure.lines.length);
+  const total = sliceHeight(metrics.lines, 0, metrics.lines.length);
 
   if (total > region.bottom - region.top + FIT_TOLERANCE_PX) return cursor; // Never fits.
   if (total <= region.bottom - cursor.y + FIT_TOLERANCE_PX) return cursor; // Fits here.
@@ -451,26 +451,25 @@ function honourKeepLines(
  * The paragraph's own `docFrom`/`docTo` bracket the whole node, including its
  * boundary tokens. A slice that starts at line 0 owns the opening boundary, and
  * one that ends at the last line owns the closing one — so those ends take the
- * block's range. Every interior edge is derived from the line's run/char
+ * node's range. Every interior edge is derived from the line's run/char
  * address instead, which is what makes a continuation fragment's range cover
  * exactly the text it paints and nothing else.
  */
 function fragmentRange(
-  block: ParagraphBlock,
-  measure: ParagraphMetrics,
+  node: ParagraphBlock,
+  metrics: ParagraphMetrics,
   fromLine: number,
   toLine: number
 ): { docFrom?: number; docTo?: number } {
-  const lines = measure.lines;
+  const lines = metrics.lines;
 
   const docFrom =
     fromLine === 0
-      ? block.docFrom
-      : runPosition(block, lines[fromLine]?.fromRun, lines[fromLine]?.fromChar);
+      ? node.docFrom
+      : runPosition(node, lines[fromLine]?.fromRun, lines[fromLine]?.fromChar);
 
   const last = lines[toLine - 1];
-  const docTo =
-    toLine >= lines.length ? block.docTo : runPosition(block, last?.toRun, last?.toChar);
+  const docTo = toLine >= lines.length ? node.docTo : runPosition(node, last?.toRun, last?.toChar);
 
   const range: { docFrom?: number; docTo?: number } = {};
   if (docFrom !== undefined) range.docFrom = docFrom;
@@ -480,12 +479,12 @@ function fragmentRange(
 
 /** Document position of a `(run, char)` address inside a paragraph. */
 function runPosition(
-  block: ParagraphBlock,
+  node: ParagraphBlock,
   runIndex: number | undefined,
   charOffset: number | undefined
 ): number | undefined {
   if (runIndex === undefined || charOffset === undefined) return undefined;
-  const run = block.runs[runIndex];
+  const run = node.runs[runIndex];
   if (!run || run.docFrom === undefined) return undefined;
   return run.docFrom + charOffset;
 }
@@ -497,56 +496,56 @@ function runPosition(
 function placeImage(
   ctx: FlowContext,
   cursorIn: LayoutCursor,
-  block: ImageBlock,
-  measure: ImageMeasure,
+  node: ImageBlock,
+  metrics: ImageMetrics,
   index: number
 ): LayoutCursor {
   let cursor = applyKeepNext(ctx, cursorIn, index);
 
-  const anchored = block.anchor?.isAnchored === true;
+  const anchored = node.anchor?.isAnchored === true;
   let region = currentRegion(ctx, cursor);
-  let gap = collapsedGap(cursor.prev, block);
+  let gap = collapsedGap(cursor.prev, node);
 
-  if (!anchored && !fits(measure.height, cursor.y + gap, region) && !regionIsEmpty(ctx, cursor)) {
+  if (!anchored && !fits(metrics.height, cursor.y + gap, region) && !regionIsEmpty(ctx, cursor)) {
     cursor = overflow(ctx, cursor);
     region = currentRegion(ctx, cursor);
     gap = 0;
   }
 
-  const y = anchored ? region.top + (block.anchor?.offsetV ?? 0) : cursor.y + gap;
+  const y = anchored ? region.top + (node.anchor?.offsetV ?? 0) : cursor.y + gap;
 
   ctx.pages[cursor.pageIndex].fragments.push({
     kind: 'image',
-    blockId: block.id,
-    x: region.left + (anchored ? (block.anchor?.offsetH ?? 0) : 0),
+    nodeId: node.id,
+    x: region.left + (anchored ? (node.anchor?.offsetH ?? 0) : 0),
     y,
-    width: measure.width,
-    height: measure.height,
+    width: metrics.width,
+    height: metrics.height,
     columnIndex: cursor.columnIndex,
     ...(anchored ? { isAnchored: true } : {}),
-    ...(block.anchor?.behindDoc ? { zIndex: -1 } : {}),
-    ...(block.docFrom !== undefined ? { docFrom: block.docFrom } : {}),
-    ...(block.docTo !== undefined ? { docTo: block.docTo } : {}),
+    ...(node.anchor?.behindDoc ? { zIndex: -1 } : {}),
+    ...(node.docFrom !== undefined ? { docFrom: node.docFrom } : {}),
+    ...(node.docTo !== undefined ? { docTo: node.docTo } : {}),
   });
 
   // An anchored image is painted out of flow — it never moves the pen.
-  return anchored ? { ...cursor, prev: block } : { ...cursor, y: y + measure.height, prev: block };
+  return anchored ? { ...cursor, prev: node } : { ...cursor, y: y + metrics.height, prev: node };
 }
 
 function placeTextBox(
   ctx: FlowContext,
   cursorIn: LayoutCursor,
-  block: TextBoxBlock,
-  measure: TextBoxMeasure,
+  node: TextBoxBlock,
+  metrics: TextBoxMetrics,
   index: number
 ): LayoutCursor {
-  const floating = isFloatingTextBoxBlock(block);
+  const floating = isFloatingTextBoxBlock(node);
   let cursor = floating ? cursorIn : applyKeepNext(ctx, cursorIn, index);
 
   let region = currentRegion(ctx, cursor);
-  let gap = floating ? 0 : collapsedGap(cursor.prev, block);
+  let gap = floating ? 0 : collapsedGap(cursor.prev, node);
 
-  if (!floating && !fits(measure.height, cursor.y + gap, region) && !regionIsEmpty(ctx, cursor)) {
+  if (!floating && !fits(metrics.height, cursor.y + gap, region) && !regionIsEmpty(ctx, cursor)) {
     cursor = overflow(ctx, cursor);
     region = currentRegion(ctx, cursor);
     gap = 0;
@@ -556,20 +555,20 @@ function placeTextBox(
 
   ctx.pages[cursor.pageIndex].fragments.push({
     kind: 'textBox',
-    blockId: block.id,
+    nodeId: node.id,
     x: region.left,
     y,
-    width: measure.width,
-    height: measure.height,
+    width: metrics.width,
+    height: metrics.height,
     columnIndex: cursor.columnIndex,
-    ...(floating ? { isFloating: true, zIndex: textBoxZIndex(block) } : {}),
-    ...(block.docFrom !== undefined ? { docFrom: block.docFrom } : {}),
-    ...(block.docTo !== undefined ? { docTo: block.docTo } : {}),
+    ...(floating ? { isFloating: true, zIndex: textBoxZIndex(node) } : {}),
+    ...(node.docFrom !== undefined ? { docFrom: node.docFrom } : {}),
+    ...(node.docTo !== undefined ? { docTo: node.docTo } : {}),
   });
 
   // A floating box is placed by its own anchor (the painter resolves that) and
   // never advances the body pen — that is what makes text flow past it.
-  return floating ? { ...cursor, prev: block } : { ...cursor, y: y + measure.height, prev: block };
+  return floating ? { ...cursor, prev: node } : { ...cursor, y: y + metrics.height, prev: node };
 }
 
 /**
@@ -580,9 +579,9 @@ function placeTextBox(
  * above the body — high enough that the box isn't buried by the text it displaces,
  * low enough to stay under the editor's own overlays.
  */
-function textBoxZIndex(block: TextBoxBlock): number {
-  if (block.wrapType === 'behind') return -1;
-  if (block.wrapType === 'inFront') return 2;
+function textBoxZIndex(node: TextBoxBlock): number {
+  if (node.wrapType === 'behind') return -1;
+  if (node.wrapType === 'inFront') return 2;
   return 1;
 }
 
@@ -594,8 +593,8 @@ function fits(height: number, top: number, region: ColumnRegion): boolean {
 // Finishing
 // ---------------------------------------------------------------------------
 
-function finish(ctx: FlowContext, options: LayoutOptions): Layout {
-  const pageGap = options.pageGap ?? DEFAULT_PAGE_GAP_PX;
+function finish(ctx: FlowContext, config: LayoutConfig): PageLayout {
+  const pageGap = config.pageGap ?? DEFAULT_PAGE_GAP_PX;
 
   const pages: Page[] = ctx.pages.map((draft) => ({
     number: draft.number,
@@ -613,7 +612,7 @@ function finish(ctx: FlowContext, options: LayoutOptions): Layout {
 
   return {
     pages,
-    pageSize: options.pageSize,
+    pageSize: config.pageSize,
     pageGap,
     totalHeight,
   };

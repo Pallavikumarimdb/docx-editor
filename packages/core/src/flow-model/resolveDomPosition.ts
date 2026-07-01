@@ -308,7 +308,7 @@ function caretRectFor(container: HTMLElement, pmPos: number): CaretRect | null {
   if (empty) return empty;
 
   // 3. A position with no run of its own: the end of a paragraph, a boundary
-  //    between blocks. Take the tightest painted range that brackets it, and put
+  //    between nodes. Take the tightest painted range that brackets it, and put
   //    the caret at whichever edge the position is nearer.
   const bracketing = tightestRangeContaining(container, pmPos);
   if (bracketing) {

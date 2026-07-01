@@ -1,5 +1,5 @@
 /**
- * Layout Bridge — measure, hit-test, and map between PM positions and pixels.
+ * PageLayout Bridge — measure, hit-test, and map between PM positions and pixels.
  *
  * @experimental Internal layer between the layout engine and rendering.
  * The named exports below are the public contract for adapter authors,
@@ -9,14 +9,14 @@
  * @public
  */
 
-// PM doc → flow blocks
+// PM doc → flow nodes
 export {
   buildBoxTree,
   resolveListTemplate,
   resetBoxIds,
   convertBorderSpecToLayout,
 } from './buildBoxTree';
-export type { ToFlowBlocksOptions } from './buildBoxTree';
+export type { BuildBoxTreeOptions } from './buildBoxTree';
 
 // Table grid + width helpers used by the measurer, painter, and pageComposer.
 export {
@@ -35,26 +35,26 @@ export { isBlockLikeFloatingTable, demoteBlockLikeFloatingTables } from './float
 // Measurement (text + paragraph + caches)
 export * from './metrics';
 
-// Hit testing — pure-geometry, on a `Layout` value
+// Hit testing — pure-geometry, on a `PageLayout` value
 export {
-  pointerHitResolve,
-  locatePageHit,
-  resolveFragmentHit,
-  resolveImageFragmentHit,
-  resolveTableCellHit,
+  pointerTargetResolve,
+  locatePageTarget,
+  resolveFragmentTarget,
+  resolveImageFragmentTarget,
+  resolveTableCellTarget,
   pageTopOffset,
   pageIndexForY,
   getTotalDocumentHeight,
   getScrollYForPage,
   getPageBounds,
-} from './pointerHitResolve';
+} from './pointerTargetResolve';
 export type {
   Point,
-  PageHit,
-  FragmentHit,
-  TableCellHit,
-  PointerHitResult,
-} from './pointerHitResolve';
+  PageTarget,
+  FragmentTarget,
+  TableCellTarget,
+  PointerTargetResult,
+} from './pointerTargetResolve';
 
 // Click → PM position
 //

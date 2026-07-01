@@ -20,7 +20,7 @@
  * @packageDocumentation
  */
 
-import type { ColumnLayout, FlowBlock, Measure } from './types';
+import type { ColumnLayout, ContentNode, LayoutMetrics } from './types';
 import { collapsedGap } from './blockSpacingRules';
 
 /**
@@ -35,7 +35,7 @@ export interface BalancingRegion {
 }
 
 /**
- * The bottom the flow should use so `blocks[start..end)` come out balanced
+ * The bottom the flow should use so `nodes[start..end)` come out balanced
  * across `region.columns`, or `null` to leave the region alone.
  *
  * Declines when:
@@ -50,8 +50,8 @@ export interface BalancingRegion {
  *  - the balanced height isn't actually shorter than the region. Nothing to do.
  */
 export function balancedColumnBottom(
-  blocks: FlowBlock[],
-  measures: Measure[],
+  nodes: ContentNode[],
+  metrics: LayoutMetrics[],
   start: number,
   end: number,
   region: BalancingRegion
@@ -59,7 +59,7 @@ export function balancedColumnBottom(
   const count = region.columns.count;
   if (count <= 1) return null;
 
-  const height = paragraphOnlyHeight(blocks, measures, start, end);
+  const height = paragraphOnlyHeight(nodes, metrics, start, end);
   if (height === null || height <= 0) return null;
 
   const regionHeight = region.bottom - region.top;
@@ -73,29 +73,29 @@ export function balancedColumnBottom(
 }
 
 /**
- * Total flowed height of `blocks[start..end)`, or null if the stretch holds
+ * Total flowed height of `nodes[start..end)`, or null if the stretch holds
  * something that isn't a paragraph.
  *
  * A trailing section break is not content and doesn't disqualify the stretch —
  * it's the very thing that delimits it.
  */
 function paragraphOnlyHeight(
-  blocks: FlowBlock[],
-  measures: Measure[],
+  nodes: ContentNode[],
+  metrics: LayoutMetrics[],
   start: number,
   end: number
 ): number | null {
   let total = 0;
   let sawText = false;
-  let prev: FlowBlock | null = null;
+  let prev: ContentNode | null = null;
 
   for (let i = start; i < end; i++) {
-    const block = blocks[i];
-    const measure = measures[i];
+    const node = nodes[i];
+    const nodeMetrics = metrics[i];
 
-    if (block.kind === 'sectionBreak') continue;
+    if (node.kind === 'sectionBreak') continue;
 
-    if (block.kind !== 'paragraph' || measure?.kind !== 'paragraph') return null;
+    if (node.kind !== 'paragraph' || nodeMetrics?.kind !== 'paragraph') return null;
 
     // Measure the stretch exactly the way the flow will lay it out: the
     // collapsed gap between neighbours, plus the paragraph's own lines.
@@ -105,14 +105,14 @@ function paragraphOnlyHeight(
     // adjacent spacing where the flow collapses it. A balanced height computed
     // from the wrong total puts the column bottom in the wrong place, which is
     // worse than not balancing at all.
-    total += collapsedGap(prev, block);
-    total += measure.lines.reduce(
+    total += collapsedGap(prev, node);
+    total += nodeMetrics.lines.reduce(
       (h, line) => h + line.lineHeight + (line.floatSkipBefore ?? 0),
       0
     );
 
-    sawText ||= measure.lines.length > 0;
-    prev = block;
+    sawText ||= nodeMetrics.lines.length > 0;
+    prev = node;
   }
 
   return sawText ? total : null;

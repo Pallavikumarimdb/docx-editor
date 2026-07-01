@@ -4,7 +4,7 @@
  * Both React's PagedEditor and Vue's useDocxEditor measure tables the
  * same way: resolve column widths through `tableWidthUtils`, track
  * column occupancy across vertically merged cells, then call back into
- * the adapter's `measureBlock` for each cell's contained blocks.
+ * the adapter's `measureBlock` for each cell's contained nodes.
  *
  * This module lives in core (not in either adapter) so a fix on one
  * side automatically applies to both. The recursive cell-content
@@ -14,11 +14,11 @@
  */
 
 import type {
-  FlowBlock,
-  Measure,
+  ContentNode,
+  LayoutMetrics,
   TableBlock,
   TableCell,
-  TableMeasure,
+  TableMetrics,
 } from '../pagination-model/types';
 import { resolveCellGrid, resolveTableColumnWidths, resolveTableWidthPx } from './tableWidthUtils';
 
@@ -35,7 +35,10 @@ const DEFAULT_CELL_PADDING_Y = 0;
  * a full text line — matching Word's per-cell layout. Everything else
  * uses the measured `totalHeight` / `height`.
  */
-export function measureTableCellBlockVisualHeight(block: FlowBlock, blockMeasure: Measure): number {
+export function measureTableCellBlockVisualHeight(
+  block: ContentNode,
+  blockMeasure: LayoutMetrics
+): number {
   if (block.kind !== 'paragraph' || blockMeasure.kind !== 'paragraph') {
     if ('totalHeight' in blockMeasure) return blockMeasure.totalHeight;
     if ('height' in blockMeasure) return blockMeasure.height;
@@ -69,7 +72,7 @@ function getTableCellVerticalBorderHeight(cell: TableCell | undefined): number {
 }
 
 /**
- * Measure a `TableBlock` against a content-width budget.
+ * LayoutMetrics a `TableBlock` against a content-width budget.
  *
  * `measureBlock` is the per-cell-content measurement callback the
  * adapter uses for everything inside a cell. The adapter passes its
@@ -78,8 +81,8 @@ function getTableCellVerticalBorderHeight(cell: TableCell | undefined): number {
 export function measureTable(
   tableBlock: TableBlock,
   contentWidth: number,
-  measureBlock: (block: FlowBlock, contentWidth: number) => Measure
-): TableMeasure {
+  measureBlock: (block: ContentNode, contentWidth: number) => LayoutMetrics
+): TableMetrics {
   const explicitWidthPx = resolveTableWidthPx(tableBlock.width, tableBlock.widthType, contentWidth);
   const targetWidth = explicitWidthPx ?? contentWidth;
   const columnWidths = resolveTableColumnWidths(tableBlock, contentWidth);
@@ -113,7 +116,7 @@ export function measureTable(
         const cellContentWidth = Math.max(1, cellWidth - padLeft - padRight);
 
         return {
-          blocks: cell.blocks.map((b) => measureBlock(b, cellContentWidth)),
+          metrics: cell.nodes.map((b) => measureBlock(b, cellContentWidth)),
           width: cellWidth,
           height: 0,
           colSpan: cell.colSpan,
@@ -140,7 +143,7 @@ export function measureTable(
     for (let cellIdx = 0; cellIdx < row.cells.length; cellIdx++) {
       const cell = row.cells[cellIdx];
       const sourceCell = sourceRowCells?.[cellIdx];
-      // Stack the cell's blocks exactly as the painter (renderCellContent) does:
+      // Stack the cell's nodes exactly as the painter (renderCellContent) does:
       // adjacent paragraphs' after/before spacing collapses to the larger of the
       // two (CSS margin-collapse — the same rule the body pageComposer uses). The
       // measured paragraph height already bundles before+after, so strip them
@@ -150,9 +153,9 @@ export function measureTable(
       // page break).
       let contentHeight = 0;
       let prevAfter = 0;
-      for (let blockIdx = 0; blockIdx < cell.blocks.length; blockIdx++) {
-        const sourceBlock = sourceCell?.blocks[blockIdx];
-        const blockMeasure = cell.blocks[blockIdx];
+      for (let blockIdx = 0; blockIdx < cell.metrics.length; blockIdx++) {
+        const sourceBlock = sourceCell?.nodes[blockIdx];
+        const blockMeasure = cell.metrics[blockIdx];
         if (!sourceBlock || !blockMeasure) continue;
         const visual = measureTableCellBlockVisualHeight(sourceBlock, blockMeasure);
         const spacing = sourceBlock.kind === 'paragraph' ? sourceBlock.attrs?.spacing : undefined;
@@ -231,5 +234,5 @@ export function measureTable(
   const totalHeight = rows.reduce((h, r) => h + r.height, 0);
   const totalWidth = columnWidths.reduce((w, cw) => w + cw, 0) || explicitWidthPx || contentWidth;
 
-  return { kind: 'table', rows, columnWidths, totalWidth, totalHeight } as TableMeasure;
+  return { kind: 'table', rows, columnWidths, totalWidth, totalHeight } as TableMetrics;
 }

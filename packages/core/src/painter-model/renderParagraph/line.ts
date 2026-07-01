@@ -280,7 +280,7 @@ function createTextMeasurer(
     // Font resolver for category-appropriate fallback stacks, matching
     // textMetrics.ts. Include weight + style: `styleRunElement` sets
     // `font-weight: bold` / `font-style: italic` on the painted span, but
-    // if the canvas font string omits them the browser measures the
+    // if the canvas font string omits them the browser metrics the
     // *regular* face. For TOC entries (whose runs carry inline <w:b/>)
     // that under-counts the painted width by a few px per run and the
     // page-number drifts off the right margin.
@@ -302,7 +302,7 @@ function createTextMeasurer(
  * @param line - The line measurement
  * @param alignment - Text alignment
  * @param doc - Document to create elements in
- * @param options - Additional options for justify calculation
+ * @param config - Additional config for justify calculation
  * @returns The line DOM element
  */
 export function paintLine(
@@ -310,7 +310,7 @@ export function paintLine(
   line: MeasuredLine,
   alignment: 'left' | 'center' | 'right' | 'justify' | undefined,
   doc: Document,
-  options?: RenderLineOptions
+  config?: RenderLineOptions
 ): HTMLElement {
   const lineEl = doc.createElement('div');
   lineEl.className = PARAGRAPH_CLASS_NAMES.line;
@@ -373,17 +373,17 @@ export function paintLine(
   const isJustify = alignment === 'justify';
   let shouldJustify = false;
 
-  if (isJustify && options) {
+  if (isJustify && config) {
     // Justify all lines except the last line (unless it ends with line break)
-    shouldJustify = !options.isLastLine || options.paragraphEndsWithLineBreak;
+    shouldJustify = !config.isLastLine || config.paragraphEndsWithLineBreak;
 
     if (shouldJustify) {
       // Use CSS text-align: justify with text-align-last: justify
-      // This forces the browser to justify even single-line blocks
+      // This forces the browser to justify even single-line nodes
       lineEl.style.textAlign = 'justify';
       lineEl.style.textAlignLast = 'justify';
       // Set explicit width so browser knows how wide to justify to
-      lineEl.style.width = `${options.availableWidth}px`;
+      lineEl.style.width = `${config.availableWidth}px`;
     }
   }
 
@@ -409,13 +409,13 @@ export function paintLine(
 
   if (hasTabRuns) {
     // Convert tab stops from layout engine format to tab calculator format
-    const explicitStops = options?.tabMarks?.map(convertTabMarkToCalc);
+    const explicitStops = config?.tabMarks?.map(convertTabMarkToCalc);
 
     // Convert left indent from pixels to twips for tab calculation
     // The leftIndent serves two purposes in the tab calculator:
     // 1. For hanging indent paragraphs, it adds an implicit tab stop at the left margin
     // 2. Default tab stops are generated at regular intervals from the left margin
-    const leftIndentTwips = options?.leftIndentPx ? Math.round(options.leftIndentPx * 15) : 0;
+    const leftIndentTwips = config?.leftIndentPx ? Math.round(config.leftIndentPx * 15) : 0;
 
     tabRuler = {
       explicitStops,
@@ -430,14 +430,14 @@ export function paintLine(
   // Tab stops are measured from the content area left edge (page text area)
   // We need to track where on that coordinate system our text is
   let currentX = 0;
-  const leftIndentPx = options?.leftIndentPx ?? 0;
+  const leftIndentPx = config?.leftIndentPx ?? 0;
 
-  if (options?.isFirstLine) {
+  if (config?.isFirstLine) {
     // First line position depends on first-line indent or hanging indent:
     // - With hanging indent (firstLineIndentPx < 0): starts at leftIndent + firstLineIndent
     // - With first-line indent (firstLineIndentPx > 0): starts at leftIndent + firstLineIndent
     // - No indent: starts at leftIndent
-    const firstLineIndentPx = options?.firstLineIndentPx ?? 0;
+    const firstLineIndentPx = config?.firstLineIndentPx ?? 0;
     currentX = leftIndentPx + firstLineIndentPx;
   } else {
     // Non-first lines start at the left indent position
@@ -449,16 +449,16 @@ export function paintLine(
     const run = runsForLine[i];
 
     if (isTabRun(run) && tabRuler) {
-      // Measure the content after this tab so end/center/decimal stops can
+      // LayoutMetrics the content after this tab so end/center/decimal stops can
       // anchor it to the stop. Per-run measurement (not a single-font pass)
       // keeps the tab width accurate when trailing runs differ in font/size.
       const followingWidth = measureFollowingContentWidth(
         runsForLine,
         i,
         measureText,
-        options?.context
+        config?.context
       );
-      const followingText = getTextAfterTab(runsForLine, i, options?.context);
+      const followingText = getTextAfterTab(runsForLine, i, config?.context);
       const decimalIndex = followingText.indexOf('.');
       const decimalPrefixWidth =
         decimalIndex >= 0 ? measureText(followingText.slice(0, decimalIndex)) : 0;
@@ -489,7 +489,7 @@ export function paintLine(
       // Right-tab anchor (TOC pattern): when an end-aligned tab's stop is at
       // the line's right edge, let flex layout pin the trailing content there
       // (tab gets flex: 1) — sidesteps canvas-vs-DOM measurement drift.
-      const lineRightEdgeX = options?.lineRightEdgePx;
+      const lineRightEdgeX = config?.lineRightEdgePx;
       const followingWidthForCheck = followingWidth;
       // Gated to the last tab on the line — a trailing tab after a flex-anchored
       // item would push the anchor left.
@@ -519,15 +519,15 @@ export function paintLine(
         lineEl.style.textIndent = '0';
         lineEl.dataset.flexLine = 'true';
         if (
-          options?.isFirstLine &&
-          options.firstLineIndentPx &&
-          options.firstLineIndentPx < 0 &&
+          config?.isFirstLine &&
+          config.firstLineIndentPx &&
+          config.firstLineIndentPx < 0 &&
           lineEl.firstElementChild instanceof HTMLElement
         ) {
           // Re-apply the hanging indent (text-indent doesn't work for flex
           // items). Negative margin-left on the first flex item pulls it back
           // into the padding area, matching the original text-indent behaviour.
-          lineEl.firstElementChild.style.marginLeft = `${options.firstLineIndentPx}px`;
+          lineEl.firstElementChild.style.marginLeft = `${config.firstLineIndentPx}px`;
         }
 
         // The tab — flex-grow to fill remaining line space after the trailing
@@ -545,21 +545,21 @@ export function paintLine(
           const next = runsForLine[j];
           if (isTabRun(next) || isLineBreakRun(next)) break;
           if (isTextRun(next)) {
-            lineEl.appendChild(paintTextRun(next, doc, options?.context?.resolvedCommentIds));
-          } else if (isFieldRun(next) && options?.context) {
-            lineEl.appendChild(paintFieldRun(next, doc, options.context));
+            lineEl.appendChild(paintTextRun(next, doc, config?.context?.resolvedCommentIds));
+          } else if (isFieldRun(next) && config?.context) {
+            lineEl.appendChild(paintFieldRun(next, doc, config.context));
           } else if (isImageRun(next)) {
             // Floating images render at the page level (or in dedicated cell
             // layers) — skip here to avoid double-rendering, matching the
             // main loop's behaviour.
             if (isFloatingImageRun(next)) continue;
             const imageKey = getInlineImageRunKey(next);
-            if (!options?.renderedInlineImageKeys?.has(imageKey)) {
-              options?.renderedInlineImageKeys?.add(imageKey);
+            if (!config?.renderedInlineImageKeys?.has(imageKey)) {
+              config?.renderedInlineImageKeys?.add(imageKey);
               lineEl.appendChild(paintImageRun(next, doc));
             }
           } else {
-            lineEl.appendChild(paintRun(next, doc, options?.context));
+            lineEl.appendChild(paintRun(next, doc, config?.context));
           }
         }
 
@@ -579,7 +579,7 @@ export function paintLine(
       lineEl.appendChild(tabEl);
       currentX += tabWidth;
     } else if (isTextRun(run)) {
-      const runEl = paintTextRun(run, doc, options?.context?.resolvedCommentIds);
+      const runEl = paintTextRun(run, doc, config?.context?.resolvedCommentIds);
 
       // For highlighted runs, extend background to fill the full line height.
       // Inline elements' background only covers the content area (font ascent+descent),
@@ -598,7 +598,7 @@ export function paintLine(
 
       lineEl.appendChild(runEl);
 
-      // Measure text width for accurate tab position tracking
+      // LayoutMetrics text width for accurate tab position tracking
       const fontSize = run.fontSize || 11;
       const fontFamily = run.fontFamily || 'Calibri';
       currentX += measureText(run.text, fontSize, fontFamily, run.bold, run.italic);
@@ -611,10 +611,10 @@ export function paintLine(
         continue;
       }
       const imageKey = getInlineImageRunKey(run);
-      if (options?.renderedInlineImageKeys?.has(imageKey)) {
+      if (config?.renderedInlineImageKeys?.has(imageKey)) {
         continue;
       }
-      options?.renderedInlineImageKeys?.add(imageKey);
+      config?.renderedInlineImageKeys?.add(imageKey);
       // Inline or block image - render in the text flow
       const runEl = paintImageRun(run, doc);
       lineEl.appendChild(runEl);
@@ -625,20 +625,20 @@ export function paintLine(
     } else if (isLineBreakRun(run)) {
       const runEl = paintLineBreakRun(run, doc);
       lineEl.appendChild(runEl);
-    } else if (isFieldRun(run) && options?.context) {
+    } else if (isFieldRun(run) && config?.context) {
       // Render field run with context for PAGE/NUMPAGES substitution
-      const runEl = paintFieldRun(run, doc, options.context);
+      const runEl = paintFieldRun(run, doc, config.context);
       lineEl.appendChild(runEl);
       // Estimate field text width for tab calculations
       let fieldText = run.fallback ?? '';
-      if (run.fieldType === 'PAGE') fieldText = String(options.context.pageNumber);
-      else if (run.fieldType === 'NUMPAGES') fieldText = String(options.context.totalPages);
+      if (run.fieldType === 'PAGE') fieldText = String(config.context.pageNumber);
+      else if (run.fieldType === 'NUMPAGES') fieldText = String(config.context.totalPages);
       const fontSize = run.fontSize || 11;
       const fontFamily = run.fontFamily || 'Calibri';
       currentX += measureText(fieldText, fontSize, fontFamily, run.bold, run.italic);
     } else {
       // Fallback for unknown run types
-      const runEl = paintRun(run, doc, options?.context);
+      const runEl = paintRun(run, doc, config?.context);
       lineEl.appendChild(runEl);
     }
   }

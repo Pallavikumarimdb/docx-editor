@@ -24,28 +24,28 @@ type FullPageOptions = RenderPageOptions & {
 };
 
 /**
- * Build a RenderContext and resolved page options (with footnotes) for a page.
+ * Build a RenderContext and resolved page config (with footnotes) for a page.
  * Centralises logic shared by populatePageShell, repopulatePageContent, and the eager render path.
  */
 function buildPageRenderArgs(
   page: Page,
   totalPages: number,
-  options: FullPageOptions
+  config: FullPageOptions
 ): { context: RenderContext; pageOptions: RenderPageOptions } {
   const context: RenderContext = {
     pageNumber: page.number,
     totalPages,
     section: 'body',
-    resolvedCommentIds: options.resolvedCommentIds,
+    resolvedCommentIds: config.resolvedCommentIds,
   };
-  const pageOptions: RenderPageOptions = { ...options };
+  const pageOptions: RenderPageOptions = { ...config };
   // Per-page header/footer selection when titlePg is enabled
-  if (options.titlePg && page.number === 1) {
-    pageOptions.headerContent = options.firstPageHeaderContent;
-    pageOptions.footerContent = options.firstPageFooterContent;
+  if (config.titlePg && page.number === 1) {
+    pageOptions.headerContent = config.firstPageHeaderContent;
+    pageOptions.footerContent = config.firstPageFooterContent;
   }
-  if (options.footnotesByPage) {
-    const fns = options.footnotesByPage.get(page.number);
+  if (config.footnotesByPage) {
+    const fns = config.footnotesByPage.get(page.number);
     if (fns && fns.length > 0) {
       (pageOptions as RenderPageOptions & { footnoteArea?: FootnoteRenderItem[] }).footnoteArea =
         fns;
@@ -89,7 +89,7 @@ function computePageFingerprint(page: Page): string {
 
   // Each fragment's stable properties
   for (const frag of page.fragments) {
-    let fp = `${frag.kind}:${frag.blockId},${frag.x},${frag.y},${frag.width},${frag.height}`;
+    let fp = `${frag.kind}:${frag.nodeId},${frag.x},${frag.y},${frag.width},${frag.height}`;
     if (frag.docFrom !== undefined) fp += `,ps:${frag.docFrom}`;
     if (frag.docTo !== undefined) fp += `,pe:${frag.docTo}`;
 
@@ -106,52 +106,52 @@ function computePageFingerprint(page: Page): string {
 }
 
 /**
- * Compute a hash for render options that affect all pages globally.
+ * Compute a hash for render config that affect all pages globally.
  * When this changes, all pages need a full re-render.
  */
-function computeOptionsHash(options: RenderPageOptions): string {
+function computeOptionsHash(config: RenderPageOptions): string {
   const parts: string[] = [];
 
   // Header/footer content changes affect all pages
-  if (options.headerContent) {
+  if (config.headerContent) {
     parts.push(
-      `hdr:${options.headerContent.blocks.length},${options.headerContent.height},${
-        options.headerContent.visualTop ?? 0
-      },${options.headerContent.visualBottom ?? options.headerContent.height}`
+      `hdr:${config.headerContent.nodes.length},${config.headerContent.height},${
+        config.headerContent.visualTop ?? 0
+      },${config.headerContent.visualBottom ?? config.headerContent.height}`
     );
   }
-  if (options.footerContent) {
+  if (config.footerContent) {
     parts.push(
-      `ftr:${options.footerContent.blocks.length},${options.footerContent.height},${
-        options.footerContent.visualTop ?? 0
-      },${options.footerContent.visualBottom ?? options.footerContent.height}`
+      `ftr:${config.footerContent.nodes.length},${config.footerContent.height},${
+        config.footerContent.visualTop ?? 0
+      },${config.footerContent.visualBottom ?? config.footerContent.height}`
     );
   }
-  if (options.firstPageHeaderContent) {
+  if (config.firstPageHeaderContent) {
     parts.push(
-      `fp-hdr:${options.firstPageHeaderContent.blocks.length},${options.firstPageHeaderContent.height}`
+      `fp-hdr:${config.firstPageHeaderContent.nodes.length},${config.firstPageHeaderContent.height}`
     );
   }
-  if (options.firstPageFooterContent) {
+  if (config.firstPageFooterContent) {
     parts.push(
-      `fp-ftr:${options.firstPageFooterContent.blocks.length},${options.firstPageFooterContent.height}`
+      `fp-ftr:${config.firstPageFooterContent.nodes.length},${config.firstPageFooterContent.height}`
     );
   }
-  if (options.titlePg) parts.push('titlePg');
+  if (config.titlePg) parts.push('titlePg');
 
   // Theme changes
-  if (options.theme) {
-    parts.push(`thm:${options.theme.name ?? 'default'}`);
+  if (config.theme) {
+    parts.push(`thm:${config.theme.name ?? 'default'}`);
   }
 
   // Page border changes
-  if (options.pageBorders) {
-    parts.push(`pb:${JSON.stringify(options.pageBorders)}`);
+  if (config.pageBorders) {
+    parts.push(`pb:${JSON.stringify(config.pageBorders)}`);
   }
 
   // Header/footer distances
-  if (options.headerDistance !== undefined) parts.push(`hd:${options.headerDistance}`);
-  if (options.footerDistance !== undefined) parts.push(`fd:${options.footerDistance}`);
+  if (config.headerDistance !== undefined) parts.push(`hd:${config.headerDistance}`);
+  if (config.footerDistance !== undefined) parts.push(`fd:${config.footerDistance}`);
 
   return parts.join('|');
 }
@@ -190,16 +190,16 @@ export type RenderPagesUpdateKind = 'incremental' | 'full';
 export function paintPages(
   pages: Page[],
   container: HTMLElement,
-  options: RenderPageOptions & {
+  config: RenderPageOptions & {
     pageGap?: number;
     footnotesByPage?: Map<number, FootnoteRenderItem[]>;
   } = {}
 ): RenderPagesUpdateKind {
   const totalPages = pages.length;
-  const pageGap = options.pageGap ?? 24;
+  const pageGap = config.pageGap ?? 24;
   const pc = container as PageContainer;
   const prevState = pc.__pageRenderState;
-  const currentOptionsHash = computeOptionsHash(options);
+  const currentOptionsHash = computeOptionsHash(config);
   const useVirtualization = totalPages >= VIRTUALIZATION_THRESHOLD;
 
   // Determine if we can do an incremental update
@@ -247,7 +247,7 @@ export function paintPages(
 
         if (data.rendered) {
           // Surgically replace only the content area, preserving header/footer
-          repopulatePageContent(shell, prevDataMap, totalPages, options);
+          repopulatePageContent(shell, prevDataMap, totalPages, config);
         }
         // If not rendered, it will be populated when it scrolls into view
       }
@@ -256,20 +256,20 @@ export function paintPages(
       prev.fingerprint = newFp;
 
       // Update page styles in case size changed
-      applyPageStyles(shell, pages[i].size.w, pages[i].size.h, options);
+      applyPageStyles(shell, pages[i].size.w, pages[i].size.h, config);
       shell.dataset.pageNumber = String(pages[i].number);
     }
 
     // Handle new pages (document grew)
     if (pages.length > prevShells.length) {
-      const doc = options.document ?? document;
+      const doc = config.document ?? document;
       for (let i = prevShells.length; i < pages.length; i++) {
         const page = pages[i];
         const pageEl = doc.createElement('div');
-        pageEl.className = options.pageClassName ?? PAGE_CLASS_NAMES.page;
+        pageEl.className = config.pageClassName ?? PAGE_CLASS_NAMES.page;
         pageEl.dataset.pageNumber = String(page.number);
         pageEl.dataset.pageIndex = String(i);
-        applyPageStyles(pageEl, page.size.w, page.size.h, options);
+        applyPageStyles(pageEl, page.size.w, page.size.h, config);
         container.appendChild(pageEl);
 
         prevShells.push({ element: pageEl, fingerprint: newFingerprints[i] });
@@ -302,9 +302,9 @@ export function paintPages(
       }
     }
 
-    // Update stored state with fresh options (blockLookup, footnotes, etc.)
+    // Update stored state with fresh config (nodeLookup, footnotes, etc.)
     prevState.totalPages = totalPages;
-    prevState.currentOptions = options;
+    prevState.currentOptions = config;
 
     return 'incremental';
   }
@@ -334,18 +334,18 @@ export function paintPages(
 
     if (!useVirtualization) {
       // Small document: render all pages eagerly
-      const { context, pageOptions } = buildPageRenderArgs(page, totalPages, options);
+      const { context, pageOptions } = buildPageRenderArgs(page, totalPages, config);
       const pageEl = paintPage(page, context, pageOptions);
       container.appendChild(pageEl);
       pageShells.push(pageEl);
     } else {
       // Large document: create lightweight shell with correct dimensions
-      const doc = options.document ?? document;
+      const doc = config.document ?? document;
       const pageEl = doc.createElement('div');
-      pageEl.className = options.pageClassName ?? PAGE_CLASS_NAMES.page;
+      pageEl.className = config.pageClassName ?? PAGE_CLASS_NAMES.page;
       pageEl.dataset.pageNumber = String(page.number);
       pageEl.dataset.pageIndex = String(i);
-      applyPageStyles(pageEl, page.size.w, page.size.h, options);
+      applyPageStyles(pageEl, page.size.w, page.size.h, config);
       container.appendChild(pageEl);
       pageShells.push(pageEl);
     }
@@ -367,7 +367,7 @@ export function paintPages(
 
   // Use the browser viewport as intersection root.
   // The observer reads from pc.__pageRenderState so it always uses
-  // the latest options/totalPages (updated by the incremental path).
+  // the latest config/totalPages (updated by the incremental path).
   const observer = new IntersectionObserver(
     (entries) => {
       const renderState = pc.__pageRenderState;
@@ -452,13 +452,13 @@ export function paintPages(
     totalPages,
     optionsHash: currentOptionsHash,
     pageDataMap,
-    currentOptions: options,
+    currentOptions: config,
   };
 
   // Eagerly render the first few pages so the initial view isn't blank
   const initialRenderCount = Math.min(pages.length, VIRTUALIZATION_BUFFER + 3);
   for (let i = 0; i < initialRenderCount; i++) {
-    populatePageShell(pageShells[i], pageDataMap, totalPages, options);
+    populatePageShell(pageShells[i], pageDataMap, totalPages, config);
   }
 
   return 'full';
@@ -471,12 +471,12 @@ function populatePageShell(
   shell: HTMLElement,
   pageDataMap: Map<HTMLElement, { page: Page; index: number; rendered: boolean }>,
   totalPages: number,
-  options: FullPageOptions
+  config: FullPageOptions
 ): void {
   const data = pageDataMap.get(shell);
   if (!data || data.rendered) return;
 
-  const { context, pageOptions } = buildPageRenderArgs(data.page, totalPages, options);
+  const { context, pageOptions } = buildPageRenderArgs(data.page, totalPages, config);
   const fullPageEl = paintPage(data.page, context, pageOptions);
 
   while (fullPageEl.firstChild) {
@@ -494,12 +494,12 @@ function repopulatePageContent(
   shell: HTMLElement,
   pageDataMap: Map<HTMLElement, { page: Page; index: number; rendered: boolean }>,
   totalPages: number,
-  options: FullPageOptions
+  config: FullPageOptions
 ): void {
   const data = pageDataMap.get(shell);
   if (!data) return;
 
-  const { context, pageOptions } = buildPageRenderArgs(data.page, totalPages, options);
+  const { context, pageOptions } = buildPageRenderArgs(data.page, totalPages, config);
 
   // Render a full page off-screen
   const fullPageEl = paintPage(data.page, context, pageOptions);
@@ -515,7 +515,7 @@ function repopulatePageContent(
     // Fallback: full replace if structure doesn't match
     shell.innerHTML = '';
     data.rendered = false;
-    populatePageShell(shell, pageDataMap, totalPages, options);
+    populatePageShell(shell, pageDataMap, totalPages, config);
   }
 }
 

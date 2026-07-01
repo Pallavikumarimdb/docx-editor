@@ -22,9 +22,9 @@ import type { EditorState } from 'prosemirror-state';
 export function applyCellSelectionHighlight(
   pagesContainer: HTMLElement,
   state: EditorState,
-  options: { scope?: 'body' | 'header' | 'footer' } = {}
+  config: { scope?: 'body' | 'header' | 'footer' } = {}
 ): void {
-  const scope = options.scope ?? 'body';
+  const scope = config.scope ?? 'body';
   // The selector that limits which cells this call can highlight. Header and
   // footer cells live in `.layout-page-header` / `.layout-page-footer`
   // (separate PM docs), body cells in `.layout-page-content`. PM positions

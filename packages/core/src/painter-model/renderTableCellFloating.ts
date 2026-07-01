@@ -12,7 +12,7 @@ import type {
   ParagraphMetrics,
   TableCell,
   TableCellMetrics,
-  TableMeasure,
+  TableMetrics,
 } from '../pagination-model/types';
 import { emuToPixels } from '../utils/units';
 import { imageWrapTextFromCssFloat, isFloatingImageRun } from './floatingImageFlow';
@@ -55,13 +55,13 @@ export function extractCellFloatingImages(
   const result: CellFloatingImage[] = [];
   let paragraphY = 0;
 
-  for (let blockIndex = 0; blockIndex < cell.blocks.length; blockIndex++) {
-    const block = cell.blocks[blockIndex];
+  for (let nodeIndex = 0; nodeIndex < cell.nodes.length; nodeIndex++) {
+    const block = cell.nodes[nodeIndex];
     if (block?.kind !== 'paragraph') {
       // Use actual measured height for Y tracking
-      const blockMeasure = cellMetrics.blocks[blockIndex];
+      const blockMeasure = cellMetrics.metrics[nodeIndex];
       if (blockMeasure && blockMeasure.kind === 'table') {
-        paragraphY += (blockMeasure as TableMeasure).totalHeight ?? 0;
+        paragraphY += (blockMeasure as TableMetrics).totalHeight ?? 0;
       }
       continue;
     }
@@ -135,7 +135,7 @@ export function extractCellFloatingImages(
     }
 
     // Use actual measured height for Y tracking
-    const blockMeasure = cellMetrics.blocks[blockIndex];
+    const blockMeasure = cellMetrics.metrics[nodeIndex];
     if (blockMeasure && blockMeasure.kind === 'paragraph') {
       paragraphY += (blockMeasure as ParagraphMetrics).totalHeight;
     }

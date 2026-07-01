@@ -16,8 +16,8 @@
  * @packageDocumentation
  */
 
-import type { FlowBlock, Layout, Measure, Page } from '../pagination-model/types';
-import { pageTopOffset } from './pointerHitResolve';
+import type { ContentNode, PageLayout, LayoutMetrics, Page } from '../pagination-model/types';
+import { pageTopOffset } from './pointerTargetResolve';
 import { getPositionRect, positionToX } from './pointerToDocPos';
 
 /**
@@ -65,13 +65,13 @@ export interface CaretPosition {
  * @public
  */
 export function getCaretPosition(
-  layout: Layout,
-  blocks: FlowBlock[],
-  measures: Measure[],
+  layout: PageLayout,
+  nodes: ContentNode[],
+  metrics: LayoutMetrics[],
   pmPos: number,
   pageHint = 0
 ): CaretPosition | null {
-  const index = blockIndex(blocks, measures);
+  const index = nodeIndex(nodes, metrics);
 
   for (let pi = Math.max(0, pageHint); pi < layout.pages.length; pi++) {
     const page = layout.pages[pi];
@@ -80,7 +80,7 @@ export function getCaretPosition(
       if (fragment.kind === 'table') continue; // See the note above.
       if (!coversPosition(fragment, pmPos)) continue;
 
-      const entry = index.get(String(fragment.blockId));
+      const entry = index.get(String(fragment.nodeId));
       if (!entry) continue;
 
       const rect = getPositionRect(entry.block, entry.measure, fragment, pmPos);
@@ -108,15 +108,15 @@ export function getCaretPosition(
  * @public
  */
 export function rectsForSelection(
-  layout: Layout,
-  blocks: FlowBlock[],
-  measures: Measure[],
+  layout: PageLayout,
+  nodes: ContentNode[],
+  metrics: LayoutMetrics[],
   from: number,
   to: number
 ): SelectionBox[] {
   if (to <= from) return [];
 
-  const index = blockIndex(blocks, measures);
+  const index = nodeIndex(nodes, metrics);
   const boxes: SelectionBox[] = [];
 
   for (let pi = 0; pi < layout.pages.length; pi++) {
@@ -124,7 +124,7 @@ export function rectsForSelection(
     const pageTop = pageTopOffset(layout, pi);
 
     for (const fragment of page.fragments) {
-      const entry = index.get(String(fragment.blockId));
+      const entry = index.get(String(fragment.nodeId));
       if (!entry) continue;
 
       const fragFrom = fragment.docFrom;
@@ -227,7 +227,7 @@ function coversPosition(fragment: Page['fragments'][number], pmPos: number): boo
 }
 
 function linePosition(
-  block: Extract<FlowBlock, { kind: 'paragraph' }>,
+  block: Extract<ContentNode, { kind: 'paragraph' }>,
   runIndex: number,
   charOffset: number
 ): number | null {
@@ -236,14 +236,14 @@ function linePosition(
   return run.docFrom + charOffset;
 }
 
-function blockIndex(
-  blocks: FlowBlock[],
-  measures: Measure[]
-): Map<string, { block: FlowBlock; measure: Measure }> {
-  const map = new Map<string, { block: FlowBlock; measure: Measure }>();
-  for (let i = 0; i < blocks.length; i++) {
-    const measure = measures[i];
-    if (measure) map.set(String(blocks[i].id), { block: blocks[i], measure });
+function nodeIndex(
+  nodes: ContentNode[],
+  metrics: LayoutMetrics[]
+): Map<string, { block: ContentNode; measure: LayoutMetrics }> {
+  const map = new Map<string, { block: ContentNode; measure: LayoutMetrics }>();
+  for (let i = 0; i < nodes.length; i++) {
+    const measure = metrics[i];
+    if (measure) map.set(String(nodes[i].id), { block: nodes[i], measure });
   }
   return map;
 }

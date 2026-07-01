@@ -3,12 +3,12 @@
  *
  * Three parallel vocabularies, in the order the engine consumes them:
  *
- *   1. **Blocks** ({@link FlowBlock}) — what the document *is*. Produced by
+ *   1. **Content nodes** ({@link ContentNode}) — what the document *is*. Produced by
  *      `buildBoxTree` from a ProseMirror document snapshot. Geometry-free.
- *   2. **Measures** ({@link Measure}) — how tall each block *is* at a given
- *      available width. One per block, index-aligned with the block array.
- *   3. **Fragments** ({@link Fragment}) — where a (possibly partial) block *lands*
- *      on a page. Produced by `layOutPages` from blocks + measures.
+ *   2. **Layout metrics** ({@link LayoutMetrics}) — how tall each node *is* at a
+ *      given available width. One per node, index-aligned with the node array.
+ *   3. **Fragments** ({@link Fragment}) — where a (possibly partial) node *lands*
+ *      on a page. Produced by `layOutPages` from nodes + metrics.
  *
  * The discriminant on all three, and on runs, is `kind` — never `type`.
  *
@@ -27,12 +27,13 @@ import type { InlineSdtWidget } from './inlineSdtWidgets';
 // ============================================================================
 
 /**
- * Identity of a block, stable for one layout pass. `buildBoxTree` mints strings;
- * synthetic blocks and test fixtures also use numbers. Compare as `String(id)`.
+ * Identity of a content node, stable for one layout pass. `buildBoxTree` mints
+ * strings; synthetic nodes and test fixtures also use numbers. Compare as
+ * `String(id)`.
  *
  * @public
  */
-export type BlockId = string | number;
+export type NodeId = string | number;
 
 /**
  * Page or content-box dimensions, px.
@@ -348,7 +349,7 @@ export interface ImageRun extends DocRange {
 export type Run = TextRun | TabRun | LineBreakRun | FieldRun | ImageRun;
 
 // ============================================================================
-// Blocks — the document, geometry-free
+// Content nodes — the document, geometry-free
 // ============================================================================
 
 /**
@@ -374,7 +375,7 @@ export interface ParagraphAttrs {
     lineRule?: 'auto' | 'exact' | 'atLeast';
   };
   /** Which spacing sides the document authored, rather than inheriting. */
-  spacingExplicit?: { before?: boolean; after?: boolean };
+  spacingOverrides?: { before?: boolean; after?: boolean };
   /** All px. `firstLine` and `hanging` are mutually exclusive. */
   indent?: {
     left?: number;
@@ -419,12 +420,12 @@ export interface ParagraphAttrs {
 }
 
 /**
- * Fields every block carries.
+ * Fields every content node carries.
  *
  * @public
  */
-export interface FlowBlockBase extends DocRange {
-  id: BlockId;
+export interface ContentNodeBase extends DocRange {
+  id: NodeId;
   /** Enclosing block-level content controls, outermost first. */
   sdtGroups?: SdtGroup[];
 }
@@ -434,7 +435,7 @@ export interface FlowBlockBase extends DocRange {
  *
  * @public
  */
-export interface ParagraphBlock extends FlowBlockBase {
+export interface ParagraphBlock extends ContentNodeBase {
   kind: 'paragraph';
   runs: Run[];
   attrs?: ParagraphAttrs;
@@ -443,13 +444,13 @@ export interface ParagraphBlock extends FlowBlockBase {
 }
 
 /**
- * One table cell. `blocks` recurses, so nested tables need no special case.
+ * One table cell. `nodes` recurses, so nested tables need no special case.
  *
  * @public
  */
 export interface TableCell {
-  id: BlockId;
-  blocks: FlowBlock[];
+  id: NodeId;
+  nodes: ContentNode[];
   colSpan?: number;
   rowSpan?: number;
   /** Resolved px width, when the cell authored one. */
@@ -473,7 +474,7 @@ export interface TableCell {
  * @public
  */
 export interface TableRow {
-  id: BlockId;
+  id: NodeId;
   cells: TableCell[];
   /** `w:trHeight`, px. */
   height?: number;
@@ -510,7 +511,7 @@ export interface TableFloatingAnchor {
  *
  * @public
  */
-export interface TableBlock extends FlowBlockBase {
+export interface TableBlock extends ContentNodeBase {
   kind: 'table';
   rows: TableRow[];
   /** Resolved px column widths; absent when the grid must be inferred. */
@@ -537,7 +538,7 @@ export interface TableBlock extends FlowBlockBase {
  *
  * @public
  */
-export interface ImageBlock extends FlowBlockBase {
+export interface ImageBlock extends ContentNodeBase {
   kind: 'image';
   src: string;
   width: number;
@@ -584,7 +585,7 @@ export const DEFAULT_TEXTBOX_WIDTH = 200;
  *
  * @public
  */
-export interface TextBoxBlock extends FlowBlockBase {
+export interface TextBoxBlock extends ContentNodeBase {
   kind: 'textBox';
   width: number;
   /** Absent when the box auto-fits its content. */
@@ -612,7 +613,7 @@ export interface TextBoxBlock extends FlowBlockBase {
  *
  * @public
  */
-export interface PageBreakBlock extends FlowBlockBase {
+export interface PageBreakBlock extends ContentNodeBase {
   kind: 'pageBreak';
 }
 
@@ -621,7 +622,7 @@ export interface PageBreakBlock extends FlowBlockBase {
  *
  * @public
  */
-export interface ColumnBreakBlock extends FlowBlockBase {
+export interface ColumnBreakBlock extends ContentNodeBase {
   kind: 'columnBreak';
 }
 
@@ -631,7 +632,7 @@ export interface ColumnBreakBlock extends FlowBlockBase {
  *
  * @public
  */
-export interface SectionMarkerBlock extends FlowBlockBase {
+export interface SectionMarkerBlock extends ContentNodeBase {
   kind: 'sectionBreak';
   type?: SectionStartType;
   pageSize?: Size;
@@ -640,16 +641,16 @@ export interface SectionMarkerBlock extends FlowBlockBase {
 }
 
 /**
- * Every block kind the engine flows.
+ * Every content-node kind the engine flows.
  *
- * Adding a variant means updating all three `FlowBlock` switches — the
+ * Adding a variant means updating all three `ContentNode` switches — the
  * pagination fold and each adapter's `measureBlock` — each of which ends in
- * {@link assertExhaustiveFlowBlock}, so `bun run typecheck` names the sites you
+ * {@link assertExhaustiveContentNode}, so `bun run typecheck` names the sites you
  * missed instead of failing at runtime.
  *
  * @public
  */
-export type FlowBlock =
+export type ContentNode =
   | ParagraphBlock
   | TableBlock
   | ImageBlock
@@ -659,24 +660,24 @@ export type FlowBlock =
   | SectionMarkerBlock;
 
 /**
- * Compile-time exhaustiveness guard for a `FlowBlock` switch, and a runtime
- * throw if an unhandled block somehow reaches it.
+ * Compile-time exhaustiveness guard for a `ContentNode` switch, and a runtime
+ * throw if an unhandled node somehow reaches it.
  *
  * Use it as the `default:` arm. A plain `default: throw` would keep compiling
- * after a new variant is added; this won't, because `block` only narrows to
+ * after a new variant is added; this won't, because `node` only narrows to
  * `never` once every variant is handled.
  *
- * @param block - the value that should have been narrowed away
+ * @param node - the value that should have been narrowed away
  * @param site - where the switch lives, for the error message
  * @public
  */
-export function assertExhaustiveFlowBlock(block: never, site: string): never {
-  const kind = (block as { kind?: unknown } | null)?.kind;
-  throw new Error(`${site}: unhandled FlowBlock kind ${String(kind)}`);
+export function assertExhaustiveContentNode(node: never, site: string): never {
+  const kind = (node as { kind?: unknown } | null)?.kind;
+  throw new Error(`${site}: unhandled ContentNode kind ${String(kind)}`);
 }
 
 // ============================================================================
-// Measures — how tall, at a given width
+// Layout metrics — how tall, at a given width
 // ============================================================================
 
 /**
@@ -758,13 +759,13 @@ export interface ParagraphMetrics {
 }
 
 /**
- * A measured table cell. `blocks` are the measures of the cell's own content,
- * index-aligned with `TableCell.blocks`.
+ * A measured table cell. `metrics` describes the cell's own content,
+ * index-aligned with `TableCell.nodes`.
  *
  * @public
  */
 export interface TableCellMetrics {
-  blocks: Measure[];
+  metrics: LayoutMetrics[];
   width: number;
   /** Filled in by the row-height distribution pass. */
   height?: number;
@@ -787,7 +788,7 @@ export interface TableRowMetrics {
  *
  * @public
  */
-export interface TableMeasure {
+export interface TableMetrics {
   kind: 'table';
   rows: TableRowMetrics[];
   columnWidths: number[];
@@ -800,49 +801,50 @@ export interface TableMeasure {
  *
  * @public
  */
-export interface ImageMeasure {
+export interface ImageMetrics {
   kind: 'image';
   width: number;
   height: number;
 }
 
 /**
- * A measured text box. `innerMeasures` is index-aligned with
+ * A measured text box. `innerMetrics` is index-aligned with
  * `TextBoxBlock.content`.
  *
  * @public
  */
-export interface TextBoxMeasure {
+export interface TextBoxMetrics {
   kind: 'textBox';
   width: number;
   height: number;
-  innerMeasures: ParagraphMetrics[];
+  innerMetrics: ParagraphMetrics[];
 }
 
 /**
- * A break block's measure — zero-height, but present so `measures` stays
- * index-aligned with `blocks`.
+ * A break node's metrics — zero-height, but present so `metrics` stays
+ * index-aligned with `nodes`.
  *
  * @public
  */
-export interface BreakMeasure {
+export interface BreakMetrics {
   kind: 'pageBreak' | 'columnBreak' | 'sectionBreak';
 }
 
 /**
- * The measure of any block. Index-aligned with the `FlowBlock[]` it came from.
+ * The layout metrics of any content node. Index-aligned with the `ContentNode[]`
+ * it came from.
  *
  * @public
  */
-export type Measure =
+export type LayoutMetrics =
   | ParagraphMetrics
-  | TableMeasure
-  | ImageMeasure
-  | TextBoxMeasure
-  | BreakMeasure;
+  | TableMetrics
+  | ImageMetrics
+  | TextBoxMetrics
+  | BreakMetrics;
 
 // ============================================================================
-// Fragments — where a block lands on a page
+// Fragments — where a content node lands on a page
 // ============================================================================
 
 /**
@@ -853,7 +855,7 @@ export type Measure =
  * @public
  */
 export interface FragmentBase extends DocRange {
-  blockId: BlockId;
+  nodeId: NodeId;
   x: number;
   y: number;
   width: number;
@@ -969,7 +971,7 @@ export interface Page {
  *
  * @public
  */
-export interface Layout {
+export interface PageLayout {
   pages: Page[];
   /** The first section's page size — what the viewport sizes itself to. */
   pageSize: Size;
@@ -1005,7 +1007,7 @@ export interface HeaderFooterHeights {
 }
 
 /**
- * Everything `layOutPages` needs that the blocks don't carry themselves.
+ * Everything `layOutPages` needs that the nodes don't carry themselves.
  *
  * There are two geometries because a document's section properties live in two
  * places: the per-section breaks (which ride on `SectionMarkerBlock`s) and the
@@ -1014,7 +1016,7 @@ export interface HeaderFooterHeights {
  *
  * @public
  */
-export interface LayoutOptions {
+export interface LayoutConfig {
   /** Geometry of the first section. */
   pageSize: Size;
   margins: PageMargins;
@@ -1044,7 +1046,7 @@ export interface LayoutOptions {
 // ============================================================================
 
 /**
- * A footnote resolved through the body pipeline: its own blocks and measures,
+ * A footnote resolved through the body pipeline: its own nodes and metrics,
  * ready to paint into the page's reserved area.
  *
  * @public
@@ -1053,8 +1055,8 @@ export interface FootnoteContent {
   id: number;
   /** 1-based, assigned by first-reference order — what the marker prints. */
   displayNumber: number;
-  blocks: FlowBlock[];
-  measures: Measure[];
+  nodes: ContentNode[];
+  metrics: LayoutMetrics[];
   /** Painted height of the note, px. */
   height: number;
 }

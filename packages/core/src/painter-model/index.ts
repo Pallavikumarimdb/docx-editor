@@ -1,7 +1,7 @@
 /**
- * Layout Painter
+ * PageLayout Painter
  *
- * Main entry point for rendering Layout data to DOM.
+ * Main entry point for rendering PageLayout data to DOM.
  * Provides reconciliation for efficient incremental updates.
  *
  * @experimental Stable enough for the first-party React adapter, but the
@@ -12,22 +12,22 @@
  */
 
 import type {
-  Layout,
+  PageLayout,
   Page,
   Fragment,
-  FlowBlock,
-  Measure,
+  ContentNode,
+  LayoutMetrics,
   ParagraphBlock,
   ParagraphMetrics,
   ParagraphFragment,
   TableBlock,
-  TableMeasure,
+  TableMetrics,
   TableFragment,
   ImageBlock,
-  ImageMeasure,
+  ImageMetrics,
   ImageFragment,
   TextBoxBlock,
-  TextBoxMeasure,
+  TextBoxMetrics,
   TextBoxFragment,
 } from '../pagination-model/types';
 import {
@@ -83,7 +83,7 @@ export { enclosingSdtGroupIds, applySdtFocus } from './sdtBoundary';
 // Framework-agnostic image layout helpers shared by React + Vue adapters.
 export {
   LAYOUT_IMAGE_CLASSES,
-  pointerHitResolveImage,
+  pointerTargetResolveImage,
   findImageElement,
   captureInlinePositionEmu,
   deriveLayoutChoice,
@@ -92,7 +92,7 @@ export {
   toolbarValueToLayoutTarget,
 } from './imageLayout';
 export type {
-  ImagePointerHitResult,
+  ImagePointerTargetResult,
   ImageLayoutIconHint,
   ImageLayoutOptionDef,
 } from './imageLayout';
@@ -100,26 +100,26 @@ export type {
 /**
  * Block lookup entry for painter
  */
-export interface BlockLookupEntry {
-  block: FlowBlock;
-  measure: Measure;
+export interface NodeLookupEntry {
+  block: ContentNode;
+  measure: LayoutMetrics;
   version?: string;
 }
 
 /**
  * Block lookup map type
  */
-export type BlockLookup = Map<string, BlockLookupEntry>;
+export type NodeLookup = Map<string, NodeLookupEntry>;
 
 /**
  * Build the painter's `block.id → { block, measure }` lookup from the parallel
- * blocks/measures arrays. Shared by both adapters' paint step.
+ * nodes/metrics arrays. Shared by both adapters' paint step.
  */
-export function indexBlocksById(blocks: FlowBlock[], measures: Measure[]): BlockLookup {
-  const lookup: BlockLookup = new Map();
-  for (let i = 0; i < blocks.length; i++) {
-    const block = blocks[i];
-    const measure = measures[i];
+export function indexNodesById(nodes: ContentNode[], metrics: LayoutMetrics[]): NodeLookup {
+  const lookup: NodeLookup = new Map();
+  for (let i = 0; i < nodes.length; i++) {
+    const block = nodes[i];
+    const measure = metrics[i];
     if (block && measure) {
       lookup.set(String(block.id), { block, measure });
     }
@@ -128,7 +128,7 @@ export function indexBlocksById(blocks: FlowBlock[], measures: Measure[]): Block
 }
 
 /**
- * Painter options
+ * Painter config
  */
 export interface PaintOptions {
   /** Document to create elements in */
@@ -153,30 +153,30 @@ interface PageCursor {
 }
 
 /**
- * Layout Painter class
+ * PageLayout Painter class
  *
- * Renders Layout data to DOM with efficient reconciliation.
+ * Renders PageLayout data to DOM with efficient reconciliation.
  * Only updates changed pages and fragments for better performance.
  */
 export class LayoutPainter {
   private container: HTMLElement | null = null;
-  private blockLookup: BlockLookup = new Map();
+  private nodeLookup: NodeLookup = new Map();
   private pageCursors: PageCursor[] = [];
   private totalPages = 0;
-  private options: PaintOptions;
+  private config: PaintOptions;
   private doc: Document;
   resolvedCommentIds: Set<number> = new Set();
 
-  constructor(options: PaintOptions = {}) {
-    this.options = options;
-    this.doc = options.document ?? document;
+  constructor(config: PaintOptions = {}) {
+    this.config = config;
+    this.doc = config.document ?? document;
   }
 
   /**
    * Set the block lookup map for rendering fragments
    */
-  setBlockLookup(lookup: BlockLookup): void {
-    this.blockLookup = lookup;
+  setNodeLookup(lookup: NodeLookup): void {
+    this.nodeLookup = lookup;
   }
 
   /**
@@ -204,7 +204,7 @@ export class LayoutPainter {
   private applyContainerStyles(): void {
     if (!this.container) return;
 
-    const pageGap = this.options.pageGap ?? 24;
+    const pageGap = this.config.pageGap ?? 24;
 
     this.container.style.display = 'flex';
     this.container.style.flexDirection = 'column';
@@ -212,14 +212,14 @@ export class LayoutPainter {
     this.container.style.gap = `${pageGap}px`;
     this.container.style.padding = `${pageGap}px`;
     this.container.style.backgroundColor =
-      this.options.containerBackground ?? 'var(--doc-bg, #f8f9fa)';
+      this.config.containerBackground ?? 'var(--doc-bg, #f8f9fa)';
     this.container.style.minHeight = '100%';
   }
 
   /**
    * Paint a layout to the container
    */
-  paint(layout: Layout): void {
+  paint(layout: PageLayout): void {
     if (!this.container) {
       throw new Error('LayoutPainter: not mounted');
     }
@@ -265,11 +265,11 @@ export class LayoutPainter {
     pageEl.style.height = `${page.size.h}px`;
     // CSS vars so .ep-root.dark re-themes the canvas (view transform only —
     // saved DOCX unchanged). Mirrors applyPageStyles in paintPage.ts.
-    pageEl.style.backgroundColor = this.options.pageBackground ?? 'var(--doc-page-bg, #ffffff)';
+    pageEl.style.backgroundColor = this.config.pageBackground ?? 'var(--doc-page-bg, #ffffff)';
     pageEl.style.color = 'var(--doc-page-text, #000000)';
     pageEl.style.overflow = 'hidden';
 
-    if (this.options.showShadow) {
+    if (this.config.showShadow) {
       pageEl.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.15)';
     }
 
@@ -298,7 +298,7 @@ export class LayoutPainter {
    * Render a fragment using block lookup for full content rendering
    */
   private paintFragmentWithLookup(fragment: Fragment, context: RenderContext): HTMLElement {
-    const lookup = this.blockLookup.get(String(fragment.blockId));
+    const lookup = this.nodeLookup.get(String(fragment.nodeId));
 
     if (fragment.kind === 'paragraph' && lookup) {
       const block = lookup.block as ParagraphBlock;
@@ -310,7 +310,7 @@ export class LayoutPainter {
 
     if (fragment.kind === 'table' && lookup) {
       const block = lookup.block as TableBlock;
-      const measure = lookup.measure as TableMeasure;
+      const measure = lookup.measure as TableMetrics;
       return paintTableFragment(fragment as TableFragment, block, measure, context, {
         document: this.doc,
       });
@@ -318,7 +318,7 @@ export class LayoutPainter {
 
     if (fragment.kind === 'image' && lookup) {
       const block = lookup.block as ImageBlock;
-      const measure = lookup.measure as ImageMeasure;
+      const measure = lookup.measure as ImageMetrics;
       return paintImageFragment(fragment as ImageFragment, block, measure, context, {
         document: this.doc,
       });
@@ -326,7 +326,7 @@ export class LayoutPainter {
 
     if (fragment.kind === 'textBox' && lookup) {
       const block = lookup.block as TextBoxBlock;
-      const measure = lookup.measure as TextBoxMeasure;
+      const measure = lookup.measure as TextBoxMetrics;
       return paintTextBoxFragment(fragment as TextBoxFragment, block, measure, context, {
         document: this.doc,
       });
@@ -378,6 +378,6 @@ export class LayoutPainter {
 /**
  * Create a new LayoutPainter instance
  */
-export function createPainter(options?: PaintOptions): LayoutPainter {
-  return new LayoutPainter(options);
+export function createPainter(config?: PaintOptions): LayoutPainter {
+  return new LayoutPainter(config);
 }

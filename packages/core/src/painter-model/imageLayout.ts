@@ -40,7 +40,7 @@ const IMAGE_HIT_SELECTOR = [
 // Hit-test
 // ============================================================================
 
-export interface ImagePointerHitResult {
+export interface ImagePointerTargetResult {
   /** PM doc position of the image node, read from `data-doc-from`. */
   pos: number;
   /** The matched element — pass to `captureInlinePositionEmu` if it's inline. */
@@ -52,7 +52,9 @@ export interface ImagePointerHitResult {
  * the PM position embedded in `data-doc-from`, or null if the target isn't on
  * an image.
  */
-export function pointerHitResolveImage(target: EventTarget | null): ImagePointerHitResult | null {
+export function pointerTargetResolveImage(
+  target: EventTarget | null
+): ImagePointerTargetResult | null {
   if (!(target instanceof Element)) return null;
   const imageEl = target.closest(IMAGE_HIT_SELECTOR) as HTMLElement | null;
   if (!imageEl) return null;
@@ -146,7 +148,7 @@ export function deriveLayoutChoice(
 }
 
 // ============================================================================
-// Layout option schema (config without per-framework presentation)
+// PageLayout option schema (config without per-framework presentation)
 // ============================================================================
 
 /**
@@ -167,7 +169,7 @@ export interface ImageLayoutOptionDef {
   iconHint: ImageLayoutIconHint;
 }
 
-/** Mirrors Word's Wrap Text menu — five directional options. */
+/** Mirrors Word's Wrap Text menu — five directional config. */
 export const IMAGE_LAYOUT_OPTIONS: readonly ImageLayoutOptionDef[] = [
   {
     choice: 'inline',

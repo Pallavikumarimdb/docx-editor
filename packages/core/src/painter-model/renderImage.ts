@@ -7,7 +7,7 @@
  * - Basic image sizing
  */
 
-import type { ImageFragment, ImageBlock, ImageMeasure } from '../pagination-model/types';
+import type { ImageFragment, ImageBlock, ImageMetrics } from '../pagination-model/types';
 import type { RenderContext } from './paintPage';
 
 /**
@@ -122,17 +122,17 @@ export interface RenderImageFragmentOptions {
  * @param block - The full image block
  * @param measure - The image measure
  * @param context - Rendering context
- * @param options - Rendering options
+ * @param config - Rendering config
  * @returns The image DOM element
  */
 export function paintImageFragment(
   fragment: ImageFragment,
   block: ImageBlock,
-  _measure: ImageMeasure,
+  _measure: ImageMetrics,
   _context: RenderContext,
-  options: RenderImageFragmentOptions = {}
+  config: RenderImageFragmentOptions = {}
 ): HTMLElement {
-  const doc = options.document ?? document;
+  const doc = config.document ?? document;
 
   // Create container div
   const containerEl = doc.createElement('div');
@@ -159,7 +159,7 @@ export function paintImageFragment(
   }
 
   // Store metadata
-  containerEl.dataset.blockId = String(fragment.blockId);
+  containerEl.dataset.blockId = String(fragment.nodeId);
 
   if (fragment.docFrom !== undefined) {
     containerEl.dataset.docFrom = String(fragment.docFrom);

@@ -10,7 +10,7 @@
 
 import type { EditorView } from 'prosemirror-view';
 import type { Node as ProseMirrorNode } from 'prosemirror-model';
-import type { Layout } from '../pagination-model';
+import type { PageLayout } from '../pagination-model';
 import { getVanillaNodeText, getVanillaTextBetween } from './paraText';
 import { extractTrackedChanges } from './utils/extractTrackedChanges';
 
@@ -177,16 +177,16 @@ export interface PageContent {
 
 /**
  * Collect paragraphs visible on `pageNumber` (1-indexed) from the
- * paginated `layout`. Dedupes by paraId so paragraphs split across page
+ * paginated `pageLayout`. Dedupes by paraId so paragraphs split across page
  * boundaries are reported once.
  */
 export function getPageContent(
   view: EditorView | null,
-  layout: Layout | null,
+  pageLayout: PageLayout | null,
   pageNumber: number
 ): PageContent | null {
-  if (!layout || !view) return null;
-  const page = layout.pages[pageNumber - 1];
+  if (!pageLayout || !view) return null;
+  const page = pageLayout.pages[pageNumber - 1];
   if (!page) return null;
 
   const seen = new Set<string>();

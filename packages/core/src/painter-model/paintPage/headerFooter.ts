@@ -10,8 +10,8 @@
  */
 
 import type {
-  FlowBlock,
-  Measure,
+  ContentNode,
+  LayoutMetrics,
   ParagraphBlock,
   ParagraphFragment,
   TableBlock,
@@ -19,7 +19,7 @@ import type {
   ImageFragment,
   TextBoxFragment,
 } from '../../pagination-model/types';
-import { assertExhaustiveFlowBlock } from '../../pagination-model/types';
+import { assertExhaustiveContentNode } from '../../pagination-model/types';
 import { paintParagraphFragment } from '../renderParagraph';
 import { paintTableFragment } from '../renderTable';
 import { paintImageFragment } from '../renderImage';
@@ -31,11 +31,11 @@ import type { RenderContext, RenderPageOptions } from '../paintPage';
  * Header/footer content for rendering
  */
 export interface HeaderFooterContent {
-  /** Flow blocks for the header/footer content. */
-  blocks: FlowBlock[];
-  /** Measurements for the blocks. */
-  measures: Measure[];
-  /** Total height of the content (in-flow stack incl. floating blocks). */
+  /** Flow nodes for the header/footer content. */
+  nodes: ContentNode[];
+  /** Measurements for the nodes. */
+  metrics: LayoutMetrics[];
+  /** Total height of the content (in-flow stack incl. floating nodes). */
   height: number;
   /**
    * In-flow band height: the height of strictly in-flow content
@@ -217,10 +217,10 @@ export function resolveHeaderFooterFloatingTablePosition(
 export function renderHeaderFooterContent(
   content: HeaderFooterContent,
   context: RenderContext,
-  options: RenderPageOptions,
+  config: RenderPageOptions,
   layout: HeaderFooterLayoutInfo
 ): HTMLElement {
-  const doc = options.document ?? document;
+  const doc = config.document ?? document;
   const containerEl = doc.createElement('div');
   containerEl.style.position = 'relative';
 
@@ -252,9 +252,9 @@ export function renderHeaderFooterContent(
 
   let cursorY = 0;
 
-  for (let i = 0; i < content.blocks.length; i++) {
-    const block = content.blocks[i];
-    const measure = content.measures[i];
+  for (let i = 0; i < content.nodes.length; i++) {
+    const block = content.nodes[i];
+    const measure = content.metrics[i];
     if (!block || !measure) continue;
 
     if (block.kind === 'paragraph') {
@@ -318,7 +318,7 @@ export function renderHeaderFooterContent(
       // `computeHfCaretRectFromView`'s fallback chain depends on these.
       const syntheticFragment: ParagraphFragment = {
         kind: 'paragraph',
-        blockId: paragraphBlock.id,
+        nodeId: paragraphBlock.id,
         x: 0,
         y: cursorY + blockSpacingRulesBefore,
         width: contentWidth,
@@ -330,7 +330,7 @@ export function renderHeaderFooterContent(
       };
 
       // Render paragraph fragment (with floating images filtered out). The
-      // HF context positions blocks absolutely within its own container,
+      // HF context positions nodes absolutely within its own container,
       // stacking vertically via `cursorY` — `paragraphMetrics.totalHeight`
       // already includes `spaceBefore` / `spaceAfter`. Pass `positioning:
       // 'absolute'` so the renderer applies that mode itself instead of the
@@ -354,7 +354,7 @@ export function renderHeaderFooterContent(
       // HF tables don't paginate, so the synthetic fragment covers all rows.
       const syntheticFragment: TableFragment = {
         kind: 'table',
-        blockId: block.id,
+        nodeId: block.id,
         x: 0,
         y: cursorY,
         width: measure.totalWidth,
@@ -381,7 +381,7 @@ export function renderHeaderFooterContent(
         fragEl.style.top = `${top}px`;
         fragEl.style.left = `${left}px`;
         containerEl.appendChild(fragEl);
-        // Floating tables do NOT advance cursorY — surrounding HF blocks
+        // Floating tables do NOT advance cursorY — surrounding HF nodes
         // flow as if the table weren't there. Word renders text behind
         // floating tables when no wrap behavior is requested; we match.
       } else {
@@ -396,7 +396,7 @@ export function renderHeaderFooterContent(
       // Block-level images stack in the HF flow like paragraphs/tables.
       const syntheticFragment: ImageFragment = {
         kind: 'image',
-        blockId: block.id,
+        nodeId: block.id,
         x: 0,
         y: cursorY,
         width: measure.width,
@@ -422,7 +422,7 @@ export function renderHeaderFooterContent(
       // painted, so they showed in the inline editor but not the page view.
       const syntheticFragment: TextBoxFragment = {
         kind: 'textBox',
-        blockId: block.id,
+        nodeId: block.id,
         x: 0,
         y: cursorY,
         width: measure.width,
@@ -470,10 +470,10 @@ export function renderHeaderFooterContent(
       // Section/page/column breaks carry no rendering in the header/footer
       // flow — headers and footers reflow per page, so a break has no meaning.
     } else {
-      // Exhaustiveness guard: every FlowBlock variant must be handled above.
+      // Exhaustiveness guard: every ContentNode variant must be handled above.
       // A new variant fails the typecheck here instead of silently vanishing
       // from the header/footer page view.
-      assertExhaustiveFlowBlock(block, 'renderHeaderFooterContent');
+      assertExhaustiveContentNode(block, 'renderHeaderFooterContent');
     }
   }
 

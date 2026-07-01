@@ -15,7 +15,7 @@
  * @packageDocumentation
  */
 
-import type { TableBlock, TableMeasure } from './types';
+import type { TableBlock, TableMetrics } from './types';
 import { buildTableRowBreakInfo, snapRowBreak, type TableRowBreakInfo } from './tableRowBreak';
 import { collapsedGap } from './blockSpacingRules';
 import type { LayoutCursor, FlowContext, ColumnRegion } from './layoutCursor';
@@ -30,25 +30,25 @@ import {
 export function layoutTable(
   ctx: FlowContext,
   cursorIn: LayoutCursor,
-  block: TableBlock,
-  measure: TableMeasure,
+  node: TableBlock,
+  metrics: TableMetrics,
   index: number
 ): LayoutCursor {
   // A positioned table hangs off its own anchor and does not advance the body
   // pen — the text flows past it, which the measure pass has already accounted
   // for by narrowing the lines beside it.
-  if (block.floating) {
-    return placeFloatingTable(ctx, cursorIn, block, measure);
+  if (node.floating) {
+    return placeFloatingTable(ctx, cursorIn, node, metrics);
   }
 
   let cursor = applyKeepNext(ctx, cursorIn, index);
 
-  const rowCount = measure.rows.length;
-  if (rowCount === 0) return { ...cursor, prev: block };
+  const rowCount = metrics.rows.length;
+  if (rowCount === 0) return { ...cursor, prev: node };
 
-  const info = buildTableRowBreakInfo(block, measure);
-  const headerRows = countRepeatingHeaderRows(block, measure);
-  const headerHeight = sliceRowHeight(measure, 0, headerRows);
+  const info = buildTableRowBreakInfo(node, metrics);
+  const headerRows = countRepeatingHeaderRows(node, metrics);
+  const headerHeight = sliceRowHeight(metrics, 0, headerRows);
 
   let row = 0;
   /** Px of `row` already painted on a previous page (a mid-row break). */
@@ -62,7 +62,7 @@ export function layoutTable(
     // make the painter draw it as a continuation slice: no top border, a cut
     // rule above it, and nothing above for it to continue from.
     const isFirstFragment = row === 0 && rowOffset === 0;
-    const gap = isFirstFragment ? collapsedGap(cursor.prev, block) : 0;
+    const gap = isFirstFragment ? collapsedGap(cursor.prev, node) : 0;
     const top = cursor.y + gap;
 
     // A continuation re-shows the header rows, which costs height before any
@@ -72,7 +72,7 @@ export function layoutTable(
     const headerOverhead = repeatsHeader ? headerHeight : 0;
     const available = region.bottom - top - headerOverhead;
 
-    const slice = fitRows(block, measure, info, row, rowOffset, available);
+    const slice = fitRows(node, metrics, info, row, rowOffset, available);
 
     if (slice.consumed <= 0) {
       // Nothing fits. Move on — but ONLY if there is somewhere to move to.
@@ -89,7 +89,7 @@ export function layoutTable(
       }
       // A single row taller than an empty page and unsplittable. Overflow it
       // rather than spin.
-      slice.consumed = measure.rows[row].height - rowOffset;
+      slice.consumed = metrics.rows[row].height - rowOffset;
       slice.nextRow = row + 1;
       slice.nextOffset = 0;
       slice.toRow = row + 1;
@@ -99,10 +99,10 @@ export function layoutTable(
 
     ctx.pages[cursor.pageIndex].fragments.push({
       kind: 'table',
-      blockId: block.id,
-      x: region.left + tableOffsetX(block, measure, region),
+      nodeId: node.id,
+      x: region.left + tableOffsetX(node, metrics, region),
       y: top,
-      width: measure.totalWidth,
+      width: metrics.totalWidth,
       height: slice.consumed + headerOverhead,
       fromRow: row,
       toRow: slice.toRow,
@@ -112,11 +112,11 @@ export function layoutTable(
       ...(slice.bottomClip > 0 ? { bottomClip: slice.bottomClip } : {}),
       ...(isFirstFragment ? {} : { continuesFromPrev: true }),
       ...(done ? {} : { continuesOnNext: true }),
-      ...(block.docFrom !== undefined ? { docFrom: block.docFrom } : {}),
-      ...(block.docTo !== undefined ? { docTo: block.docTo } : {}),
+      ...(node.docFrom !== undefined ? { docFrom: node.docFrom } : {}),
+      ...(node.docTo !== undefined ? { docTo: node.docTo } : {}),
     });
 
-    cursor = { ...cursor, y: top + slice.consumed + headerOverhead, prev: block };
+    cursor = { ...cursor, y: top + slice.consumed + headerOverhead, prev: node };
     row = slice.nextRow;
     rowOffset = slice.nextOffset;
 
@@ -149,20 +149,20 @@ interface RowSlice {
  * `snapRowBreak` is for.
  */
 function fitRows(
-  block: TableBlock,
-  measure: TableMeasure,
+  node: TableBlock,
+  metrics: TableMetrics,
   info: TableRowBreakInfo,
   row: number,
   rowOffset: number,
   available: number
 ): RowSlice {
-  const rowCount = measure.rows.length;
+  const rowCount = metrics.rows.length;
   let consumed = 0;
   let r = row;
   let offset = rowOffset;
 
   while (r < rowCount) {
-    const rowHeight = measure.rows[r].height;
+    const rowHeight = metrics.rows[r].height;
     const rest = rowHeight - offset;
 
     if (consumed + rest <= available + FIT_TOLERANCE_PX) {
@@ -174,7 +174,7 @@ function fitRows(
 
     // This row doesn't fit in what's left.
     const room = available - consumed;
-    const splittable = !block.rows[r]?.cantSplit;
+    const splittable = !node.rows[r]?.cantSplit;
 
     if (splittable) {
       const slice = snapRowBreak(info, r, offset, room);
@@ -203,26 +203,26 @@ function fitRows(
  * Leading rows marked `w:tblHeader` (§17.4.49). Only a *leading* run counts:
  * the flag on a row in the middle of a table isn't a header, and Word ignores it.
  */
-function countRepeatingHeaderRows(block: TableBlock, measure: TableMeasure): number {
+function countRepeatingHeaderRows(node: TableBlock, metrics: TableMetrics): number {
   let n = 0;
-  while (n < measure.rows.length && block.rows[n]?.isHeader) n++;
+  while (n < metrics.rows.length && node.rows[n]?.isHeader) n++;
   // A table that is *entirely* header rows has nothing to repeat them above.
-  return n < measure.rows.length ? n : 0;
+  return n < metrics.rows.length ? n : 0;
 }
 
-function sliceRowHeight(measure: TableMeasure, from: number, to: number): number {
+function sliceRowHeight(metrics: TableMetrics, from: number, to: number): number {
   let h = 0;
-  for (let i = from; i < to; i++) h += measure.rows[i]?.height ?? 0;
+  for (let i = from; i < to; i++) h += metrics.rows[i]?.height ?? 0;
   return h;
 }
 
 /** `w:jc` on a table centres or right-aligns it in the column (§17.4.29). */
-function tableOffsetX(block: TableBlock, measure: TableMeasure, region: ColumnRegion): number {
-  const slack = region.width - measure.totalWidth;
-  if (block.indent) return block.indent;
+function tableOffsetX(node: TableBlock, metrics: TableMetrics, region: ColumnRegion): number {
+  const slack = region.width - metrics.totalWidth;
+  if (node.indent) return node.indent;
   if (slack <= 0) return 0;
-  if (block.justification === 'center') return slack / 2;
-  if (block.justification === 'right') return slack;
+  if (node.justification === 'center') return slack / 2;
+  if (node.justification === 'right') return slack;
   return 0;
 }
 
@@ -232,30 +232,30 @@ function tableOffsetX(block: TableBlock, measure: TableMeasure, region: ColumnRe
 function placeFloatingTable(
   ctx: FlowContext,
   cursor: LayoutCursor,
-  block: TableBlock,
-  measure: TableMeasure
+  node: TableBlock,
+  metrics: TableMetrics
 ): LayoutCursor {
   const region = currentRegion(ctx, cursor);
-  const anchor = block.floating!;
+  const anchor = node.floating!;
 
-  const x = region.left + (anchor.tblpX ?? tableOffsetX(block, measure, region));
+  const x = region.left + (anchor.tblpX ?? tableOffsetX(node, metrics, region));
   const y = anchor.tblpY != null ? region.top + anchor.tblpY : cursor.y;
 
   ctx.pages[cursor.pageIndex].fragments.push({
     kind: 'table',
-    blockId: block.id,
+    nodeId: node.id,
     x,
     y,
-    width: measure.totalWidth,
-    height: measure.totalHeight,
+    width: metrics.totalWidth,
+    height: metrics.totalHeight,
     fromRow: 0,
-    toRow: measure.rows.length,
+    toRow: metrics.rows.length,
     columnIndex: cursor.columnIndex,
-    ...(block.docFrom !== undefined ? { docFrom: block.docFrom } : {}),
-    ...(block.docTo !== undefined ? { docTo: block.docTo } : {}),
+    ...(node.docFrom !== undefined ? { docFrom: node.docFrom } : {}),
+    ...(node.docTo !== undefined ? { docTo: node.docTo } : {}),
   });
 
   // The pen does not advance: body text wraps beside the table, and the measure
   // pass has already narrowed those lines.
-  return { ...cursor, prev: block };
+  return { ...cursor, prev: node };
 }

@@ -53,7 +53,7 @@ export function syncImeCaretAnchor({
   let hiddenCaret: { left: number; top: number };
   const previousTransform = hiddenHost.style.transform;
   try {
-    // coordsAtPos includes CSS transforms. Measure the off-screen baseline so
+    // coordsAtPos includes CSS transforms. LayoutMetrics the off-screen baseline so
     // repeated selection updates keep the same anchor instead of cancelling the
     // previous translation back to zero.
     hiddenHost.style.transform = '';

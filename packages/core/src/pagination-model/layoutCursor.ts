@@ -16,10 +16,10 @@
 
 import type {
   ColumnLayout,
-  FlowBlock,
+  ContentNode,
   Fragment,
-  LayoutOptions,
-  Measure,
+  LayoutConfig,
+  LayoutMetrics,
   PageMargins,
   SectionLayoutConfig,
   Size,
@@ -87,15 +87,15 @@ export interface LayoutCursor {
   readonly columnIndex: number;
   /** Page-absolute Y of the pen. */
   readonly y: number;
-  /** The block above the pen, for the spacing-collapse rule. */
-  readonly prev: FlowBlock | null;
+  /** The content node above the pen, for the spacing-collapse rule. */
+  readonly prev: ContentNode | null;
 }
 
 /** Everything the placement functions need but never change. */
 export interface FlowContext {
-  blocks: FlowBlock[];
-  measures: Measure[];
-  options: LayoutOptions;
+  nodes: ContentNode[];
+  metrics: LayoutMetrics[];
+  config: LayoutConfig;
   pages: PageDraft[];
   /** Section geometry in force, replaced when a section break is crossed. */
   section: SectionLayoutConfig;
@@ -117,10 +117,10 @@ export interface FlowContext {
 export function effectiveMargins(
   base: PageMargins,
   pageNumber: number,
-  options: LayoutOptions
+  config: LayoutConfig
 ): PageMargins {
-  const headerHeight = bandHeight(options.headerContentHeights, pageNumber);
-  const footerHeight = bandHeight(options.footerContentHeights, pageNumber);
+  const headerHeight = bandHeight(config.headerContentHeights, pageNumber);
+  const footerHeight = bandHeight(config.footerContentHeights, pageNumber);
   if (headerHeight === 0 && footerHeight === 0) return base;
 
   const headerBand = (base.header ?? DEFAULT_HF_DISTANCE_PX) + headerHeight;
@@ -196,15 +196,15 @@ export function columnCount(page: PageDraft): number {
 // ---------------------------------------------------------------------------
 
 /** Append a fresh page and put the pen at the top of its first column. */
-export function startPage(ctx: FlowContext, prev: FlowBlock | null = null): LayoutCursor {
+export function startPage(ctx: FlowContext, prev: ContentNode | null = null): LayoutCursor {
   const number = ctx.pages.length + 1;
   const page: PageDraft = {
     number,
     size: ctx.section.pageSize,
-    margins: effectiveMargins(ctx.section.margins, number, ctx.options),
+    margins: effectiveMargins(ctx.section.margins, number, ctx.config),
     fragments: [],
     columns: (ctx.section.columns?.count ?? 1) > 1 ? ctx.section.columns : undefined,
-    footnoteReservedHeight: ctx.options.footnoteReservedHeights?.get(number),
+    footnoteReservedHeight: ctx.config.footnoteReservedHeights?.get(number),
   };
   ctx.pages.push(page);
 
@@ -256,81 +256,81 @@ export function pageIsEmpty(ctx: FlowContext, cursor: LayoutCursor): boolean {
 
 /**
  * How much room the keep-with-next chain starting at `index` needs before its
- * promise can be kept: every chained block in full, plus enough of the block
+ * promise can be kept: every chained node in full, plus enough of the node
  * that ends the chain to get its first line (or first row) onto the same page.
  *
  * Returns 0 when `index` doesn't start a chain.
  */
 export function keepNextChainHeight(ctx: FlowContext, cursor: LayoutCursor, index: number): number {
-  const first = ctx.blocks[index];
+  const first = ctx.nodes[index];
   if (!hasKeepNext(first)) return 0;
 
   let need = 0;
   let prev = cursor.prev;
 
-  for (let i = index; i < ctx.blocks.length && i - index < KEEP_CHAIN_LIMIT; i++) {
-    const block = ctx.blocks[i];
-    const measure = ctx.measures[i];
-    if (!isContent(block)) break;
+  for (let i = index; i < ctx.nodes.length && i - index < KEEP_CHAIN_LIMIT; i++) {
+    const node = ctx.nodes[i];
+    const metrics = ctx.metrics[i];
+    if (!isContent(node)) break;
 
-    need += collapsedGap(prev, block);
+    need += collapsedGap(prev, node);
 
-    if (!hasKeepNext(block)) {
+    if (!hasKeepNext(node)) {
       // The chain ends here: we only need its first unit on this page.
-      need += leadingUnitHeight(measure);
+      need += leadingUnitHeight(metrics);
       return need;
     }
 
-    need += fullHeight(measure);
-    prev = block;
+    need += fullHeight(metrics);
+    prev = node;
   }
 
   return need;
 }
 
-function hasKeepNext(block: FlowBlock): boolean {
-  return block.kind === 'paragraph' && block.attrs?.keepNext === true;
+function hasKeepNext(node: ContentNode): boolean {
+  return node.kind === 'paragraph' && node.attrs?.keepNext === true;
 }
 
-/** Blocks that actually occupy vertical space. */
-function isContent(block: FlowBlock): boolean {
+/** Content nodes that actually occupy vertical space. */
+function isContent(node: ContentNode): boolean {
   return (
-    block.kind === 'paragraph' ||
-    block.kind === 'table' ||
-    block.kind === 'image' ||
-    block.kind === 'textBox'
+    node.kind === 'paragraph' ||
+    node.kind === 'table' ||
+    node.kind === 'image' ||
+    node.kind === 'textBox'
   );
 }
 
-function fullHeight(measure: Measure | undefined): number {
-  if (!measure) return 0;
-  switch (measure.kind) {
+function fullHeight(metrics: LayoutMetrics | undefined): number {
+  if (!metrics) return 0;
+  switch (metrics.kind) {
     case 'paragraph':
-      return measure.lines.reduce((h, l) => h + l.lineHeight + (l.floatSkipBefore ?? 0), 0);
+      return metrics.lines.reduce((h, l) => h + l.lineHeight + (l.floatSkipBefore ?? 0), 0);
     case 'table':
-      return measure.totalHeight;
+      return metrics.totalHeight;
     case 'image':
     case 'textBox':
-      return measure.height;
+      return metrics.height;
     default:
       return 0;
   }
 }
 
-/** The smallest slice of a block that still counts as "it started on this page". */
-function leadingUnitHeight(measure: Measure | undefined): number {
-  if (!measure) return 0;
-  switch (measure.kind) {
+/** The smallest slice of a node that still counts as "it started on this page". */
+function leadingUnitHeight(metrics: LayoutMetrics | undefined): number {
+  if (!metrics) return 0;
+  switch (metrics.kind) {
     case 'paragraph': {
-      const line = measure.lines[0];
+      const line = metrics.lines[0];
       return line ? line.lineHeight + (line.floatSkipBefore ?? 0) : 0;
     }
     case 'table':
-      return measure.rows[0]?.height ?? 0;
+      return metrics.rows[0]?.height ?? 0;
     case 'image':
     case 'textBox':
       // Neither splits, so "starting" means "fitting".
-      return measure.height;
+      return metrics.height;
     default:
       return 0;
   }

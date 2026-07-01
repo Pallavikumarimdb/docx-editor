@@ -1,5 +1,5 @@
 /**
- * Footnote Layout Utilities
+ * Footnote PageLayout Utilities
  *
  * Footnote/endnote rendering pipeline plus page-mapping helpers:
  * - scanning FlowBlocks for footnote references and their PM positions
@@ -8,23 +8,23 @@
  *   (footnoteToProseDoc → buildBoxTree → caller-supplied measureBlocks)
  * - reserving per-page footnote area heights for layout
  *
- * Everything that's pure OOXML / FlowBlock semantics lives here so the
+ * Everything that's pure OOXML / ContentNode semantics lives here so the
  * React, Vue, and any future adapters can share the conversion logic
  * and just supply their own measurement function (which depends on
  * platform-specific Canvas/font metrics).
  */
 
 import type {
-  BlockId,
-  FlowBlock,
+  NodeId,
+  ContentNode,
   ParagraphBlock,
-  Measure,
+  LayoutMetrics,
   Page,
-  Layout,
+  PageLayout,
   FootnoteContent,
   TextRun,
 } from '../pagination-model/types';
-import { layOutPages, type LayoutOptions } from '../pagination-model';
+import { layOutPages, type LayoutConfig } from '../pagination-model';
 import type { Document, Footnote, StyleDefinitions, Theme } from '../types/document';
 import type { FootnoteRenderItem } from '../painter-model';
 import { footnoteToProseDoc } from '../prosemirror/conversion/toProseDoc';
@@ -117,7 +117,7 @@ export type FootnoteRefLocation = {
   footnoteId: number;
   pmPos: number;
   /** Id of the outermost enclosing table block, when the ref is in a table cell. */
-  tableBlockId?: BlockId;
+  tableNodeId?: NodeId;
   /** Index (into the outermost table's `rows`) of the row holding the ref. */
   rowIndex?: number;
 };
@@ -126,7 +126,7 @@ export type FootnoteRefLocation = {
  * Scan FlowBlocks for runs with footnoteRefId set.
  * Returns a list of {@link FootnoteRefLocation} in document order.
  *
- * Recurses into container blocks (table cells, text boxes) so footnote
+ * Recurses into container nodes (table cells, text boxes) so footnote
  * references authored anywhere in the body reach the page-reservation
  * pass. Without this, a `footnoteRefId` nested inside a table cell never
  * gets mapped to a page and the per-page `.layout-footnote-area` silently
@@ -137,12 +137,12 @@ export type FootnoteRefLocation = {
  * recorded (a nested table keeps the outer context, since the outer row is
  * what the pageComposer splits into per-page fragments).
  */
-export function collectFootnoteRefs(blocks: FlowBlock[]): FootnoteRefLocation[] {
+export function collectFootnoteRefs(nodes: ContentNode[]): FootnoteRefLocation[] {
   const refs: FootnoteRefLocation[] = [];
 
   const walk = (
-    input: FlowBlock[],
-    tableCtx?: { tableBlockId: BlockId; rowIndex: number }
+    input: ContentNode[],
+    tableCtx?: { tableNodeId: NodeId; rowIndex: number }
   ): void => {
     for (const block of input) {
       if (block.kind === 'paragraph') {
@@ -160,7 +160,7 @@ export function collectFootnoteRefs(blocks: FlowBlock[]): FootnoteRefLocation[] 
           for (const cell of row.cells) {
             // Keep the outermost table context for nested tables: the outer
             // row is the unit the pageComposer places on a page.
-            walk(cell.blocks, tableCtx ?? { tableBlockId: block.id, rowIndex });
+            walk(cell.nodes, tableCtx ?? { tableNodeId: block.id, rowIndex });
           }
         });
       } else if (block.kind === 'textBox') {
@@ -169,7 +169,7 @@ export function collectFootnoteRefs(blocks: FlowBlock[]): FootnoteRefLocation[] 
     }
   };
 
-  walk(blocks);
+  walk(nodes);
 
   return refs;
 }
@@ -205,14 +205,14 @@ export function mapFootnotesToPages(
     for (const page of pages) {
       for (const fragment of page.fragments) {
         let match = false;
-        if (ref.tableBlockId != null && ref.rowIndex != null) {
+        if (ref.tableNodeId != null && ref.rowIndex != null) {
           // In-table ref: a table splits across pages by row, but every
           // fragment keeps the whole table's pm range, so a pm-position match
           // would land every ref on the first table page. Attribute the ref to
           // the fragment whose [fromRow, toRow) slice contains its row.
           match =
             fragment.kind === 'table' &&
-            fragment.blockId === ref.tableBlockId &&
+            fragment.nodeId === ref.tableNodeId &&
             ref.rowIndex >= fragment.fromRow &&
             ref.rowIndex < fragment.toRow;
         } else {
@@ -251,8 +251,11 @@ export function mapFootnotesToPages(
  * Exported for callers that want to compose their own conversion
  * pipeline; `convertFootnoteToContent` calls it as part of its flow.
  */
-export function applyFootnotePresentation(blocks: FlowBlock[], displayNumber: number): FlowBlock[] {
-  if (blocks.length === 0) {
+export function applyFootnotePresentation(
+  nodes: ContentNode[],
+  displayNumber: number
+): ContentNode[] {
+  if (nodes.length === 0) {
     return [
       {
         kind: 'paragraph',
@@ -270,8 +273,8 @@ export function applyFootnotePresentation(blocks: FlowBlock[], displayNumber: nu
   }
 
   // Apply default 8pt to every run that didn't specify a fontSize. Mutating
-  // a copy keeps the input blocks pure for caching upstream.
-  const out = blocks.map((b) => {
+  // a copy keeps the input nodes pure for caching upstream.
+  const out = nodes.map((b) => {
     if (b.kind !== 'paragraph') return b;
     const para = b as ParagraphBlock;
     return {
@@ -321,7 +324,7 @@ export function applyFootnotePresentation(blocks: FlowBlock[], displayNumber: nu
  * paragraph + table + image + textBox — so this core helper stays
  * Canvas-free.
  */
-export type MeasureBlocksFn = (blocks: FlowBlock[], contentWidth: number) => Measure[];
+export type MeasureBlocksFn = (nodes: ContentNode[], contentWidth: number) => LayoutMetrics[];
 
 /**
  * Options for {@link convertFootnoteToContent}.
@@ -331,7 +334,7 @@ export type ConvertFootnoteOptions = {
   styles?: StyleDefinitions | null;
   /** Theme for resolving themed fills / fonts inside the footnote. */
   theme?: Theme | null;
-  /** Measure callback supplied by the rendering adapter. */
+  /** LayoutMetrics callback supplied by the rendering adapter. */
   measureBlocks: MeasureBlocksFn;
   /**
    * Doc-level `w:defaultTabMark` (twips) from the body so list markers
@@ -352,19 +355,19 @@ export function convertFootnoteToContent(
   footnote: Footnote,
   displayNumber: number,
   contentWidth: number,
-  options: ConvertFootnoteOptions
+  config: ConvertFootnoteOptions
 ): FootnoteContent {
   const pmDoc = footnoteToProseDoc(footnote.content, {
-    styles: options.styles ?? undefined,
-    theme: options.theme ?? null,
-    defaultTabMarkTwips: options.defaultTabMarkTwips ?? null,
+    styles: config.styles ?? undefined,
+    theme: config.theme ?? null,
+    defaultTabMarkTwips: config.defaultTabMarkTwips ?? null,
   });
-  const rawBlocks = buildBoxTree(pmDoc, { theme: options.theme ?? undefined });
-  const blocks = applyFootnotePresentation(rawBlocks, displayNumber);
+  const rawNodes = buildBoxTree(pmDoc, { theme: config.theme ?? undefined });
+  const nodes = applyFootnotePresentation(rawNodes, displayNumber);
 
-  const measures = options.measureBlocks(blocks, contentWidth);
+  const metrics = config.measureBlocks(nodes, contentWidth);
 
-  const totalHeight = measures.reduce((h, m) => {
+  const totalHeight = metrics.reduce((h, m) => {
     if (m.kind === 'paragraph') return h + m.totalHeight;
     if (m.kind === 'table') return h + m.totalHeight;
     if (m.kind === 'image') return h + m.height;
@@ -375,8 +378,8 @@ export function convertFootnoteToContent(
   return {
     id: footnote.id,
     displayNumber,
-    blocks,
-    measures,
+    nodes,
+    metrics,
     height: totalHeight,
   };
 }
@@ -390,7 +393,7 @@ export function buildFootnoteContentMap(
   footnotes: Footnote[],
   footnoteRefs: Array<{ footnoteId: number }>,
   contentWidth: number,
-  options: ConvertFootnoteOptions
+  config: ConvertFootnoteOptions
 ): Map<number, FootnoteContent> {
   const contentMap = new Map<number, FootnoteContent>();
   const footnoteById = new Map<number, Footnote>();
@@ -413,7 +416,7 @@ export function buildFootnoteContentMap(
 
     contentMap.set(
       ref.footnoteId,
-      convertFootnoteToContent(footnote, displayNumber, contentWidth, options)
+      convertFootnoteToContent(footnote, displayNumber, contentWidth, config)
     );
     displayNumber++;
   }
@@ -515,13 +518,13 @@ export function calculateFootnoteReservedHeights(
 // ============================================================================
 
 export interface StabilizeFootnoteLayoutArgs {
-  blocks: FlowBlock[];
-  measures: Measure[];
-  layoutOpts: LayoutOptions;
+  nodes: ContentNode[];
+  metrics: LayoutMetrics[];
+  layoutConfig: LayoutConfig;
   footnoteRefs: FootnoteRefLocation[];
   footnoteContentMap: Map<number, FootnoteContent>;
   /** First-pass layout already computed by the caller without reserved heights. */
-  initialLayout: Layout;
+  initialLayout: PageLayout;
   /**
    * Number of columns the footnote area is laid out in (`w15:footnoteColumns`).
    * Defaults to 1. When > 1, reserved heights are balanced across the columns
@@ -532,7 +535,7 @@ export interface StabilizeFootnoteLayoutArgs {
 }
 
 export interface StabilizeFootnoteLayoutResult {
-  layout: Layout;
+  layout: PageLayout;
   pageFootnoteMap: Map<number, number[]>;
   /** True if the loop converged before hitting FOOTNOTE_REFLOW_LIMIT. */
   converged: boolean;
@@ -552,7 +555,7 @@ export interface StabilizeFootnoteLayoutResult {
 export function stabilizeFootnoteLayout(
   args: StabilizeFootnoteLayoutArgs
 ): StabilizeFootnoteLayoutResult {
-  const { blocks, measures, layoutOpts, footnoteRefs, footnoteContentMap, initialLayout } = args;
+  const { nodes, metrics, layoutConfig, footnoteRefs, footnoteContentMap, initialLayout } = args;
   const footnoteColumns = Math.max(1, args.footnoteColumns ?? 1);
 
   let pageFootnoteMap = mapFootnotesToPages(initialLayout.pages, footnoteRefs);
@@ -569,8 +572,8 @@ export function stabilizeFootnoteLayout(
   let newLayout = initialLayout;
   let converged = false;
   for (let pass = 0; pass < FOOTNOTE_REFLOW_LIMIT; pass++) {
-    newLayout = layOutPages(blocks, measures, {
-      ...layoutOpts,
+    newLayout = layOutPages(nodes, metrics, {
+      ...layoutConfig,
       footnoteReservedHeights,
     });
 
@@ -594,8 +597,8 @@ export function stabilizeFootnoteLayout(
     let fallbackReservedHeights = footnoteReservedHeights;
     let fallbackCovered = false;
     for (let pass = 0; pass < FOOTNOTE_REFLOW_LIMIT; pass++) {
-      newLayout = layOutPages(blocks, measures, {
-        ...layoutOpts,
+      newLayout = layOutPages(nodes, metrics, {
+        ...layoutConfig,
         footnoteReservedHeights: fallbackReservedHeights,
       });
       pageFootnoteMap = mapFootnotesToPages(newLayout.pages, footnoteRefs);
@@ -614,8 +617,8 @@ export function stabilizeFootnoteLayout(
       );
     }
     if (!fallbackCovered) {
-      newLayout = layOutPages(blocks, measures, {
-        ...layoutOpts,
+      newLayout = layOutPages(nodes, metrics, {
+        ...layoutConfig,
         footnoteReservedHeights: fallbackReservedHeights,
       });
       pageFootnoteMap = mapFootnotesToPages(newLayout.pages, footnoteRefs);

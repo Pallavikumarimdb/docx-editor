@@ -53,10 +53,10 @@ export interface PaintFragmentOptions {
 export function paintFragment(
   fragment: Fragment,
   context: RenderContext,
-  options: PaintFragmentOptions = {}
+  config: PaintFragmentOptions = {}
 ): HTMLElement {
   void context;
-  const doc = options.document ?? document;
+  const doc = config.document ?? document;
 
   const el = doc.createElement('div');
   el.className = `${FRAGMENT_CLASS_NAMES.fragment} ${FRAGMENT_CLASS_NAMES.placeholder}`;
@@ -64,7 +64,7 @@ export function paintFragment(
   // Identity, so the fragment stays addressable even though its content didn't
   // paint. Everything downstream — click → position, position → rect, scroll
   // restore — reads these and nothing else.
-  el.dataset.blockId = String(fragment.blockId);
+  el.dataset.blockId = String(fragment.nodeId);
   if (fragment.docFrom !== undefined) el.dataset.docFrom = String(fragment.docFrom);
   if (fragment.docTo !== undefined) el.dataset.docTo = String(fragment.docTo);
 

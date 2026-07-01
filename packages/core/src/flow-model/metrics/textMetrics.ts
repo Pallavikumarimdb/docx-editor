@@ -289,7 +289,7 @@ function canvasWidth(text: string, fontString: string): number {
 }
 
 /**
- * Measure a string: width plus the vertical metrics of its font.
+ * LayoutMetrics a string: width plus the vertical metrics of its font.
  *
  * @public
  */
@@ -304,7 +304,7 @@ export function measureText(text: string, style: FontStyle): TextMeasurement {
 }
 
 /**
- * Measure a run, including the per-character advances hit-testing needs.
+ * LayoutMetrics a run, including the per-character advances hit-testing needs.
  *
  * @public
  */
@@ -328,7 +328,7 @@ export function prefixAdvances(text: string, style: FontStyle): number[] {
   const advances: number[] = [];
   for (let i = 1; i <= text.length; i++) {
     // Snap off the low half of a surrogate pair. Slicing through an emoji
-    // measures a lone surrogate — which the canvas renders as tofu, not as
+    // metrics a lone surrogate — which the canvas renders as tofu, not as
     // nothing — so the advance would be wrong AND the boundary would be one no
     // caret may occupy.
     advances.push(measureTextWidth(text.slice(0, snapToCodePoint(text, i)), style));
@@ -342,12 +342,12 @@ export function prefixAdvances(text: string, style: FontStyle): number[] {
  * Returns a boundary in `[0, text.length]` — the caret sits *between* characters,
  * so both ends are valid answers.
  *
- * The search measures **prefixes on demand**, never the whole advance table.
+ * The search metrics **prefixes on demand**, never the whole advance table.
  * That matters because the run this is called on is not line-bounded: a DOCX may
  * hold a single `w:t` of half a million characters with no space in it, which
  * the line breaker cannot split and so places whole. Building the advance table
- * for that would be O(n) canvas measures over O(n)-length strings — a single
- * click would hang the tab. Measuring `log₂(n)` prefixes instead is ~20 measures
+ * for that would be O(n) canvas metrics over O(n)-length strings — a single
+ * click would hang the tab. Measuring `log₂(n)` prefixes instead is ~20 metrics
  * for a 500k-character run.
  *
  * @public
@@ -385,7 +385,7 @@ export function charIndexAtX(text: string, style: FontStyle, x: number): number 
  * Width of the first `count` characters, snapped to a whole code point.
  *
  * Slicing at a raw index can land between the two halves of a surrogate pair
- * (an emoji, a rare CJK glyph), which measures as a lone replacement character
+ * (an emoji, a rare CJK glyph), which metrics as a lone replacement character
  * and puts the caret in the middle of something indivisible. Snapping keeps
  * every boundary a real one.
  */

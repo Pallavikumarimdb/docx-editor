@@ -6,7 +6,7 @@
  * file focused on row/cell/fragment painting.
  */
 
-import type { TableMeasure } from '../pagination-model/types';
+import type { TableMetrics } from '../pagination-model/types';
 
 type BorderSpec = { width?: number; color?: string; style?: string };
 
@@ -50,7 +50,7 @@ export function styleBorder(
  * the UNrounded offsets (it splits against exact measured heights). Keep the
  * two separate — rounding here is purely for paint crispness.
  */
-export function buildRowYPositions(rows: TableMeasure['rows']): number[] {
+export function buildRowYPositions(rows: TableMetrics['rows']): number[] {
   const positions: number[] = [];
   let y = 0;
   for (const r of rows) {

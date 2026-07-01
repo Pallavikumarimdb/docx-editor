@@ -27,7 +27,7 @@ import type { Theme } from '../../types/document';
 import { resolveColor, resolveHighlightToCss } from '../../utils/colorResolver';
 import { halfPointsToPixels, halfPointsToPoints } from '../../utils/units';
 import { twipsToPixels, constrainImageToPage } from './shared';
-import type { ToFlowBlocksOptions } from './shared';
+import type { BuildBoxTreeOptions } from './shared';
 
 /**
  * Extract run formatting from ProseMirror marks.
@@ -332,7 +332,7 @@ function inlineCheckboxWidgetFor(child: PMNode, childPos: number): InlineSdtWidg
 export function paragraphToRuns(
   node: PMNode,
   startPos: number,
-  _options: ToFlowBlocksOptions
+  _options: BuildBoxTreeOptions
 ): Run[] {
   const runs: Run[] = [];
   const offset = startPos + 1; // +1 for opening tag

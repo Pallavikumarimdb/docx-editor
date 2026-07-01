@@ -11,7 +11,7 @@
 import type {
   TableFragment,
   TableBlock,
-  TableMeasure,
+  TableMetrics,
   TableCell,
   TableCellMetrics,
   ParagraphBlock,
@@ -106,13 +106,13 @@ function renderCellContent(
       // Use wrapText to determine which side text flows on (same as rectsToFloatingZones in paintPage.ts)
       const wt = img.wrapText ?? 'bothSides';
       if (wt === 'right') {
-        // Text flows on RIGHT only -> image blocks the left side
+        // Text flows on RIGHT only -> image nodes the left side
         leftMargin = rectRight;
       } else if (wt === 'left') {
-        // Text flows on LEFT only -> image blocks the right side
+        // Text flows on LEFT only -> image nodes the right side
         rightMargin = contentWidth - (img.x - img.distLeft);
       } else {
-        // bothSides / largest: use image position to determine which side it blocks
+        // bothSides / largest: use image position to determine which side it nodes
         if (img.side === 'left') {
           leftMargin = rectRight;
         } else {
@@ -137,9 +137,9 @@ function renderCellContent(
 
   let cumulativeY = 0;
   let previousParagraphAfter = 0;
-  for (let i = 0; i < cell.blocks.length; i++) {
-    const block = cell.blocks[i];
-    const measure = cellMetrics.blocks[i];
+  for (let i = 0; i < cell.nodes.length; i++) {
+    const block = cell.nodes[i];
+    const measure = cellMetrics.metrics[i];
 
     if (block?.kind === 'paragraph' && measure?.kind === 'paragraph') {
       const paragraphBlock = block as ParagraphBlock;
@@ -160,7 +160,7 @@ function renderCellContent(
       // Create synthetic fragment for the paragraph
       const syntheticFragment: ParagraphFragment = {
         kind: 'paragraph',
-        blockId: paragraphBlock.id,
+        nodeId: paragraphBlock.id,
         x: 0,
         y: 0,
         width: contentWidth,
@@ -192,7 +192,7 @@ function renderCellContent(
       // Avoid cumulative marginTop offsets here: cell content already flows vertically,
       // and compounding offsets can produce enormous heights on deeply nested tables.
       const tableBlock = block as TableBlock;
-      const tableMeasure = measure as TableMeasure;
+      const tableMeasure = measure as TableMetrics;
       const effectiveSpaceBefore = previousParagraphAfter;
 
       const nestedTableEl = renderNestedTable(tableBlock, tableMeasure, context, doc);
@@ -201,7 +201,7 @@ function renderCellContent(
         nestedTableEl.style.marginTop = `${effectiveSpaceBefore}px`;
       }
       contentEl.appendChild(nestedTableEl);
-      cumulativeY += effectiveSpaceBefore + ((measure as TableMeasure).totalHeight ?? 0);
+      cumulativeY += effectiveSpaceBefore + ((measure as TableMetrics).totalHeight ?? 0);
       previousParagraphAfter = 0;
     }
   }
@@ -230,7 +230,7 @@ function renderCellContent(
  */
 function renderNestedTable(
   block: TableBlock,
-  measure: TableMeasure,
+  measure: TableMetrics,
   context: RenderContext,
   doc: Document
 ): HTMLElement {
@@ -430,9 +430,9 @@ function paintTableCell(
   cellEl.appendChild(contentEl);
 
   // Store PM positions for selection
-  if (cell.blocks.length > 0) {
-    const firstBlock = cell.blocks[0];
-    const lastBlock = cell.blocks[cell.blocks.length - 1];
+  if (cell.nodes.length > 0) {
+    const firstBlock = cell.nodes[0];
+    const lastBlock = cell.nodes[cell.nodes.length - 1];
     if (firstBlock && 'docFrom' in firstBlock && firstBlock.docFrom !== undefined) {
       cellEl.dataset.docFrom = String(firstBlock.docFrom);
     }
@@ -503,7 +503,7 @@ function computeCellGrid(block: TableBlock, columnWidths: number[]): GridCell[] 
  */
 function paintTableRow(
   row: TableBlock['rows'][number],
-  rowMeasure: TableMeasure['rows'][number],
+  rowMeasure: TableMetrics['rows'][number],
   rowIndex: number,
   y: number,
   columnWidths: number[],
@@ -671,23 +671,23 @@ function paintTableRow(
  * @param block - The full table block
  * @param measure - The full table measure
  * @param context - Rendering context
- * @param options - Rendering options
+ * @param config - Rendering config
  * @returns The table DOM element
  */
 export function paintTableFragment(
   fragment: TableFragment,
   block: TableBlock,
-  measure: TableMeasure,
+  measure: TableMetrics,
   context: RenderContext,
-  options: RenderTableFragmentOptions = {}
+  config: RenderTableFragmentOptions = {}
 ): HTMLElement {
-  const doc = options.document ?? document;
+  const doc = config.document ?? document;
 
   const tableEl = doc.createElement('div');
   tableEl.className = TABLE_CLASS_NAMES.table;
 
   // Outer positioning: body's per-page layout uses `absolute` (caller sets
-  // x/y via applyFragmentStyles); HF / textbox flow blocks vertically and
+  // x/y via applyFragmentStyles); HF / textbox flow nodes vertically and
   // pass `positioning: 'flow'` so the table participates in normal document
   // flow instead. Pre-PR (#379) those callers had to overwrite the inline
   // style after the renderer call.
@@ -699,7 +699,7 @@ export function paintTableFragment(
   tableEl.style.overflow = 'hidden';
 
   // Store metadata
-  tableEl.dataset.blockId = String(fragment.blockId);
+  tableEl.dataset.blockId = String(fragment.nodeId);
   tableEl.dataset.fromRow = String(fragment.fromRow);
   tableEl.dataset.toRow = String(fragment.toRow);
 
@@ -760,7 +760,7 @@ export function paintTableFragment(
     handle.style.cursor = 'col-resize';
     handle.style.zIndex = '10';
     handle.dataset.columnIndex = String(col);
-    handle.dataset.tableBlockId = String(fragment.blockId);
+    handle.dataset.tableNodeId = String(fragment.nodeId);
     if (fragment.docFrom !== undefined) {
       handle.dataset.tablePmStart = String(fragment.docFrom);
     }
@@ -986,7 +986,7 @@ export function paintTableFragment(
     rowHandle.style.cursor = 'row-resize';
     rowHandle.style.zIndex = '10';
     rowHandle.dataset.rowIndex = String(rowIdx);
-    rowHandle.dataset.tableBlockId = String(fragment.blockId);
+    rowHandle.dataset.tableNodeId = String(fragment.nodeId);
     if (fragment.docFrom !== undefined) {
       rowHandle.dataset.tablePmStart = String(fragment.docFrom);
     }
@@ -1006,7 +1006,7 @@ export function paintTableFragment(
     bottomHandle.style.cursor = 'row-resize';
     bottomHandle.style.zIndex = '10';
     bottomHandle.dataset.rowIndex = String(block.rows.length - 1);
-    bottomHandle.dataset.tableBlockId = String(fragment.blockId);
+    bottomHandle.dataset.tableNodeId = String(fragment.nodeId);
     bottomHandle.dataset.isEdge = 'bottom';
     if (fragment.docFrom !== undefined) {
       bottomHandle.dataset.tablePmStart = String(fragment.docFrom);
@@ -1026,7 +1026,7 @@ export function paintTableFragment(
     rightHandle.style.cursor = 'col-resize';
     rightHandle.style.zIndex = '10';
     rightHandle.dataset.columnIndex = String(measure.columnWidths.length - 1);
-    rightHandle.dataset.tableBlockId = String(fragment.blockId);
+    rightHandle.dataset.tableNodeId = String(fragment.nodeId);
     rightHandle.dataset.isEdge = 'right';
     if (fragment.docFrom !== undefined) {
       rightHandle.dataset.tablePmStart = String(fragment.docFrom);

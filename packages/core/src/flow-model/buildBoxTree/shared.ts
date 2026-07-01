@@ -7,7 +7,7 @@ import type { Theme } from '../../types/document';
 /**
  * Options for the conversion.
  */
-export type ToFlowBlocksOptions = {
+export type BuildBoxTreeOptions = {
   /** Default font family. */
   defaultFont?: string;
   /** Default font size in points. */

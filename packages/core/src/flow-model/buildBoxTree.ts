@@ -1,7 +1,7 @@
 /**
- * ProseMirror to FlowBlock Converter
+ * ProseMirror to ContentNode Converter
  *
- * Converts a ProseMirror document into FlowBlock[] for the layout engine.
+ * Converts a ProseMirror document into ContentNode[] for the layout engine.
  * Tracks docFrom/docTo positions for click-to-position mapping.
  *
  * The deep import `@eigenpal/.../flow-model/buildBoxTree` is part of the
@@ -13,7 +13,7 @@
 
 import type { Node as PMNode } from 'prosemirror-model';
 import type {
-  FlowBlock,
+  ContentNode,
   ParagraphBlock,
   TableBlock,
   TableRow,
@@ -33,12 +33,12 @@ import { resolveColorToHex } from '../utils/colorResolver';
 
 import { twipsToPixels, constrainImageToPage, allocBoxId } from './buildBoxTree/shared';
 import { AUTO_PARAGRAPH_SPACING_PX } from '../utils/units';
-import type { ToFlowBlocksOptions } from './buildBoxTree/shared';
+import type { BuildBoxTreeOptions } from './buildBoxTree/shared';
 import { paragraphToRuns } from './buildBoxTree/runs';
 import { convertBorderSpecToLayout, readBorderAttrs } from './buildBoxTree/borders';
 import { computeListMarker } from './buildBoxTree/listMarkers';
 
-export type { ToFlowBlocksOptions } from './buildBoxTree/shared';
+export type { BuildBoxTreeOptions } from './buildBoxTree/shared';
 export { resetBoxIds } from './buildBoxTree/shared';
 export { convertBorderSpecToLayout } from './buildBoxTree/borders';
 export { resolveListTemplate } from './buildBoxTree/listMarkers';
@@ -113,8 +113,8 @@ function convertParagraphAttrs(
       }
     }
   }
-  if (pmAttrs.spacingExplicit) {
-    attrs.spacingExplicit = pmAttrs.spacingExplicit;
+  if (pmAttrs.spacingOverrides) {
+    attrs.spacingOverrides = pmAttrs.spacingOverrides;
   }
 
   // Indentation - handle list item fallback calculation
@@ -341,16 +341,16 @@ function mapTabJustify(
 function convertParagraph(
   node: PMNode,
   startPos: number,
-  options: ToFlowBlocksOptions
+  config: BuildBoxTreeOptions
 ): ParagraphBlock {
   const pmAttrs = node.attrs as PMParagraphAttrs;
-  const runs = paragraphToRuns(node, startPos, options);
+  const runs = paragraphToRuns(node, startPos, config);
   const attrs = convertParagraphAttrs(
     pmAttrs,
-    options.theme,
-    options.listCounters,
-    options.listSeenNumIds,
-    options.defaultTabMarkTwips
+    config.theme,
+    config.listCounters,
+    config.listSeenNumIds,
+    config.defaultTabMarkTwips
   );
 
   return {
@@ -370,17 +370,17 @@ function convertParagraph(
 function convertTableCell(
   node: PMNode,
   startPos: number,
-  options: ToFlowBlocksOptions,
+  config: BuildBoxTreeOptions,
   tableCellMargins?: { top?: number; bottom?: number; left?: number; right?: number }
 ): TableCell {
-  const blocks: FlowBlock[] = [];
+  const nodes: ContentNode[] = [];
   let offset = startPos + 1; // +1 for opening tag
 
   node.forEach((child) => {
     if (child.type.name === 'paragraph') {
-      blocks.push(convertParagraph(child, offset, options));
+      nodes.push(convertParagraph(child, offset, config));
     } else if (child.type.name === 'table') {
-      blocks.push(convertTable(child, offset, options));
+      nodes.push(convertTable(child, offset, config));
     }
     offset += child.nodeSize;
   });
@@ -436,7 +436,7 @@ function convertTableCell(
 
   return {
     id: allocBoxId(),
-    blocks,
+    nodes,
     colSpan: attrs.colspan as number,
     rowSpan: attrs.rowspan as number,
     width,
@@ -444,7 +444,7 @@ function convertTableCell(
     widthType,
     verticalAlign: attrs.verticalAlign as 'top' | 'center' | 'bottom' | undefined,
     background: attrs.backgroundColor ? `#${attrs.backgroundColor}` : undefined,
-    borders: readBorderAttrs(attrs as Record<string, unknown>, options.theme),
+    borders: readBorderAttrs(attrs as Record<string, unknown>, config.theme),
     padding,
     noWrap: (attrs.noWrap as boolean | undefined) || undefined,
     trackedMarker: cellMarker ?? undefined,
@@ -457,7 +457,7 @@ function convertTableCell(
 function convertTableRow(
   node: PMNode,
   startPos: number,
-  options: ToFlowBlocksOptions,
+  config: BuildBoxTreeOptions,
   tableCellMargins?: { top?: number; bottom?: number; left?: number; right?: number }
 ): TableRow {
   const cells: TableCell[] = [];
@@ -465,7 +465,7 @@ function convertTableRow(
 
   node.forEach((child) => {
     if (child.type.name === 'tableCell' || child.type.name === 'tableHeader') {
-      cells.push(convertTableCell(child, offset, options, tableCellMargins));
+      cells.push(convertTableCell(child, offset, config, tableCellMargins));
     }
     offset += child.nodeSize;
   });
@@ -491,7 +491,7 @@ function convertTableRow(
 /**
  * Convert a table node to a TableBlock.
  */
-function convertTable(node: PMNode, startPos: number, options: ToFlowBlocksOptions): TableBlock {
+function convertTable(node: PMNode, startPos: number, config: BuildBoxTreeOptions): TableBlock {
   const rows: TableRow[] = [];
   let offset = startPos + 1; // +1 for opening tag
 
@@ -504,7 +504,7 @@ function convertTable(node: PMNode, startPos: number, options: ToFlowBlocksOptio
 
   node.forEach((child) => {
     if (child.type.name === 'tableRow') {
-      rows.push(convertTableRow(child, offset, options, tableCellMargins));
+      rows.push(convertTableRow(child, offset, config, tableCellMargins));
     }
     offset += child.nodeSize;
   });
@@ -636,16 +636,16 @@ function convertImage(node: PMNode, startPos: number, pageContentHeight?: number
 function convertTextBoxNode(
   node: PMNode,
   startPos: number,
-  opts: ToFlowBlocksOptions
+  opts: BuildBoxTreeOptions
 ): TextBoxBlock {
   const attrs = node.attrs;
-  const contentBlocks: ParagraphBlock[] = [];
+  const contentNodes: ParagraphBlock[] = [];
 
   // Convert child paragraphs inside the text box
   node.forEach((child, offset) => {
     if (child.type.name === 'paragraph') {
       const block = convertParagraph(child, startPos + 1 + offset, opts);
-      contentBlocks.push(block);
+      contentNodes.push(block);
     }
   });
 
@@ -664,7 +664,7 @@ function convertTextBoxNode(
       left: (attrs.marginLeft as number) ?? DEFAULT_TEXTBOX_MARGINS.left,
       right: (attrs.marginRight as number) ?? DEFAULT_TEXTBOX_MARGINS.right,
     },
-    content: contentBlocks,
+    content: contentNodes,
     displayMode: attrs.displayMode as TextBoxBlock['displayMode'],
     cssFloat: attrs.cssFloat as TextBoxBlock['cssFloat'],
     wrapType: attrs.wrapType as string | undefined,
@@ -681,24 +681,24 @@ function convertTextBoxNode(
 }
 
 /**
- * Convert a ProseMirror document to FlowBlock array.
+ * Convert a ProseMirror document to ContentNode array.
  *
  * Walks the document tree, converting each node to the appropriate block type.
  * Tracks docFrom/docTo positions for each block for click-to-position mapping.
  */
-export function buildBoxTree(doc: PMNode, options: ToFlowBlocksOptions = {}): FlowBlock[] {
+export function buildBoxTree(doc: PMNode, config: BuildBoxTreeOptions = {}): ContentNode[] {
   // Doc-level `defaultTabMarkTwips` (from settings.xml) rides on the PM
   // doc node so callers don't have to plumb a separate prop. Explicit
-  // options still win for callers that override.
+  // config still win for callers that override.
   const docDefaultTabMark = doc.attrs?.defaultTabMarkTwips as number | undefined;
-  const opts: ToFlowBlocksOptions = {
-    ...options,
-    defaultFont: options.defaultFont ?? DEFAULT_FONT,
-    defaultSize: options.defaultSize ?? DEFAULT_SIZE,
-    defaultTabMarkTwips: options.defaultTabMarkTwips ?? docDefaultTabMark,
+  const opts: BuildBoxTreeOptions = {
+    ...config,
+    defaultFont: config.defaultFont ?? DEFAULT_FONT,
+    defaultSize: config.defaultSize ?? DEFAULT_SIZE,
+    defaultTabMarkTwips: config.defaultTabMarkTwips ?? docDefaultTabMark,
   };
 
-  const blocks: FlowBlock[] = [];
+  const nodes: ContentNode[] = [];
   const offset = 0; // Start at document beginning
   let lastSectionMarginsTwips: { top: number; bottom: number; left: number; right: number } = {
     top: 1440,
@@ -716,9 +716,9 @@ export function buildBoxTree(doc: PMNode, options: ToFlowBlocksOptions = {}): Fl
   }
 
   /**
-   * Convert one PM node to flow block(s), appending to `blocks`. Recurses
+   * Convert one PM node to flow block(s), appending to `nodes`. Recurses
    * into block-level SDTs: their children become normal, independently
-   * paginated flow blocks (a control may span pages), each tagged with the
+   * paginated flow nodes (a control may span pages), each tagged with the
    * enclosing SDT group(s) via `sdtGroups` so the painter can redraw the
    * control boundary.
    */
@@ -745,7 +745,7 @@ export function buildBoxTree(doc: PMNode, options: ToFlowBlocksOptions = {}): Fl
       return;
     }
 
-    const startLen = blocks.length;
+    const startLen = nodes.length;
 
     switch (node.type.name) {
       case 'paragraph':
@@ -753,7 +753,7 @@ export function buildBoxTree(doc: PMNode, options: ToFlowBlocksOptions = {}): Fl
           const block = convertParagraph(node, pos, opts);
           const pmAttrs = node.attrs as PMParagraphAttrs;
 
-          blocks.push(block);
+          nodes.push(block);
 
           // Emit section break block if this paragraph ends a section
           const secProps = pmAttrs._sectionProperties as SectionProperties | undefined;
@@ -809,22 +809,22 @@ export function buildBoxTree(doc: PMNode, options: ToFlowBlocksOptions = {}): Fl
               }
             }
 
-            blocks.push(sectionBreak);
+            nodes.push(sectionBreak);
           }
         }
         break;
 
       case 'table':
-        blocks.push(convertTable(node, pos, opts));
+        nodes.push(convertTable(node, pos, opts));
         break;
 
       case 'image':
         // Standalone image block (if not inline)
-        blocks.push(convertImage(node, pos, opts.pageContentHeight));
+        nodes.push(convertImage(node, pos, opts.pageContentHeight));
         break;
 
       case 'textBox':
-        blocks.push(convertTextBoxNode(node, pos, opts));
+        nodes.push(convertTextBoxNode(node, pos, opts));
         break;
 
       case 'horizontalRule':
@@ -835,14 +835,14 @@ export function buildBoxTree(doc: PMNode, options: ToFlowBlocksOptions = {}): Fl
           docFrom: pos,
           docTo: pos + node.nodeSize,
         };
-        blocks.push(pb);
+        nodes.push(pb);
         break;
       }
     }
 
     if (sdtGroups.length > 0) {
-      for (let k = startLen; k < blocks.length; k++) {
-        blocks[k].sdtGroups = sdtGroups;
+      for (let k = startLen; k < nodes.length; k++) {
+        nodes[k].sdtGroups = sdtGroups;
       }
     }
   };
@@ -851,5 +851,5 @@ export function buildBoxTree(doc: PMNode, options: ToFlowBlocksOptions = {}): Fl
     processNode(node, offset + nodeOffset, []);
   });
 
-  return blocks;
+  return nodes;
 }

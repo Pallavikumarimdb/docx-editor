@@ -50,16 +50,16 @@ function renderMeasuredFootnoteContent(
   container.style.height = `${content.height}px`;
 
   let cursorY = 0;
-  for (let i = 0; i < content.blocks.length; i++) {
-    const block = content.blocks[i];
-    const measure = content.measures[i];
+  for (let i = 0; i < content.nodes.length; i++) {
+    const block = content.nodes[i];
+    const measure = content.metrics[i];
     if (!block || !measure) continue;
 
     if (block.kind === 'paragraph' && measure.kind === 'paragraph') {
       const spacingBefore = block.attrs?.spacing?.before ?? 0;
       const syntheticFragment: ParagraphFragment = {
         kind: 'paragraph',
-        blockId: block.id,
+        nodeId: block.id,
         x: 0,
         y: cursorY + spacingBefore,
         width: contentWidth,
@@ -85,7 +85,7 @@ function renderMeasuredFootnoteContent(
     } else if (block.kind === 'table' && measure.kind === 'table') {
       const syntheticFragment: TableFragment = {
         kind: 'table',
-        blockId: block.id,
+        nodeId: block.id,
         x: 0,
         y: cursorY,
         width: measure.totalWidth,
@@ -109,7 +109,7 @@ function renderMeasuredFootnoteContent(
     } else if (block.kind === 'image' && measure.kind === 'image') {
       const syntheticFragment: ImageFragment = {
         kind: 'image',
-        blockId: block.id,
+        nodeId: block.id,
         x: 0,
         y: cursorY,
         width: measure.width,
@@ -131,7 +131,7 @@ function renderMeasuredFootnoteContent(
     } else if (block.kind === 'textBox' && measure.kind === 'textBox') {
       const syntheticFragment: TextBoxFragment = {
         kind: 'textBox',
-        blockId: block.id,
+        nodeId: block.id,
         x: 0,
         y: cursorY,
         width: measure.width,

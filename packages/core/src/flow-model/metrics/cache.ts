@@ -21,7 +21,7 @@ import type { FontMetrics } from './textMetrics';
 import type { ParagraphBlock, ParagraphMetrics, Run } from '../../pagination-model/types';
 
 /**
- * Entry caps. Generous — a 200-page document measures a few thousand distinct
+ * Entry caps. Generous — a 200-page document metrics a few thousand distinct
  * paragraphs and a few dozen fonts — but bounded, so a pathological document
  * can't grow a map without limit.
  */
@@ -159,14 +159,14 @@ export function getFontCacheSize(): number {
  *  - the **paragraph attrs that move text**: spacing, indents, tabs, alignment,
  *    and the list marker (which eats width on the first line);
  *  - the **document default font**, because an empty paragraph — and any run
- *    that didn't name a face — measures against it. Two blank paragraphs with
+ *    that didn't name a face — metrics against it. Two blank paragraphs with
  *    identical (empty) content but different document defaults are *different*
  *    measurements, and a key that ignored the default would serve one of them
  *    the other's height. That case has no other guard, so it is the one this
  *    key exists for;
  *  - the **float zones** narrowing the line band, and the paragraph's Y within
  *    them — the same paragraph wraps differently beside an image than below it.
- *    Pass them as `floatKey`; a caller that measures with floats and omits it is
+ *    Pass them as `floatKey`; a caller that metrics with floats and omits it is
  *    asking to be served the un-floated layout.
  *
  * Deliberately absent: `id`, `paraId`, doc positions, and tracked-change
