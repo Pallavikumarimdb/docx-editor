@@ -33,6 +33,30 @@ const DEFAULT_BORDER_COLOR = '#000000';
 /** The `w:val` values that mean "no border here". */
 const ABSENT_STYLES: ReadonlySet<string> = new Set(['none', 'nil']);
 
+/** Convert OOXML border kinds to values accepted by CSS `border-style`. */
+function borderStyleToCss(style: string): BorderKind['style'] {
+  switch (style) {
+    case 'double':
+    case 'triple':
+      return 'double';
+    case 'dotted':
+      return 'dotted';
+    case 'dashed':
+    case 'dashSmallGap':
+      return 'dashed';
+    case 'threeDEmboss':
+      return 'ridge';
+    case 'threeDEngrave':
+      return 'groove';
+    case 'outset':
+      return 'outset';
+    case 'inset':
+      return 'inset';
+    default:
+      return 'solid';
+  }
+}
+
 /**
  * Widest border we will draw, px.
  *
@@ -58,11 +82,12 @@ export function convertBorderSpecToLayout(
   if (!Number.isFinite(authored) || authored <= 0) return undefined;
 
   const width = Math.min(authored, MAX_BORDER_WIDTH_PX);
+  const resolvedColor = resolveColorToHex(border.color, theme);
 
   const kind: BorderKind = {
-    style: border.style,
+    style: borderStyleToCss(border.style),
     width,
-    color: resolveColorToHex(border.color, theme) ?? DEFAULT_BORDER_COLOR,
+    color: resolvedColor ? `#${resolvedColor}` : DEFAULT_BORDER_COLOR,
   };
 
   if (border.space != null) kind.space = pointsToPixels(border.space);
