@@ -18,34 +18,38 @@ import {
   type RenderPageOptions,
 } from '../paintPage';
 import type { FootnoteRenderItem } from './footnotes';
+import { semanticDigest } from '../semanticDigest';
 
 type FullPageOptions = RenderPageOptions & {
+  pageGap?: number;
   footnotesByPage?: Map<number, FootnoteRenderItem[]>;
+  /** Render every page eagerly for complete DOM snapshots and exports. */
+  virtualize?: boolean;
 };
 
 /**
- * Build a RenderContext and resolved page config (with footnotes) for a page.
+ * Build a RenderContext and resolved page options (with footnotes) for a page.
  * Centralises logic shared by populatePageShell, repopulatePageContent, and the eager render path.
  */
 function buildPageRenderArgs(
   page: Page,
   totalPages: number,
-  config: FullPageOptions
+  options: FullPageOptions
 ): { context: RenderContext; pageOptions: RenderPageOptions } {
   const context: RenderContext = {
     pageNumber: page.number,
     totalPages,
     section: 'body',
-    resolvedCommentIds: config.resolvedCommentIds,
+    resolvedCommentIds: options.resolvedCommentIds,
   };
-  const pageOptions: RenderPageOptions = { ...config };
+  const pageOptions: RenderPageOptions = { ...options };
   // Per-page header/footer selection when titlePg is enabled
-  if (config.titlePg && page.number === 1) {
-    pageOptions.headerContent = config.firstPageHeaderContent;
-    pageOptions.footerContent = config.firstPageFooterContent;
+  if (options.titlePg && page.number === 1) {
+    pageOptions.headerContent = options.firstPageHeaderContent;
+    pageOptions.footerContent = options.firstPageFooterContent;
   }
-  if (config.footnotesByPage) {
-    const fns = config.footnotesByPage.get(page.number);
+  if (options.footnotesByPage) {
+    const fns = options.footnotesByPage.get(page.number);
     if (fns && fns.length > 0) {
       (pageOptions as RenderPageOptions & { footnoteArea?: FootnoteRenderItem[] }).footnoteArea =
         fns;
@@ -63,6 +67,7 @@ interface PageContainerState {
   pageCursors: PageShellState[];
   totalPages: number;
   optionsHash: string;
+  headerFooterHash: string;
   pageDataMap: Map<HTMLElement, { page: Page; index: number; rendered: boolean }>;
   currentOptions: FullPageOptions;
 }
@@ -73,87 +78,60 @@ interface PageContainer extends HTMLElement {
 }
 
 /**
- * Compute a fingerprint string for a page that changes when its content changes.
- * Used to detect which pages need re-rendering on incremental updates.
+ * Compute a fingerprint that covers both layout and semantic paint inputs.
+ *
+ * Fragment geometry alone misses equal-length text edits, formatting, comments,
+ * revisions, and image changes. `indexBlocksById` versions each block together
+ * with its measurement, so pages can invalidate semantically without comparing
+ * or repainting the whole document.
  */
-function computePageFingerprint(page: Page): string {
-  const parts: string[] = [];
-
-  // Page-level properties
-  parts.push(`s:${page.size.w},${page.size.h}`);
-  parts.push(
-    `m:${page.margins.top},${page.margins.right},${page.margins.bottom},${page.margins.left}`
-  );
-  parts.push(`n:${page.number}`);
-  if (page.footnoteReservedHeight) parts.push(`fn:${page.footnoteReservedHeight}`);
-
-  // Each fragment's stable properties
-  for (const frag of page.fragments) {
-    let fp = `${frag.kind}:${frag.nodeId},${frag.x},${frag.y},${frag.width},${frag.height}`;
-    if (frag.docFrom !== undefined) fp += `,ps:${frag.docFrom}`;
-    if (frag.docTo !== undefined) fp += `,pe:${frag.docTo}`;
-
-    if (frag.kind === 'paragraph') {
-      fp += `,fl:${frag.fromLine},tl:${frag.toLine}`;
-    } else if (frag.kind === 'table') {
-      fp += `,fr:${frag.fromRow},tr:${frag.toRow}`;
-    }
-
-    parts.push(fp);
-  }
-
-  return parts.join('|');
+function computePageFingerprint(page: Page, options: FullPageOptions): string {
+  const blockVersions = page.fragments.map((fragment) => {
+    const entry = options.blockLookup?.get(String(fragment.blockId));
+    return (
+      entry?.version ??
+      (entry ? semanticDigest(entry.block, entry.measure) : `missing:${String(fragment.blockId)}`)
+    );
+  });
+  return semanticDigest(page, blockVersions, options.footnotesByPage?.get(page.number));
 }
 
 /**
- * Compute a hash for render config that affect all pages globally.
- * When this changes, all pages need a full re-render.
+ * Render options whose changes require rebuilding the page shells.
+ *
+ * Header/footer content is deliberately separate: changing it should repaint
+ * every currently populated shell while retaining virtualization and scroll
+ * position, not tear down the whole stack.
  */
-function computeOptionsHash(config: RenderPageOptions): string {
-  const parts: string[] = [];
+function computeOptionsHash(options: FullPageOptions): string {
+  return semanticDigest({
+    pageGap: options.pageGap,
+    pageClassName: options.pageClassName,
+    showBorders: options.showBorders,
+    backgroundColor: options.backgroundColor,
+    showShadow: options.showShadow,
+    titlePg: options.titlePg,
+    headerDistance: options.headerDistance,
+    footerDistance: options.footerDistance,
+    pageBorders: options.pageBorders,
+    theme: options.theme,
+    watermark: options.watermark,
+    resolvedCommentIds: options.resolvedCommentIds,
+  });
+}
 
-  // Header/footer content changes affect all pages
-  if (config.headerContent) {
-    parts.push(
-      `hdr:${config.headerContent.nodes.length},${config.headerContent.height},${
-        config.headerContent.visualTop ?? 0
-      },${config.headerContent.visualBottom ?? config.headerContent.height}`
-    );
-  }
-  if (config.footerContent) {
-    parts.push(
-      `ftr:${config.footerContent.nodes.length},${config.footerContent.height},${
-        config.footerContent.visualTop ?? 0
-      },${config.footerContent.visualBottom ?? config.footerContent.height}`
-    );
-  }
-  if (config.firstPageHeaderContent) {
-    parts.push(
-      `fp-hdr:${config.firstPageHeaderContent.nodes.length},${config.firstPageHeaderContent.height}`
-    );
-  }
-  if (config.firstPageFooterContent) {
-    parts.push(
-      `fp-ftr:${config.firstPageFooterContent.nodes.length},${config.firstPageFooterContent.height}`
-    );
-  }
-  if (config.titlePg) parts.push('titlePg');
+function computeHeaderFooterHash(options: FullPageOptions): string {
+  return semanticDigest(
+    options.headerContent,
+    options.footerContent,
+    options.firstPageHeaderContent,
+    options.firstPageFooterContent
+  );
+}
 
-  // Theme changes
-  if (config.theme) {
-    parts.push(`thm:${config.theme.name ?? 'default'}`);
-  }
-
-  // Page border changes
-  if (config.pageBorders) {
-    parts.push(`pb:${JSON.stringify(config.pageBorders)}`);
-  }
-
-  // Header/footer distances
-  if (config.headerDistance !== undefined) parts.push(`hd:${config.headerDistance}`);
-  if (config.footerDistance !== undefined) parts.push(`fd:${config.footerDistance}`);
-
-  return parts.join('|');
+function dispatchPainted(container: HTMLElement): void {
+  const EventCtor = container.ownerDocument.defaultView?.CustomEvent ?? CustomEvent;
+  container.dispatchEvent(new EventCtor('painter:painted', { bubbles: true }));
 }
 
 /**
@@ -190,17 +168,19 @@ export type RenderPagesUpdateKind = 'incremental' | 'full';
 export function paintPages(
   pages: Page[],
   container: HTMLElement,
-  config: RenderPageOptions & {
+  options: RenderPageOptions & {
     pageGap?: number;
     footnotesByPage?: Map<number, FootnoteRenderItem[]>;
+    virtualize?: boolean;
   } = {}
 ): RenderPagesUpdateKind {
   const totalPages = pages.length;
-  const pageGap = config.pageGap ?? 24;
+  const pageGap = options.pageGap ?? 24;
   const pc = container as PageContainer;
   const prevState = pc.__pageRenderState;
-  const currentOptionsHash = computeOptionsHash(config);
-  const useVirtualization = totalPages >= VIRTUALIZATION_THRESHOLD;
+  const currentOptionsHash = computeOptionsHash(options);
+  const currentHeaderFooterHash = computeHeaderFooterHash(options);
+  const useVirtualization = options.virtualize !== false && totalPages >= VIRTUALIZATION_THRESHOLD;
 
   // Determine if we can do an incremental update
   const canIncremental =
@@ -211,16 +191,18 @@ export function paintPages(
     const prevShells = prevState.pageCursors;
     const prevDataMap = prevState.pageDataMap;
     const observer = pc.__pageObserver;
+    let didPaint = false;
 
     // Compute new fingerprints
     const newFingerprints: string[] = [];
     for (const page of pages) {
-      newFingerprints.push(computePageFingerprint(page));
+      newFingerprints.push(computePageFingerprint(page, options));
     }
 
     // If total page count changed, NUMPAGES fields in headers/footers are stale.
     // Force re-render of all currently-rendered pages.
     const totalPagesChanged = prevState.totalPages !== totalPages;
+    const headerFooterChanged = prevState.headerFooterHash !== currentHeaderFooterHash;
 
     // Update existing pages
     const commonCount = Math.min(prevShells.length, pages.length);
@@ -228,7 +210,7 @@ export function paintPages(
       const prev = prevShells[i];
       const newFp = newFingerprints[i];
 
-      if (prev.fingerprint === newFp && !totalPagesChanged) {
+      if (prev.fingerprint === newFp && !totalPagesChanged && !headerFooterChanged) {
         // Page unchanged — update data map with new page data (references may differ)
         const data = prevDataMap.get(prev.element);
         if (data) {
@@ -246,8 +228,15 @@ export function paintPages(
         data.page = pages[i];
 
         if (data.rendered) {
-          // Surgically replace only the content area, preserving header/footer
-          repopulatePageContent(shell, prevDataMap, totalPages, config);
+          if (totalPagesChanged || headerFooterChanged) {
+            // NUMPAGES and semantic HF edits affect the page chrome, so replace
+            // the entire populated shell. Empty virtualized shells stay lazy.
+            repopulatePageShell(shell, prevDataMap, totalPages, options);
+          } else {
+            // Body-only edit: preserve unchanged header/footer DOM.
+            repopulatePageContent(shell, prevDataMap, totalPages, options);
+          }
+          didPaint = true;
         }
         // If not rendered, it will be populated when it scrolls into view
       }
@@ -256,21 +245,22 @@ export function paintPages(
       prev.fingerprint = newFp;
 
       // Update page styles in case size changed
-      applyPageStyles(shell, pages[i].size.w, pages[i].size.h, config);
+      applyPageStyles(shell, pages[i].size.w, pages[i].size.h, options);
       shell.dataset.pageNumber = String(pages[i].number);
     }
 
     // Handle new pages (document grew)
     if (pages.length > prevShells.length) {
-      const doc = config.document ?? document;
+      const doc = options.document ?? document;
       for (let i = prevShells.length; i < pages.length; i++) {
         const page = pages[i];
         const pageEl = doc.createElement('div');
-        pageEl.className = config.pageClassName ?? PAGE_CLASS_NAMES.page;
+        pageEl.className = options.pageClassName ?? PAGE_CLASS_NAMES.page;
         pageEl.dataset.pageNumber = String(page.number);
         pageEl.dataset.pageIndex = String(i);
-        applyPageStyles(pageEl, page.size.w, page.size.h, config);
+        applyPageStyles(pageEl, page.size.w, page.size.h, options);
         container.appendChild(pageEl);
+        didPaint = true;
 
         prevShells.push({ element: pageEl, fingerprint: newFingerprints[i] });
         prevDataMap.set(pageEl, { page, index: i, rendered: false });
@@ -290,6 +280,7 @@ export function paintPages(
         }
         prevDataMap.delete(shell);
         container.removeChild(shell);
+        didPaint = true;
       }
       prevShells.length = pages.length;
     }
@@ -302,10 +293,12 @@ export function paintPages(
       }
     }
 
-    // Update stored state with fresh config (nodeLookup, footnotes, etc.)
+    // Update stored state with fresh options (blockLookup, footnotes, etc.)
     prevState.totalPages = totalPages;
-    prevState.currentOptions = config;
+    prevState.headerFooterHash = currentHeaderFooterHash;
+    prevState.currentOptions = options;
 
+    if (didPaint) dispatchPainted(container);
     return 'incremental';
   }
 
@@ -330,22 +323,22 @@ export function paintPages(
 
   for (let i = 0; i < pages.length; i++) {
     const page = pages[i];
-    fingerprints.push(computePageFingerprint(page));
+    fingerprints.push(computePageFingerprint(page, options));
 
     if (!useVirtualization) {
       // Small document: render all pages eagerly
-      const { context, pageOptions } = buildPageRenderArgs(page, totalPages, config);
+      const { context, pageOptions } = buildPageRenderArgs(page, totalPages, options);
       const pageEl = paintPage(page, context, pageOptions);
       container.appendChild(pageEl);
       pageShells.push(pageEl);
     } else {
       // Large document: create lightweight shell with correct dimensions
-      const doc = config.document ?? document;
+      const doc = options.document ?? document;
       const pageEl = doc.createElement('div');
-      pageEl.className = config.pageClassName ?? PAGE_CLASS_NAMES.page;
+      pageEl.className = options.pageClassName ?? PAGE_CLASS_NAMES.page;
       pageEl.dataset.pageNumber = String(page.number);
       pageEl.dataset.pageIndex = String(i);
-      applyPageStyles(pageEl, page.size.w, page.size.h, config);
+      applyPageStyles(pageEl, page.size.w, page.size.h, options);
       container.appendChild(pageEl);
       pageShells.push(pageEl);
     }
@@ -354,6 +347,7 @@ export function paintPages(
   if (!useVirtualization) {
     // Store state for potential future incremental updates (won't be used
     // since small docs skip the incremental path, but keeps data consistent)
+    dispatchPainted(container);
     return 'full';
   }
 
@@ -367,7 +361,7 @@ export function paintPages(
 
   // Use the browser viewport as intersection root.
   // The observer reads from pc.__pageRenderState so it always uses
-  // the latest config/totalPages (updated by the incremental path).
+  // the latest options/totalPages (updated by the incremental path).
   const observer = new IntersectionObserver(
     (entries) => {
       const renderState = pc.__pageRenderState;
@@ -378,6 +372,7 @@ export function paintPages(
         pageDataMap: liveDataMap,
       } = renderState;
 
+      let didPaint = false;
       for (const entry of entries) {
         const shell = entry.target as HTMLElement;
         const data = liveDataMap.get(shell);
@@ -385,7 +380,8 @@ export function paintPages(
 
         if (entry.isIntersecting) {
           // Page is near viewport — render it and neighbors
-          populatePageShell(shell, liveDataMap, liveTotalPages, liveOptions);
+          didPaint =
+            populatePageShell(shell, liveDataMap, liveTotalPages, liveOptions) || didPaint;
 
           // Also render buffer pages above and below
           for (let offset = -VIRTUALIZATION_BUFFER; offset <= VIRTUALIZATION_BUFFER; offset++) {
@@ -395,12 +391,13 @@ export function paintPages(
               neighborIdx < renderState.pageCursors.length &&
               neighborIdx !== data.index
             ) {
-              populatePageShell(
-                renderState.pageCursors[neighborIdx].element,
-                liveDataMap,
-                liveTotalPages,
-                liveOptions
-              );
+              didPaint =
+                populatePageShell(
+                  renderState.pageCursors[neighborIdx].element,
+                  liveDataMap,
+                  liveTotalPages,
+                  liveOptions
+                ) || didPaint;
             }
           }
         }
@@ -429,9 +426,10 @@ export function paintPages(
           }
         }
         if (!keepRendered && nearIndices.size > 0) {
-          depopulatePageShell(el, liveDataMap);
+          didPaint = depopulatePageShell(el, liveDataMap) || didPaint;
         }
       }
+      if (didPaint) dispatchPainted(container);
     },
     {
       root: null,
@@ -451,16 +449,18 @@ export function paintPages(
     pageCursors: pageShells.map((el, i) => ({ element: el, fingerprint: fingerprints[i] })),
     totalPages,
     optionsHash: currentOptionsHash,
+    headerFooterHash: currentHeaderFooterHash,
     pageDataMap,
-    currentOptions: config,
+    currentOptions: options,
   };
 
   // Eagerly render the first few pages so the initial view isn't blank
   const initialRenderCount = Math.min(pages.length, VIRTUALIZATION_BUFFER + 3);
   for (let i = 0; i < initialRenderCount; i++) {
-    populatePageShell(pageShells[i], pageDataMap, totalPages, config);
+    populatePageShell(pageShells[i], pageDataMap, totalPages, options);
   }
 
+  dispatchPainted(container);
   return 'full';
 }
 
@@ -471,18 +471,35 @@ function populatePageShell(
   shell: HTMLElement,
   pageDataMap: Map<HTMLElement, { page: Page; index: number; rendered: boolean }>,
   totalPages: number,
-  config: FullPageOptions
-): void {
+  options: FullPageOptions
+): boolean {
   const data = pageDataMap.get(shell);
-  if (!data || data.rendered) return;
+  if (!data || data.rendered) return false;
 
-  const { context, pageOptions } = buildPageRenderArgs(data.page, totalPages, config);
+  const { context, pageOptions } = buildPageRenderArgs(data.page, totalPages, options);
   const fullPageEl = paintPage(data.page, context, pageOptions);
 
   while (fullPageEl.firstChild) {
     shell.appendChild(fullPageEl.firstChild);
   }
 
+  data.rendered = true;
+  return true;
+}
+
+/** Replace header, body, and footer inside an already populated shell. */
+function repopulatePageShell(
+  shell: HTMLElement,
+  pageDataMap: Map<HTMLElement, { page: Page; index: number; rendered: boolean }>,
+  totalPages: number,
+  options: FullPageOptions
+): void {
+  const data = pageDataMap.get(shell);
+  if (!data) return;
+
+  const { context, pageOptions } = buildPageRenderArgs(data.page, totalPages, options);
+  const fullPageEl = paintPage(data.page, context, pageOptions);
+  shell.replaceChildren(...Array.from(fullPageEl.childNodes));
   data.rendered = true;
 }
 
@@ -494,12 +511,12 @@ function repopulatePageContent(
   shell: HTMLElement,
   pageDataMap: Map<HTMLElement, { page: Page; index: number; rendered: boolean }>,
   totalPages: number,
-  config: FullPageOptions
+  options: FullPageOptions
 ): void {
   const data = pageDataMap.get(shell);
   if (!data) return;
 
-  const { context, pageOptions } = buildPageRenderArgs(data.page, totalPages, config);
+  const { context, pageOptions } = buildPageRenderArgs(data.page, totalPages, options);
 
   // Render a full page off-screen
   const fullPageEl = paintPage(data.page, context, pageOptions);
@@ -515,7 +532,7 @@ function repopulatePageContent(
     // Fallback: full replace if structure doesn't match
     shell.innerHTML = '';
     data.rendered = false;
-    populatePageShell(shell, pageDataMap, totalPages, config);
+    populatePageShell(shell, pageDataMap, totalPages, options);
   }
 }
 
@@ -525,12 +542,13 @@ function repopulatePageContent(
 function depopulatePageShell(
   shell: HTMLElement,
   pageDataMap: Map<HTMLElement, { page: Page; index: number; rendered: boolean }>
-): void {
+): boolean {
   const data = pageDataMap.get(shell);
-  if (!data || !data.rendered) return;
+  if (!data || !data.rendered) return false;
 
   shell.innerHTML = '';
   data.rendered = false;
+  return true;
 }
 
 /**
@@ -558,5 +576,6 @@ export function paintAllPagesNow(container: HTMLElement): number {
     populatePageShell(element, pageDataMap, totalPages, currentOptions);
     populated++;
   }
+  if (populated > 0) dispatchPainted(container);
   return populated;
 }
