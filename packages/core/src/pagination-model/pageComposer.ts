@@ -290,8 +290,8 @@ function placeParagraph(
 
   // `w:keepLines` (§17.3.1.14) — keep the whole paragraph on one page, if it
   // can fit on one at all. Also best-effort; see the note above.
-  if (node.attrs?.keepLines) {
-    cursor = honourKeepLines(ctx, cursor, metrics);
+  if (block.attrs?.keepLines) {
+    cursor = honourKeepLines(ctx, cursor, block, measure);
   }
 
   let lineIndex = 0;
@@ -436,13 +436,16 @@ function applyWidowControl(
 function honourKeepLines(
   ctx: FlowContext,
   cursor: LayoutCursor,
-  metrics: ParagraphMetrics
+  block: ParagraphBlock,
+  measure: ParagraphMetrics
 ): LayoutCursor {
   const region = currentRegion(ctx, cursor);
-  const total = sliceHeight(metrics.lines, 0, metrics.lines.length);
+  const total = sliceHeight(measure.lines, 0, measure.lines.length);
+  const leadingGap = collapsedGap(cursor.prev, block);
+  const effectiveTotal = leadingGap + total;
 
-  if (total > region.bottom - region.top + FIT_TOLERANCE_PX) return cursor; // Never fits.
-  if (total <= region.bottom - cursor.y + FIT_TOLERANCE_PX) return cursor; // Fits here.
+  if (effectiveTotal > region.bottom - region.top + FIT_TOLERANCE_PX) return cursor; // Never fits.
+  if (effectiveTotal <= region.bottom - cursor.y + FIT_TOLERANCE_PX) return cursor; // Fits here.
   if (regionIsEmpty(ctx, cursor)) return cursor;
 
   return overflow(ctx, cursor);
