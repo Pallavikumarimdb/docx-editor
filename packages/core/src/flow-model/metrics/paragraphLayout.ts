@@ -38,6 +38,7 @@ import {
   prefixAdvances,
   resolveFontStyle,
   snapToCodePoint,
+  WORD_SINGLE_LINE_RATIO,
   type FontStyle,
 } from './textMetrics';
 import {
@@ -50,6 +51,7 @@ import { MIN_WRAP_SEGMENT_WIDTH } from './wrapThresholds';
 import { getListMarkerInlineWidth } from './listMarkerWidth';
 import { isFloatingImageRun } from '../../painter-model/floatingImageFlow';
 import { calculateTabWidth, type TabRuler } from '../../prosemirror/utils/tabMetrics';
+import { pointsToPixels } from '../../utils/units';
 
 export type { FloatingImageZone } from './floatingZones';
 
@@ -395,7 +397,15 @@ function fillLines(
   const hanging = attrs?.indent?.hanging ?? 0;
   const markerWidth = getListMarkerInlineWidth(block);
 
-  const emptyMetrics = fontMetricsFor(resolveFontStyle(undefined, defaults));
+  const defaultStyle = resolveFontStyle(undefined, defaults);
+  const defaultMetrics = fontMetricsFor(defaultStyle);
+  const emptyMetrics = {
+    ...defaultMetrics,
+    lineHeight: Math.max(
+      defaultMetrics.lineHeight,
+      pointsToPixels(defaultStyle.fontSize) * WORD_SINGLE_LINE_RATIO
+    ),
+  };
   const tabRuler: TabRuler = {
     explicitStops: attrs?.tabs,
     leftIndent: Math.round(indentLeft * 15),

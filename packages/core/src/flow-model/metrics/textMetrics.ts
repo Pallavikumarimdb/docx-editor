@@ -33,6 +33,7 @@ import {
   setCachedTextWidth,
   clearAllCaches,
 } from './cache';
+import { resolveFontFamily } from '../../utils/fontResolver';
 
 /**
  * The font a run is painted in — the key the measurement port is memoised on.
@@ -55,7 +56,7 @@ export interface FontStyle {
 export interface FontMetrics {
   ascent: number;
   descent: number;
-  /** `ascent + descent` — the natural single-spaced line height. */
+  /** Word's OS/2 single-line height for this font and size. */
   lineHeight: number;
 }
 
@@ -86,21 +87,16 @@ export interface RunMeasurement extends TextMeasurement {
  * Ratio model used when the platform reports no font bounding box (headless
  * tests, and any browser that declines the metric).
  *
- * The two ratios sum to 1.15, which is deliberately the same figure as the
- * empty-paragraph floor below: under the ratio model a blank line and a line of
- * text are exactly as tall, so a paragraph doesn't visibly jump as you type the
- * first character into it.
+ * These are conservative browser fallback glyph proportions. The line box
+ * itself comes from the font's OS/2 single-line ratio.
  */
-const FALLBACK_ASCENT_RATIO = 0.9;
-const FALLBACK_DESCENT_RATIO = 0.25;
+const FALLBACK_ASCENT_RATIO = 0.8;
+const FALLBACK_DESCENT_RATIO = 0.2;
 
 /**
- * Word's single line spacing for its default fonts sits a little above the
- * font's own box. We floor every line at this multiple of the font size so a
- * paragraph never paints tighter than Word would set it.
- *
- * Pinned by `metrics/__tests__/empty-paragraph-floor.test.ts` — read that test
- * before changing the constant.
+ * Empty paragraphs need a caret-height floor even when the selected font's
+ * single-line metric is tighter. Text-bearing lines use the font-specific OS/2
+ * ratio from `resolveFontFamily`.
  */
 export const WORD_SINGLE_LINE_RATIO = 1.15;
 
@@ -197,7 +193,9 @@ export function fontMetricsFor(style: FontStyle): FontMetrics {
   if (cached) return cached;
 
   const fontSizePx = pointsToPixels(style.fontSize);
-  const metrics = readFontBoundingBox(key, fontSizePx) ?? ratioMetrics(fontSizePx);
+  const bounds = readFontBoundingBox(key) ?? ratioMetrics(fontSizePx);
+  const lineHeight = fontSizePx * resolveFontFamily(style.fontFamily).singleLineRatio;
+  const metrics = { ...bounds, lineHeight };
 
   setCachedFontMetrics(key, metrics);
   return metrics;
@@ -208,7 +206,7 @@ export function fontMetricsFor(style: FontStyle): FontMetrics {
  * platform doesn't report one — no canvas, or a context (including our test
  * stubs) whose `measureText` result omits the font-box fields.
  */
-function readFontBoundingBox(fontString: string, fontSizePx: number): FontMetrics | null {
+function readFontBoundingBox(fontString: string): Pick<FontMetrics, 'ascent' | 'descent'> | null {
   const ctx = getCanvasContext();
   if (!ctx) return null;
 
@@ -219,26 +217,14 @@ function readFontBoundingBox(fontString: string, fontSizePx: number): FontMetric
   if (typeof ascent !== 'number' || typeof descent !== 'number') return null;
   if (!(ascent > 0) || !(descent >= 0)) return null;
 
-  return withFloor(ascent, descent, fontSizePx);
+  return { ascent, descent };
 }
 
-function ratioMetrics(fontSizePx: number): FontMetrics {
-  return withFloor(
-    fontSizePx * FALLBACK_ASCENT_RATIO,
-    fontSizePx * FALLBACK_DESCENT_RATIO,
-    fontSizePx
-  );
-}
-
-/**
- * Apply the Word line-height floor. The extra height is leading — it belongs
- * below the baseline, so the ascent is untouched and the caret keeps sitting
- * where the glyphs actually are.
- */
-function withFloor(ascent: number, descent: number, fontSizePx: number): FontMetrics {
-  const natural = ascent + descent;
-  const lineHeight = Math.max(natural, fontSizePx * WORD_SINGLE_LINE_RATIO);
-  return { ascent, descent: lineHeight - ascent, lineHeight };
+function ratioMetrics(fontSizePx: number): Pick<FontMetrics, 'ascent' | 'descent'> {
+  return {
+    ascent: fontSizePx * FALLBACK_ASCENT_RATIO,
+    descent: fontSizePx * FALLBACK_DESCENT_RATIO,
+  };
 }
 
 // ---------------------------------------------------------------------------
