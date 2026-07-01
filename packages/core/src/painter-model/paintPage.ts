@@ -78,6 +78,7 @@ import {
   calculateFootnoteAreaRenderHeight,
   type FootnoteRenderItem,
 } from './paintPage/footnotes';
+import { getPageFurniture } from './pageFurnitureRegistry';
 
 export {
   floatingImageIsBehindDoc,
@@ -461,12 +462,30 @@ export function paintPage(
   context: RenderContext,
   config: RenderPageOptions = {}
 ): HTMLElement {
-  const doc = config.document ?? document;
+  const furniture = getPageFurniture(page);
+  if (furniture) {
+    options = {
+      ...options,
+      headerContent: furniture.headerContent,
+      footerContent: furniture.footerContent,
+      firstPageHeaderContent: undefined,
+      firstPageFooterContent: undefined,
+      titlePg: false,
+      headerDistance: furniture.headerDistance,
+      footerDistance: furniture.footerDistance,
+      pageBorders: furniture.pageBorders,
+    };
+  }
+  const doc = options.document ?? document;
 
   // Create page container
   const pageEl = doc.createElement('div');
   pageEl.className = config.pageClassName ?? PAGE_CLASS_NAMES.page;
   pageEl.dataset.pageNumber = String(page.number);
+  if (furniture) {
+    pageEl.dataset.sectionIndex = String(furniture.sectionIndex);
+    pageEl.dataset.sectionPageNumber = String(furniture.sectionPageNumber);
+  }
 
   applyPageStyles(pageEl, page.size.w, page.size.h, config);
 
@@ -874,6 +893,12 @@ export function paintPage(
 
     const headerEl = doc.createElement('div');
     headerEl.className = PAGE_CLASS_NAMES.header;
+    if (furniture?.headerRId) headerEl.dataset.hfRId = furniture.headerRId;
+    if (furniture) {
+      headerEl.dataset.hfVariant = furniture.headerVariant;
+      headerEl.dataset.sectionIndex = String(furniture.sectionIndex);
+      headerEl.dataset.sectionPageNumber = String(furniture.sectionPageNumber);
+    }
     headerEl.style.position = 'absolute';
     headerEl.style.top = `${headerDistance + headerVisualTop}px`;
     headerEl.style.left = `${page.margins.left}px`;
@@ -934,6 +959,12 @@ export function paintPage(
 
     const footerEl = doc.createElement('div');
     footerEl.className = PAGE_CLASS_NAMES.footer;
+    if (furniture?.footerRId) footerEl.dataset.hfRId = furniture.footerRId;
+    if (furniture) {
+      footerEl.dataset.hfVariant = furniture.footerVariant;
+      footerEl.dataset.sectionIndex = String(furniture.sectionIndex);
+      footerEl.dataset.sectionPageNumber = String(furniture.sectionPageNumber);
+    }
     footerEl.style.position = 'absolute';
     footerEl.style.top = `${page.size.h - footerDistance - interactiveFooterHeight}px`;
     footerEl.style.left = `${page.margins.left}px`;

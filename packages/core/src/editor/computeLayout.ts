@@ -26,6 +26,7 @@ import {
   type PageLayout,
   type LayoutMetrics,
   type PageMargins,
+  type SectionMarkerBlock,
 } from '../pagination-model';
 import {
   buildBoxTree,
@@ -38,7 +39,10 @@ import {
   buildFootnoteRenderItems,
   stabilizeFootnoteLayout,
   FOOTNOTE_COLUMN_GAP_PX,
-  extendMarginsForHeaderFooter,
+  getColumns,
+  getMargins,
+  getPageSize,
+  resolvePageHeaderFooter,
   twipsToPixels,
   type FloatPageGeometry,
 } from '../flow-model';
@@ -55,6 +59,7 @@ import type {
   Theme,
   Watermark,
 } from '../types/document';
+import { registerPageFurniture, type PageFurniture } from '../painter-model/pageFurnitureRegistry';
 
 interface PageSizePx {
   w: number;
@@ -176,15 +181,53 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
     getHfPmDoc,
   } = inputs;
 
-  // Step 1: PM doc → flow nodes.
-  const pageContentHeight = pageSize.h - margins.top - margins.bottom;
-  const nodes = buildBoxTree(state.doc, { theme, pageContentHeight });
+  const sectionProps =
+    document?.package.document.sections?.map((section) => section.properties) ?? [];
+  if (sectionProps.length === 0) {
+    sectionProps.push(sectionProperties ?? finalSectionProperties ?? {});
+  }
+  const firstSectionProps = sectionProps[0] ?? sectionProperties ?? {};
+  const lastSectionProps = sectionProps[sectionProps.length - 1] ?? finalSectionProperties ?? {};
+  const resolvedPageSize = document ? getPageSize(firstSectionProps) : pageSize;
+  const resolvedMargins = document ? getMargins(firstSectionProps) : margins;
+  const resolvedColumns = document ? getColumns(firstSectionProps) : columns;
+  const resolvedFinalPageSize = document ? getPageSize(lastSectionProps) : finalPageSize;
+  const resolvedFinalMargins = document ? getMargins(lastSectionProps) : finalMargins;
+  const resolvedFinalColumns = document ? getColumns(lastSectionProps) : finalColumns;
 
-  // Step 2: LayoutMetrics all nodes (per-section widths; full measure for float context).
+  // Step 1: PM doc → flow blocks.
+  const pageContentHeight =
+    resolvedPageSize.h - resolvedMargins.top - resolvedMargins.bottom;
+  const blocks = buildBoxTree(state.doc, { theme, pageContentHeight });
+
+  // Section markers in the PM carry the authored sectPr that closes each
+  // section. Rebind them to the parser's effective section list so inherited
+  // HF refs plus explicit zero distances survive and every later section gets
+  // its own complete geometry.
+  let markerIndex = 0;
+  for (const block of blocks) {
+    if (block.kind !== 'sectionBreak') continue;
+    const properties = sectionProps[markerIndex++] ?? firstSectionProps;
+    const marker = block as SectionMarkerBlock;
+    marker.pageSize = getPageSize(properties);
+    marker.margins = getMargins(properties);
+    marker.columns = getColumns(properties);
+    marker.type = properties.sectionStart;
+  }
+
+  // Step 2: Measure all blocks (per-section widths; full measure for float context).
   const blockWidths = computePerBlockWidths(
-    nodes,
-    { pageSize, margins, columns },
-    { pageSize: finalPageSize, margins: finalMargins, columns: finalColumns }
+    blocks,
+    {
+      pageSize: resolvedPageSize,
+      margins: resolvedMargins,
+      columns: resolvedColumns,
+    },
+    {
+      pageSize: resolvedFinalPageSize,
+      margins: resolvedFinalMargins,
+      columns: resolvedFinalColumns,
+    }
   );
 
   // Step 1.5: Demote full-width "floating" tables to inline. A positioned table
@@ -198,80 +241,171 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
   // and the saved DOCX keep the original floating table.
   demoteBlockLikeFloatingTables(nodes, blockWidths, contentWidth);
 
-  const metrics = measureBlocks(
-    nodes,
-    blockWidths,
-    pageGeometryFromPage({ size: pageSize, margins })
-  );
+  const measures = measureBlocks(blocks, blockWidths, pageGeometryFromPage({
+    size: resolvedPageSize,
+    margins: resolvedMargins,
+  }));
 
   // Step 2.5: Footnote references.
   const footnoteRefs = collectFootnoteRefs(nodes);
   const hasFootnotes = footnoteRefs.length > 0 && !!document?.package?.footnotes;
 
-  // Step 2.75: Header/footer content for rendering (needed before layout to
-  // compute effective margins when HF content exceeds available space).
-  const hfMetricsHeader = { section: 'header' as const, pageSize, margins };
-  const hfMetricsFooter = { section: 'footer' as const, pageSize, margins };
+  // Step 2.75: Header/footer content is resolved per physical page. Conversion
+  // is cached per section/rId because the same story can wrap differently when
+  // later sections change page width or margins.
   const defaultTabMarkTwips = state.doc.attrs?.defaultTabMarkTwips as number | null;
-  const hfConfig = { styles, theme, measureBlocks, defaultTabMarkTwips };
+  const hfOptions = { styles, theme, measureBlocks, defaultTabMarkTwips };
+  const converted = new Map<string, HeaderFooterContent | undefined>();
 
-  // HF unification phase 1: prefer the persistent PM doc when mounted.
   const convertHf = (
     hf: HeaderFooter | null | undefined,
-    metrics: typeof hfMetricsHeader | typeof hfMetricsFooter
+    region: 'header' | 'footer',
+    sectionIndex: number,
+    rId: string | null
   ): HeaderFooterContent | undefined => {
     if (!hf) return undefined;
+    const key = `${sectionIndex}:${region}:${rId ?? 'anonymous'}`;
+    if (converted.has(key)) return converted.get(key);
+    const properties = sectionProps[sectionIndex] ?? firstSectionProps;
+    const sectionPageSize = getPageSize(properties);
+    const sectionMargins = getMargins(properties);
+    const sectionContentWidth =
+      sectionPageSize.w - sectionMargins.left - sectionMargins.right;
+    const metrics = { section: region, pageSize: sectionPageSize, margins: sectionMargins };
     const pmDoc = getHfPmDoc(hf);
-    if (pmDoc) {
-      return convertHeaderFooterPmDocToContent(pmDoc, contentWidth, metrics, hfConfig);
-    }
-    return convertHeaderFooterToContent(hf, contentWidth, metrics, hfConfig);
+    const value = pmDoc
+      ? convertHeaderFooterPmDocToContent(pmDoc, sectionContentWidth, metrics, hfOptions)
+      : convertHeaderFooterToContent(hf, sectionContentWidth, metrics, hfOptions);
+    converted.set(key, value);
+    return value;
   };
 
-  const headerContentForRender = convertHf(headerContent, hfMetricsHeader);
-  const footerContentForRender = convertHf(footerContent, hfMetricsFooter);
-  const hasTitlePg = sectionProperties?.titlePg === true;
-  const firstPageHeaderForRender = hasTitlePg
-    ? convertHf(firstPageHeaderContent, hfMetricsHeader)
-    : undefined;
-  const firstPageFooterForRender = hasTitlePg
-    ? convertHf(firstPageFooterContent, hfMetricsFooter)
-    : undefined;
+  const furnitureByPageNumber = new Map<number, PageFurniture>();
+  const resolveFurniture = (
+    pageNumber: number,
+    sectionIndex: number,
+    sectionPageNumber: number
+  ): PageFurniture => {
+    if (!document) {
+      const firstVariant = sectionPageNumber === 1 && sectionProperties?.titlePg === true;
+      return {
+        sectionIndex,
+        sectionPageNumber,
+        headerRId: null,
+        footerRId: null,
+        headerVariant: firstVariant ? 'first' : 'default',
+        footerVariant: firstVariant ? 'first' : 'default',
+        headerContent: convertHf(
+          firstVariant ? firstPageHeaderContent : headerContent,
+          'header',
+          sectionIndex,
+          null
+        ),
+        footerContent: convertHf(
+          firstVariant ? firstPageFooterContent : footerContent,
+          'footer',
+          sectionIndex,
+          null
+        ),
+        headerDistance: resolvedMargins.header ?? 48,
+        footerDistance: resolvedMargins.footer ?? 48,
+        pageBorders: firstSectionProps.pageBorders,
+      };
+    }
+    const resolved = resolvePageHeaderFooter(
+      document,
+      pageNumber,
+      sectionIndex,
+      sectionPageNumber
+    );
+    return {
+      sectionIndex,
+      sectionPageNumber,
+      headerRId: resolved.header.rId,
+      footerRId: resolved.footer.rId,
+      headerVariant: resolved.header.variant,
+      footerVariant: resolved.footer.variant,
+      headerContent: convertHf(
+        resolved.header.content,
+        'header',
+        sectionIndex,
+        resolved.header.rId
+      ),
+      footerContent: convertHf(
+        resolved.footer.content,
+        'footer',
+        sectionIndex,
+        resolved.footer.rId
+      ),
+      headerDistance: resolved.headerDistance,
+      footerDistance: resolved.footerDistance,
+      pageBorders: resolved.pageBorders,
+    };
+  };
 
   // Watermark rides PM state as a doc attr (so it's undoable).
   const watermark = (state.doc.attrs?.watermark as Watermark | null) ?? undefined;
 
-  // Margin extension — push body clear of the header/footer bands (Word grows
-  // the band when in-flow content exceeds the authored margin). Shared core
-  // helper: uses in-flow `flowHeight` so page/margin-anchored floats (e.g. a
-  // letterhead) don't push the body (issue #705), with a content-area clamp;
-  // mutates each `sectionBreak.margins` in place.
-  const { margins: effectiveMargins, finalMargins: effectiveFinalMargins } =
-    extendMarginsForHeaderFooter({
-      pageSize,
-      margins,
-      finalMargins,
-      bodyNodes: nodes,
-      headers: [headerContentForRender, firstPageHeaderForRender],
-      footers: [footerContentForRender, firstPageFooterForRender],
-      warn: (msg) => console.warn(`[computeLayout] ${msg}`),
-    });
-
-  // Step 3: PageLayout onto pages (two-pass when footnotes exist).
-  const bodyBreakType = finalSectionProperties?.sectionStart as
+  // Step 3: Layout onto pages (two-pass when footnotes exist).
+  const bodyBreakType = lastSectionProps.sectionStart as
     | 'continuous'
     | 'nextPage'
     | 'evenPage'
     | 'oddPage'
     | undefined;
-  const layoutConfig = {
-    pageSize,
-    margins: effectiveMargins,
-    finalPageSize,
-    finalMargins: effectiveFinalMargins,
-    columns: finalColumns,
+  const layoutOpts = {
+    pageSize: resolvedPageSize,
+    margins: resolvedMargins,
+    finalPageSize: resolvedFinalPageSize,
+    finalMargins: resolvedFinalMargins,
+    columns: resolvedFinalColumns,
     bodyBreakType,
     pageGap,
+    resolvePageMargins: ({
+      base,
+      pageNumber,
+      sectionIndex,
+      sectionPageNumber,
+    }: {
+      base: PageMargins;
+      pageNumber: number;
+      sectionIndex: number;
+      sectionPageNumber: number;
+    }): PageMargins => {
+      const furniture = resolveFurniture(pageNumber, sectionIndex, sectionPageNumber);
+      const headerHeight =
+        furniture.headerContent?.flowHeight ?? furniture.headerContent?.height ?? 0;
+      const footerHeight =
+        furniture.footerContent?.flowHeight ?? furniture.footerContent?.height ?? 0;
+      const out = { ...base };
+      if (headerHeight > base.top - furniture.headerDistance) {
+        out.top = Math.max(base.top, furniture.headerDistance + headerHeight);
+      }
+      if (footerHeight > base.bottom - furniture.footerDistance) {
+        out.bottom = Math.max(base.bottom, furniture.footerDistance + footerHeight);
+      }
+      const sectionHeight = getPageSize(sectionProps[sectionIndex] ?? firstSectionProps).h;
+      const maxMargins = Math.max(0, sectionHeight - 24);
+      if (out.top + out.bottom > maxMargins) {
+        out.bottom = Math.max(0, Math.min(out.bottom, maxMargins - out.top));
+        if (out.top + out.bottom > maxMargins) out.top = Math.max(0, maxMargins - out.bottom);
+      }
+      return out;
+    },
+    onPageStart: ({
+      pageNumber,
+      sectionIndex,
+      sectionPageNumber,
+    }: {
+      pageNumber: number;
+      sectionIndex: number;
+      sectionPageNumber: number;
+    }) => {
+      furnitureByPageNumber.set(
+        pageNumber,
+        resolveFurniture(pageNumber, sectionIndex, sectionPageNumber)
+      );
+    },
   };
 
   let layout: PageLayout;
@@ -315,6 +449,23 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
     ? buildFootnoteRenderItems(pageFootnoteMap, footnoteContentMap, document)
     : undefined;
 
+  for (const page of layout.pages) {
+    const furniture = furnitureByPageNumber.get(page.number);
+    if (furniture) registerPageFurniture(page, furniture);
+  }
+  const firstFurniture = furnitureByPageNumber.get(1);
+  const headerContentForRender = firstFurniture?.headerContent;
+  const footerContentForRender = firstFurniture?.footerContent;
+  const hasTitlePg = firstSectionProps.titlePg === true;
+  const firstPageHeaderForRender =
+    hasTitlePg && firstFurniture?.headerVariant === 'first'
+      ? firstFurniture.headerContent
+      : undefined;
+  const firstPageFooterForRender =
+    hasTitlePg && firstFurniture?.footerVariant === 'first'
+      ? firstFurniture.footerContent
+      : undefined;
+
   return {
     nodes,
     metrics,
@@ -325,17 +476,9 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
     firstPageFooterForRender,
     hasTitlePg,
     watermark,
-    // Nullish, not truthy: an explicit `w:header="0"` must paint the header at
-    // the page top, not fall back to the painter's 0.5in default (#740).
-    headerDistancePx:
-      sectionProperties?.headerDistance != null
-        ? twipsToPixels(sectionProperties.headerDistance)
-        : undefined,
-    footerDistancePx:
-      sectionProperties?.footerDistance != null
-        ? twipsToPixels(sectionProperties.footerDistance)
-        : undefined,
-    pageBorders: sectionProperties?.pageBorders,
+    headerDistancePx: firstFurniture?.headerDistance,
+    footerDistancePx: firstFurniture?.footerDistance,
+    pageBorders: firstFurniture?.pageBorders,
     footnotesByPage: footnotesByPage?.size ? footnotesByPage : undefined,
   };
 }

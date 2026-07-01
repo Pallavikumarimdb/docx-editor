@@ -93,6 +93,8 @@ export function layOutPages(
     // inheritance seed. They agree unless the document overrides geometry on
     // its opening section.
     section: schedule.configs[0] ?? initial,
+    sectionIndex: 0,
+    sectionPageCounts: new Map(),
   };
 
   // An empty document is still one page. Word shows a blank sheet, not nothing.
@@ -107,7 +109,8 @@ export function layOutPages(
       case 'sectionBreak': {
         sectionIndex++;
         const next = schedule.configs[sectionIndex] ?? ctx.section;
-        const sectionEnd = schedule.breakIndices[sectionIndex] ?? nodes.length;
+        const sectionEnd = schedule.breakIndices[sectionIndex] ?? blocks.length;
+        ctx.sectionIndex = sectionIndex;
         cursor = crossSectionBoundary(ctx, cursor, next, i + 1, sectionEnd);
         break;
       }

@@ -99,6 +99,25 @@ export interface FlowContext {
   pages: PageDraft[];
   /** Section geometry in force, replaced when a section break is crossed. */
   section: SectionLayoutConfig;
+  /** Zero-based section currently receiving newly-created pages. */
+  sectionIndex: number;
+  /** Number of pages already created for each section. */
+  sectionPageCounts: Map<number, number>;
+}
+
+interface InternalLayoutOptions extends LayoutOptions {
+  resolvePageMargins?: (args: {
+    base: PageMargins;
+    pageNumber: number;
+    sectionIndex: number;
+    sectionPageNumber: number;
+  }) => PageMargins;
+  onPageStart?: (args: {
+    pageNumber: number;
+    sectionIndex: number;
+    sectionPageNumber: number;
+    margins: PageMargins;
+  }) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -198,15 +217,31 @@ export function columnCount(page: PageDraft): number {
 /** Append a fresh page and put the pen at the top of its first column. */
 export function startPage(ctx: FlowContext, prev: ContentNode | null = null): LayoutCursor {
   const number = ctx.pages.length + 1;
+  const sectionPageNumber = (ctx.sectionPageCounts.get(ctx.sectionIndex) ?? 0) + 1;
+  ctx.sectionPageCounts.set(ctx.sectionIndex, sectionPageNumber);
+  const internalOptions = ctx.options as InternalLayoutOptions;
+  const margins =
+    internalOptions.resolvePageMargins?.({
+      base: ctx.section.margins,
+      pageNumber: number,
+      sectionIndex: ctx.sectionIndex,
+      sectionPageNumber,
+    }) ?? effectiveMargins(ctx.section.margins, number, ctx.options);
   const page: PageDraft = {
     number,
     size: ctx.section.pageSize,
-    margins: effectiveMargins(ctx.section.margins, number, ctx.config),
+    margins,
     fragments: [],
     columns: (ctx.section.columns?.count ?? 1) > 1 ? ctx.section.columns : undefined,
     footnoteReservedHeight: ctx.config.footnoteReservedHeights?.get(number),
   };
   ctx.pages.push(page);
+  internalOptions.onPageStart?.({
+    pageNumber: number,
+    sectionIndex: ctx.sectionIndex,
+    sectionPageNumber,
+    margins,
+  });
 
   return {
     pageIndex: ctx.pages.length - 1,
