@@ -52,7 +52,7 @@ Each subpath tree-shakes independently. Pick the smallest entry point that gives
 | Building...                       | Import from                                                      | What you get                                                                       |
 | --------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | A new framework adapter           | `./docx`, `./prosemirror/conversion`, `./prosemirror/extensions` | `parseDocx`, `toProseDoc` / `fromProseDoc`, `createStarterKit`, `ExtensionManager` |
-| Custom layout / rendering         | `./pagination-model`, `./flow-model`, `./painter-model`         | `layOutPages`, `mouseToPosition`, `paintPage`, `LayoutPainter`                 |
+| Rendering a parsed document       | `./api`                                                          | `renderDocument`, `caretAt`, `rectsFor`                                            |
 | Editor commands and plugins       | `./prosemirror/commands`, `./prosemirror/plugins`                | Formatting, tables, suggestion mode, selection tracker                             |
 | Saving back to `.docx`            | `./docx`                                                         | `repackDocx`, `attemptSelectiveSave`                                               |
 | Headless agents (no UI)           | `./agent`                                                        | `DocumentAgent`, `executeCommand`, `AgentCommand` types                            |
@@ -63,7 +63,7 @@ Each subpath tree-shakes independently. Pick the smallest entry point that gives
 
 ## Stability
 
-`./pagination-model`, `./painter-model`, `./flow-model`, and `./plugin-api` are **`@experimental`** — used by the first-party adapters but the API may change in minor releases until a third-party adapter validates it. Pin a version range. Everything else follows SemVer.
+`./plugin-api` is **`@experimental`** and may change in minor releases. Pin a version range when using it. Everything else follows SemVer.
 
 ## Peer dependencies
 
@@ -77,7 +77,7 @@ npm i prosemirror-commands prosemirror-dropcursor prosemirror-history \
 
 ## Architecture
 
-Dual-rendering: a hidden ProseMirror instance owns editing state (selection, undo/redo, commands) while `painter-model` produces the visible pages. Full breakdown: **[docx-editor.dev/docs/architecture](https://www.docx-editor.dev/docs/architecture)**.
+Dual-rendering: a hidden ProseMirror instance owns editing state (selection, undo/redo, commands) while `painter` produces the visible pages. Full breakdown: **[docx-editor.dev/docs/architecture](https://www.docx-editor.dev/docs/architecture)**.
 
 ## Contributing
 
