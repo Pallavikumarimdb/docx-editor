@@ -37,6 +37,7 @@ import {
   measureTextWidth,
   prefixAdvances,
   resolveFontStyle,
+  snapToCodePoint,
   type FontStyle,
 } from './textMetrics';
 import {
@@ -528,9 +529,38 @@ function fillLines(
         break;
 
       case 'word': {
-        makeRoom(token.width);
-        placePieces(line, token.pieces, token.width);
-        growForFont(line, token.pieces, block.runs, defaults, emptyMetrics);
+        if (makeRoom(token.width)) {
+          placePieces(line, token.pieces, token.width);
+          growForFont(line, token.pieces, block.runs, defaults, emptyMetrics);
+          break;
+        }
+
+        // Word breaks a single token at character boundaries when it is wider
+        // than the line itself. Keeping ordinary words atomic is still
+        // important (especially across formatting-run boundaries), so this
+        // fallback runs only after makeRoom has tried every normal wrap
+        // opportunity and landed on an empty line.
+        let remaining: Extract<Token, { kind: 'word' }> | null = token;
+        while (remaining) {
+          if (remaining.width <= roomLeft() + WRAP_TOLERANCE_PX) {
+            placePieces(line, remaining.pieces, remaining.width);
+            growForFont(line, remaining.pieces, block.runs, defaults, emptyMetrics);
+            break;
+          }
+
+          const split = splitWordToFit(remaining, roomLeft(), block.runs, defaults);
+          if (!split) {
+            // Fields and other atomic word pieces cannot be sliced safely.
+            placePieces(line, remaining.pieces, remaining.width);
+            growForFont(line, remaining.pieces, block.runs, defaults, emptyMetrics);
+            break;
+          }
+
+          placePieces(line, split.head.pieces, split.head.width);
+          growForFont(line, split.head.pieces, block.runs, defaults, emptyMetrics);
+          remaining = split.tail;
+          if (remaining) flush(false, true);
+        }
         break;
       }
 
@@ -636,6 +666,111 @@ function placePieces(line: OpenLine, pieces: Piece[], width: number): void {
   }
   line.penX += width;
   line.hasContent = true;
+}
+
+/**
+ * Split an overlong word at the last code-point boundary that fits.
+ *
+ * Pieces preserve formatting-run boundaries, while the returned ranges let the
+ * painter and selection mapper slice the original runs without inventing text.
+ * `null` means the word starts with an atomic non-text piece and must overflow.
+ */
+function splitWordToFit(
+  word: Extract<Token, { kind: 'word' }>,
+  maxWidth: number,
+  runs: Run[],
+  defaults: Partial<FontStyle>
+): {
+  head: Extract<Token, { kind: 'word' }>;
+  tail: Extract<Token, { kind: 'word' }> | null;
+} | null {
+  if (!(maxWidth > 0)) return null;
+
+  const headPieces: Piece[] = [];
+  const tailPieces: Piece[] = [];
+  let headWidth = 0;
+  let splitIndex = word.pieces.length;
+
+  for (let i = 0; i < word.pieces.length; i++) {
+    const piece = word.pieces[i];
+    if (headWidth + piece.width <= maxWidth + WRAP_TOLERANCE_PX) {
+      headPieces.push(piece);
+      headWidth += piece.width;
+      continue;
+    }
+
+    const run = runs[piece.runIndex];
+    if (!run || run.kind !== 'text') {
+      if (headPieces.length === 0) return null;
+      splitIndex = i;
+      break;
+    }
+
+    const available = Math.max(0, maxWidth - headWidth);
+    let end = fittingTextEnd(run.text, piece.from, piece.to, available, styleFor(run, defaults));
+    if (end <= piece.from && headPieces.length > 0) {
+      splitIndex = i;
+      break;
+    }
+    if (end <= piece.from) {
+      const codePoint = run.text.codePointAt(piece.from);
+      end = Math.min(
+        piece.to,
+        piece.from + (codePoint !== undefined && codePoint > 0xffff ? 2 : 1)
+      );
+    }
+
+    const fittedWidth = measureTextWidth(run.text.slice(piece.from, end), styleFor(run, defaults));
+    headPieces.push({ ...piece, to: end, width: fittedWidth });
+    headWidth += fittedWidth;
+    if (end < piece.to) {
+      const restWidth = measureTextWidth(run.text.slice(end, piece.to), styleFor(run, defaults));
+      tailPieces.push({ ...piece, from: end, width: restWidth });
+    }
+    splitIndex = i + 1;
+    break;
+  }
+
+  for (let i = splitIndex; i < word.pieces.length; i++) {
+    tailPieces.push(word.pieces[i]);
+  }
+
+  if (headPieces.length === 0) return null;
+  const tailWidth = tailPieces.reduce((sum, piece) => sum + piece.width, 0);
+  return {
+    head: { kind: 'word', pieces: headPieces, width: headWidth },
+    tail: tailPieces.length > 0 ? { kind: 'word', pieces: tailPieces, width: tailWidth } : null,
+  };
+}
+
+/** Last UTF-16 boundary whose measured prefix fits in `maxWidth`. */
+function fittingTextEnd(
+  text: string,
+  from: number,
+  to: number,
+  maxWidth: number,
+  style: FontStyle
+): number {
+  let low = from + 1;
+  let high = to;
+  let fitted = from;
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const boundary = snapToCodePoint(text, mid);
+    if (boundary <= from) {
+      low = mid + 1;
+      continue;
+    }
+    const width = measureTextWidth(text.slice(from, boundary), style);
+    if (width <= maxWidth + WRAP_TOLERANCE_PX) {
+      fitted = boundary;
+      low = Math.max(mid + 1, boundary + 1);
+    } else {
+      high = Math.min(mid - 1, boundary - 1);
+    }
+  }
+
+  return fitted;
 }
 
 function placeAtomic(
