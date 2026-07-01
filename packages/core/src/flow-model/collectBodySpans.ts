@@ -86,3 +86,34 @@ export function findBodyPmAnchor(root: ParentNode, pmPos: number): HTMLElement |
 
   return root.querySelector<HTMLElement>(`${BODY_SCOPE} [data-doc-from="${pmPos}"]`);
 }
+
+/**
+ * Painted run spans inside one exact header/footer host. Callers pass the host
+ * that was clicked, so repeated stories on other pages and colliding body PM
+ * positions are structurally unreachable.
+ *
+ * @public
+ */
+export function collectHfSpans(host: HTMLElement): HTMLElement[] {
+  if (!host.matches('.layout-page-header, .layout-page-footer')) return [];
+  return Array.from(host.querySelectorAll<HTMLElement>(RUN_SPAN));
+}
+
+/** @public */
+export function findHfEmptyRuns(host: HTMLElement): HTMLElement[] {
+  if (!host.matches('.layout-page-header, .layout-page-footer')) return [];
+  return Array.from(host.querySelectorAll<HTMLElement>(EMPTY_RUN));
+}
+
+/** @public */
+export function findHfPmAnchors(host: HTMLElement): HTMLElement[] {
+  if (!host.matches('.layout-page-header, .layout-page-footer')) return [];
+  return Array.from(host.querySelectorAll<HTMLElement>(POSITIONED));
+}
+
+/** @public */
+export function findHfPmAnchor(host: HTMLElement, pmPos: number): HTMLElement | null {
+  if (!Number.isInteger(pmPos)) return null;
+  if (!host.matches('.layout-page-header, .layout-page-footer')) return null;
+  return host.querySelector<HTMLElement>(`[data-doc-from="${pmPos}"]`);
+}

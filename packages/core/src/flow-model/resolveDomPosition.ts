@@ -21,7 +21,12 @@
  * @packageDocumentation
  */
 
-import { collectBodySpans, findBodyEmptyRuns, findBodyPmAnchors } from './collectBodySpans';
+import {
+  collectBodySpans,
+  collectHfSpans,
+  findBodyEmptyRuns,
+  findBodyPmAnchors,
+} from './collectBodySpans';
 
 /**
  * A highlight rectangle, in coordinates local to the container it was measured
@@ -99,6 +104,23 @@ export function resolveDomPosition(
 }
 
 /**
+ * Resolve a point inside one exact painted header/footer host to the matching
+ * independent HF ProseMirror position space.
+ *
+ * @public
+ */
+export function resolveHfDomPosition(
+  host: HTMLElement,
+  clientX: number,
+  clientY: number
+): number | null {
+  if (!host.matches('.layout-page-header, .layout-page-footer')) return null;
+  const exact = positionFromCaretApi(host, clientX, clientY, 'hf');
+  if (exact !== null) return exact;
+  return nearestPositionOnLine(host, clientX, clientY, collectHfSpans(host));
+}
+
+/**
  * Ask the browser which character is under the point, then translate its answer
  * into our coordinate system.
  *
@@ -109,13 +131,14 @@ export function resolveDomPosition(
 function positionFromCaretApi(
   container: HTMLElement,
   clientX: number,
-  clientY: number
+  clientY: number,
+  scope: 'body' | 'hf' = 'body'
 ): number | null {
   const doc = container.ownerDocument;
   const hit = caretNodeAtPoint(doc, clientX, clientY);
   if (!hit) return null;
 
-  const span = enclosingBodySpan(hit.node, container);
+  const span = enclosingPaintedSpan(hit.node, container, scope);
   if (!span) return null;
 
   const docFrom = numberAttr(span, 'docFrom');
@@ -165,11 +188,21 @@ function caretNodeAtPoint(
  * inside a header/footer walks up to no body span and resolves to null, which is
  * exactly what we want.
  */
-function enclosingBodySpan(node: Node, container: HTMLElement): HTMLElement | null {
+function enclosingPaintedSpan(
+  node: Node,
+  container: HTMLElement,
+  scope: 'body' | 'hf'
+): HTMLElement | null {
   const el = node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement;
   const span = el?.closest<HTMLElement>('span[data-doc-from][data-doc-to]');
   if (!span) return null;
-  if (!span.closest('.layout-page-content')) return null;
+  if (scope === 'body' && !span.closest('.layout-page-content')) return null;
+  if (
+    scope === 'hf' &&
+    !span.closest('.layout-page-header, .layout-page-footer')
+  ) {
+    return null;
+  }
   if (!container.contains(span)) return null;
   return span;
 }
@@ -204,11 +237,12 @@ function textOffsetWithin(root: HTMLElement, node: Node, offset: number): number
 function nearestPositionOnLine(
   container: HTMLElement,
   clientX: number,
-  clientY: number
+  clientY: number,
+  spans: HTMLElement[] = collectBodySpans(container)
 ): number | null {
   let best: { pos: number; distance: number } | null = null;
 
-  for (const span of collectBodySpans(container)) {
+  for (const span of spans) {
     const rect = span.getBoundingClientRect();
     if (clientY < rect.top - LINE_BAND_TOLERANCE_PX) continue;
     if (clientY > rect.bottom + LINE_BAND_TOLERANCE_PX) continue;
