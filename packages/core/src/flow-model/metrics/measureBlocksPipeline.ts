@@ -2,10 +2,9 @@
  * Floating-aware block measurement pipeline.
  *
  * Pre-scans a block list to extract exclusion zones from anchored images,
- * floating tables, and floating text boxes; groups co-located floats so
- * their combined exclusion applies starting from the earliest anchor; then
- * walks the nodes calling the caller-supplied `measureBlock` with the
- * active zones and cumulative Y at each step.
+ * floating tables, and floating text boxes; estimates page/section/column
+ * flow scopes; then walks the blocks calling the caller-supplied
+ * `measureBlock` with only the zones active in that scope.
  *
  * Adapters (React, Vue) provide their own `measureBlock` so they can
  * decide e.g. whether to cache paragraph metrics. The orchestration,
@@ -44,14 +43,11 @@ interface FloatingZoneWithAnchor extends FloatingImageZone {
   isMarginRelative?: boolean;
 }
 
-/**
- * Maximum block-index distance for paragraph-relative floats to be considered
- * co-located. Anchors within this window with overlapping Y ranges get merged
- * so a body paragraph between them sees the combined exclusion zone. Beyond
- * this window we keep zones independent — different sections of the document
- * routinely have float topY values that coincidentally overlap.
- */
-const ANCHOR_PROXIMITY = 4;
+interface FloatFlowScopes {
+  scopeStarts: Set<number>;
+  geometryByBlock: Array<FloatPageGeometry | undefined>;
+  baseMeasures: Measure[];
+}
 
 /**
  * Block-measurement callback shape passed to {@link measureBlocksWithFloats}.
@@ -82,8 +78,8 @@ export type FloatPageGeometry = PageGeometry;
 /**
  * Walk `nodes` and produce one `LayoutMetrics` per block. Before measuring, this
  * extracts floating exclusion zones (images / floating tables / floating
- * textboxes), groups overlapping co-located floats, and threads the active
- * zones plus cumulative Y into each `measureBlock` call.
+ * textboxes), scopes them to their anchor's page/section flow interval, and
+ * threads the active zones plus cumulative Y into each `measureBlock` call.
  *
  * Pass `pageGeometry` whenever the document may contain page/margin-anchored
  * `topAndBottom` text boxes (e.g. a title banner pinned to the page top):
@@ -100,106 +96,168 @@ export function measureBlocksWithFloats(
   pageGeometry?: FloatPageGeometry
 ): LayoutMetrics[] {
   const defaultWidth = Array.isArray(contentWidth) ? (contentWidth[0] ?? 0) : contentWidth;
+  const blockWidthAt = (blockIndex: number): number =>
+    Array.isArray(contentWidth) ? (contentWidth[blockIndex] ?? defaultWidth) : contentWidth;
+  const scopes = buildFloatFlowScopes(blocks, blockWidthAt, measureBlock, pageGeometry);
   const floatingZonesWithAnchors = extractFloatingZones(
-    nodes,
-    defaultWidth,
+    blocks,
+    blockWidthAt,
     measureBlock,
-    pageGeometry
+    scopes.geometryByBlock
   );
 
-  const marginRelative = floatingZonesWithAnchors.filter((z) => z.isMarginRelative);
-  const paragraphRelative = floatingZonesWithAnchors.filter((z) => !z.isMarginRelative);
-
-  // Margin-relative zones at the same Y likely belong to the same page —
-  // group by topY and re-anchor to the earliest block index so subsequent
-  // paragraphs see the combined zone.
-  const marginByTopY = new Map<number, FloatingZoneWithAnchor[]>();
-  for (const z of marginRelative) {
-    const group = marginByTopY.get(z.topY) ?? [];
-    group.push(z);
-    marginByTopY.set(z.topY, group);
-  }
-
-  // Paragraph-relative zones merge only when (a) Y ranges overlap AND
-  // (b) anchors are within ANCHOR_PROXIMITY nodes. The proximity bound
-  // keeps unrelated floats in distant sections from being merged just
-  // because their paragraph-local topY values happen to overlap.
-  const paragraphGroups = groupOverlappingZones(paragraphRelative, ANCHOR_PROXIMITY);
-
-  const adjustedZones: FloatingZoneWithAnchor[] = [];
-  collectReanchoredToEarliest(paragraphGroups, adjustedZones);
-  collectReanchoredToEarliest(Array.from(marginByTopY.values()), adjustedZones);
-
-  const zonesByAnchor = new Map<number, FloatingImageZone[]>();
-  for (const z of adjustedZones) {
-    // A page/margin-pinned full-width band (e.g. a title banner at the top of
-    // the page) reserves space from the top of content, so it must reach the
-    // nodes that precede its own anchor paragraph. Anchor it at block 0 and
-    // keep its content-relative topY/bottomY (cumulativeY is then the running
-    // content offset for the nodes it covers).
-    //
-    // Caveat: this pre-pagination pass has no page/section model, so "top of
-    // content" means the start of the whole flow. Exact for the common case
-    // (single banner near the document start); a band anchored on a later page
-    // or in a later section with different geometry can over-reach. Follow-up.
-    const anchor = z.fullWidthBlock && z.isMarginRelative ? 0 : z.anchorNodeIndex;
-    const existing = zonesByAnchor.get(anchor) ?? [];
-    // Strip the anchor-tracking fields; the rest IS a FloatingImageZone. Spread
-    // (rather than copying each field) so new zone fields can't be dropped here.
-    const { anchorNodeIndex: _anchorBlockIndex, isMarginRelative: _isMarginRelative, ...zone } = z;
+  const zonesByAnchor = new Map<number, FloatingZoneWithAnchor[]>();
+  for (const zone of floatingZonesWithAnchors) {
+    const existing = zonesByAnchor.get(zone.anchorBlockIndex) ?? [];
     existing.push(zone);
-    zonesByAnchor.set(anchor, existing);
+    zonesByAnchor.set(zone.anchorBlockIndex, existing);
   }
-
-  // Derive from the map keys, not the raw zones — full-width bands are
-  // re-anchored to block 0 above, and the activation set must match.
-  const anchorIndices = new Set(zonesByAnchor.keys());
 
   let cumulativeY = 0;
   let activeZones: FloatingImageZone[] = [];
 
-  return nodes.map((block, nodeIndex) => {
-    if (anchorIndices.has(nodeIndex)) {
+  return blocks.map((block, blockIndex) => {
+    if (scopes.scopeStarts.has(blockIndex)) {
       cumulativeY = 0;
-      activeZones = zonesByAnchor.get(nodeIndex) ?? [];
+      activeZones = [];
     }
 
+    for (const anchored of zonesByAnchor.get(blockIndex) ?? []) {
+      const { anchorBlockIndex: _anchorBlockIndex, isMarginRelative, ...zone } = anchored;
+      activeZones.push(
+        isMarginRelative
+          ? zone
+          : {
+              ...zone,
+              topY: zone.topY + cumulativeY,
+              bottomY: zone.bottomY + cumulativeY,
+            }
+      );
+    }
+    activeZones = activeZones.filter((zone) => zone.bottomY > cumulativeY);
     const zones = activeZones.length > 0 ? activeZones : undefined;
-    const blockWidth = Array.isArray(contentWidth)
-      ? (contentWidth[nodeIndex] ?? defaultWidth)
-      : contentWidth;
+    const blockWidth = blockWidthAt(blockIndex);
 
-    const measure = measureBlock(block, blockWidth, zones, cumulativeY);
+    const measure =
+      zones == null
+        ? scopes.baseMeasures[blockIndex]
+        : measureBlock(block, blockWidth, zones, cumulativeY);
 
-    if ('totalHeight' in measure) {
-      // Floating tables don't advance flow Y (their wrap zone already
-      // accounts for vertical space). Other nodes do.
-      if (!(block.kind === 'table' && (block as TableBlock).floating)) {
-        cumulativeY += measure.totalHeight;
-      }
-    }
+    // Floating tables don't advance flow Y (their wrap zone already accounts
+    // for vertical space). Every other measurable block advances the scope pen.
+    cumulativeY += measureFlowHeight(block, measure);
 
     return measure;
   });
 }
 
+function buildFloatFlowScopes(
+  blocks: FlowBlock[],
+  blockWidthAt: (blockIndex: number) => number,
+  measureBlock: MeasureBlockFn,
+  initialGeometry?: FloatPageGeometry
+): FloatFlowScopes {
+  const geometryByBlock: Array<FloatPageGeometry | undefined> = [];
+  const baseMeasures: Measure[] = [];
+  const scopeStarts = new Set<number>(blocks.length > 0 ? [0] : []);
+  let geometry = initialGeometry;
+  let cumulativeY = 0;
+  let startsNewScope = false;
+
+  for (let blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
+    if (startsNewScope) {
+      scopeStarts.add(blockIndex);
+      cumulativeY = 0;
+      startsNewScope = false;
+    }
+
+    const block = blocks[blockIndex];
+    geometryByBlock.push(geometry);
+    const measure = measureBlock(block, blockWidthAt(blockIndex));
+    baseMeasures.push(measure);
+    const height = measureFlowHeight(block, measure);
+    const contentHeight = geometry?.contentHeight ?? Number.POSITIVE_INFINITY;
+
+    if (
+      height > 0 &&
+      cumulativeY > 0 &&
+      Number.isFinite(contentHeight) &&
+      cumulativeY + height > contentHeight
+    ) {
+      scopeStarts.add(blockIndex);
+      cumulativeY = 0;
+    }
+    cumulativeY += height;
+
+    if (
+      block.kind === 'pageBreak' ||
+      block.kind === 'columnBreak' ||
+      block.kind === 'sectionBreak' ||
+      (Number.isFinite(contentHeight) && cumulativeY >= contentHeight)
+    ) {
+      startsNewScope = true;
+    }
+
+    if (block.kind === 'sectionBreak') {
+      geometry = geometryAfterSectionBreak(geometry, block, blockWidthAt(blockIndex + 1));
+    }
+  }
+
+  return { scopeStarts, geometryByBlock, baseMeasures };
+}
+
+function measureFlowHeight(block: FlowBlock, measure: Measure): number {
+  if (block.kind === 'table' && (block as TableBlock).floating) return 0;
+  if (block.kind === 'textBox' && isFloatingTextBoxBlock(block as TextBoxBlock)) return 0;
+  if ('totalHeight' in measure) return measure.totalHeight;
+  if ('height' in measure) return measure.height;
+  return 0;
+}
+
+function geometryAfterSectionBreak(
+  current: FloatPageGeometry | undefined,
+  marker: Extract<FlowBlock, { kind: 'sectionBreak' }>,
+  fallbackContentWidth: number
+): FloatPageGeometry | undefined {
+  const pageWidth = marker.pageSize?.w ?? current?.pageWidth;
+  const pageHeight = marker.pageSize?.h ?? current?.pageHeight;
+  const marginLeft = marker.margins?.left ?? current?.marginLeft ?? 0;
+  const marginTop = marker.margins?.top ?? current?.marginTop ?? 0;
+  const marginRight =
+    marker.margins?.right ??
+    (current ? current.pageWidth - current.marginLeft - current.contentWidth : 0);
+  const marginBottom =
+    marker.margins?.bottom ??
+    (current ? current.pageHeight - current.marginTop - current.contentHeight : 0);
+  if (pageWidth == null || pageHeight == null) return current;
+  return {
+    pageWidth,
+    pageHeight,
+    marginLeft,
+    marginTop,
+    contentWidth: Math.max(0, pageWidth - marginLeft - marginRight) || fallbackContentWidth,
+    contentHeight: Math.max(0, pageHeight - marginTop - marginBottom),
+  };
+}
+
 /**
  * Extract floating exclusion zones from all nodes that anchor floats —
  * paragraph runs (images), top-level floating tables, and top-level
- * floating textboxes. The returned zones are in content-area coordinates
- * relative to each anchor block; the orchestration loop in
- * {@link measureBlocksWithFloats} re-anchors and threads them through.
+ * floating textboxes. Paragraph-relative zones are relative to their anchor;
+ * margin/page-relative zones use the anchor section's content-area coordinates.
  */
 function extractFloatingZones(
-  nodes: ContentNode[],
-  contentWidth: number,
+  blocks: FlowBlock[],
+  blockWidthAt: (blockIndex: number) => number,
   measureBlock: MeasureBlockFn,
-  pageGeometry?: FloatPageGeometry
+  geometryByBlock: Array<FloatPageGeometry | undefined>
 ): FloatingZoneWithAnchor[] {
   const zones: FloatingZoneWithAnchor[] = [];
 
-  for (let nodeIndex = 0; nodeIndex < nodes.length; nodeIndex++) {
-    const block = nodes[nodeIndex];
+  for (let blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
+    const block = blocks[blockIndex];
+    const contentWidth = blockWidthAt(blockIndex);
+    const pageGeometry = geometryByBlock[blockIndex];
     switch (block.kind) {
       case 'paragraph':
         extractImageZonesFromParagraph(block as ParagraphBlock, nodeIndex, contentWidth, zones);
@@ -460,45 +518,4 @@ function extractFloatingTextBoxZone(
     anchorNodeIndex: nodeIndex,
     isMarginRelative: isPositionMarginRelative(tbBlock.position),
   });
-}
-
-/**
- * Group `zones` such that any two whose Y ranges overlap AND whose
- * anchorNodeIndex differs by no more than `maxAnchorGap` land in the same
- * group. Single-pass; groups merge transitively as zones connect them.
- */
-function groupOverlappingZones(
-  zones: FloatingZoneWithAnchor[],
-  maxAnchorGap: number
-): FloatingZoneWithAnchor[][] {
-  const groups: FloatingZoneWithAnchor[][] = [];
-  for (const z of zones) {
-    const target = groups.find((g) =>
-      g.some(
-        (other) =>
-          Math.abs(other.anchorNodeIndex - z.anchorNodeIndex) <= maxAnchorGap &&
-          z.topY < other.bottomY &&
-          z.bottomY > other.topY
-      )
-    );
-    if (target) target.push(z);
-    else groups.push([z]);
-  }
-  return groups;
-}
-
-/**
- * Re-anchor every zone in each group to the group's earliest block index and
- * append the result to `out`.
- */
-function collectReanchoredToEarliest(
-  groups: FloatingZoneWithAnchor[][],
-  out: FloatingZoneWithAnchor[]
-): void {
-  for (const group of groups) {
-    const minAnchor = Math.min(...group.map((z) => z.anchorNodeIndex));
-    for (const z of group) {
-      out.push({ ...z, anchorNodeIndex: minAnchor });
-    }
-  }
 }
