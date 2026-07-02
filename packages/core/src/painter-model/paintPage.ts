@@ -79,6 +79,7 @@ import {
   type FootnoteRenderItem,
 } from './paintPage/footnotes';
 import { getPageFurniture } from './pageFurnitureRegistry';
+import type { PageFloatingImage } from './paintPage/pageFloatingImage';
 
 export {
   floatingImageIsBehindDoc,
@@ -102,44 +103,6 @@ export {
   paintAllPagesNow,
   type RenderPagesUpdateKind,
 } from './paintPage/virtualization';
-
-/**
- * Page-level floating image that has been extracted from paragraphs.
- * These are positioned absolutely within the page's content area.
- */
-interface PageFloatingImage {
-  src: string;
-  width: number;
-  height: number;
-  alt?: string;
-  transform?: string;
-  /** Which side: 'left' for left margin, 'right' for right margin */
-  side: 'left' | 'right';
-  /** X position relative to content area (0 = left edge of content) */
-  x: number;
-  /** Y position relative to content area (0 = top of content) */
-  y: number;
-  /** Wrap distances */
-  distTop: number;
-  distBottom: number;
-  distLeft: number;
-  distRight: number;
-  /** ProseMirror start position for click-to-select */
-  docFrom?: number;
-  /** ProseMirror end position */
-  docTo?: number;
-  /** OOXML wrapText: which side(s) TEXT flows on */
-  wrapText?: 'bothSides' | 'left' | 'right' | 'largest';
-  /** Wrap type (square, tight, through, topAndBottom) */
-  wrapType?: string;
-  /** wp:srcRect crop fractions [0..1]. */
-  cropTop?: number;
-  cropRight?: number;
-  cropBottom?: number;
-  cropLeft?: number;
-  /** a:alphaModFix → opacity. */
-  opacity?: number;
-}
 
 /**
  * CSS class names for page elements
