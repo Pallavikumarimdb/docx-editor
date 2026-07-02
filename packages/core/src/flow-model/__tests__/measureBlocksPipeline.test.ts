@@ -60,7 +60,7 @@ function recordingMeasure(
 
     switch (block.kind) {
       case 'paragraph': {
-        const height = heights[id] ?? 20;
+        const height = (zones ? heights[`${id}:wrapped`] : undefined) ?? heights[id] ?? 20;
         return {
           kind: 'paragraph',
           lines: [
@@ -135,13 +135,15 @@ describe('floating exclusion flow scopes', () => {
     const measures = measureBlocksWithFloats(
       blocks,
       300,
-      recordingMeasure({ anchor: 20, 'page-one-tail': 70, 'page-two': 20 }, finalCalls),
+      recordingMeasure(
+        { anchor: 20, 'page-one-tail': 70, 'page-two': 20, 'page-two:wrapped': 50 },
+        finalCalls
+      ),
       initialGeometry
     );
 
     expect(finalCalls.get('anchor')?.zones).toHaveLength(1);
     expect(finalCalls.get('page-one-tail')?.zones).toHaveLength(1);
-    expect(finalCalls.has('page-two')).toBe(false);
     expect(measures[2]).toMatchObject({ kind: 'paragraph', totalHeight: 20 });
   });
 

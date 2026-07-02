@@ -44,7 +44,6 @@ interface FloatingZoneWithAnchor extends FloatingImageZone {
 }
 
 interface FloatFlowScopes {
-  scopeStarts: Set<number>;
   geometryByBlock: Array<FloatPageGeometry | undefined>;
   baseMeasures: Measure[];
 }
@@ -115,13 +114,10 @@ export function measureBlocksWithFloats(
 
   let cumulativeY = 0;
   let activeZones: FloatingImageZone[] = [];
+  let startsNewScope = blocks.length > 0;
+  const measures: Measure[] = [];
 
-  return blocks.map((block, blockIndex) => {
-    if (scopes.scopeStarts.has(blockIndex)) {
-      cumulativeY = 0;
-      activeZones = [];
-    }
-
+  const activateAnchoredZones = (blockIndex: number): void => {
     for (const anchored of zonesByAnchor.get(blockIndex) ?? []) {
       const { anchorBlockIndex: _anchorBlockIndex, isMarginRelative, ...zone } = anchored;
       activeZones.push(
@@ -134,59 +130,53 @@ export function measureBlocksWithFloats(
             }
       );
     }
-    activeZones = activeZones.filter((zone) => zone.bottomY > cumulativeY);
-    const zones = activeZones.length > 0 ? activeZones : undefined;
-    const blockWidth = blockWidthAt(blockIndex);
-
-    const measure =
-      zones == null
-        ? scopes.baseMeasures[blockIndex]
-        : measureBlock(block, blockWidth, zones, cumulativeY);
-
-    // Floating tables don't advance flow Y (their wrap zone already accounts
-    // for vertical space). Every other measurable block advances the scope pen.
-    cumulativeY += measureFlowHeight(block, measure);
-
-    return measure;
-  });
-}
-
-function buildFloatFlowScopes(
-  blocks: FlowBlock[],
-  blockWidthAt: (blockIndex: number) => number,
-  measureBlock: MeasureBlockFn,
-  initialGeometry?: FloatPageGeometry
-): FloatFlowScopes {
-  const geometryByBlock: Array<FloatPageGeometry | undefined> = [];
-  const baseMeasures: Measure[] = [];
-  const scopeStarts = new Set<number>(blocks.length > 0 ? [0] : []);
-  let geometry = initialGeometry;
-  let cumulativeY = 0;
-  let startsNewScope = false;
+  };
 
   for (let blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
+    const block = blocks[blockIndex];
     if (startsNewScope) {
-      scopeStarts.add(blockIndex);
       cumulativeY = 0;
+      activeZones = [];
       startsNewScope = false;
     }
 
-    const block = blocks[blockIndex];
-    geometryByBlock.push(geometry);
-    const measure = measureBlock(block, blockWidthAt(blockIndex));
-    baseMeasures.push(measure);
-    const height = measureFlowHeight(block, measure);
-    const contentHeight = geometry?.contentHeight ?? Number.POSITIVE_INFINITY;
+    activateAnchoredZones(blockIndex);
+    activeZones = activeZones.filter((zone) => zone.bottomY > cumulativeY);
+    const blockWidth = blockWidthAt(blockIndex);
+    let zones = activeZones.length > 0 ? activeZones : undefined;
+    let measure =
+      zones == null
+        ? scopes.baseMeasures[blockIndex]
+        : measureBlock(block, blockWidth, zones, cumulativeY);
+    let height = measureFlowHeight(block, measure);
+    const contentHeight =
+      scopes.geometryByBlock[blockIndex]?.contentHeight ?? Number.POSITIVE_INFINITY;
 
+    // A zone can increase this block's measured height enough to move the block
+    // itself onto the next page. Re-evaluate it at the new scope origin without
+    // zones from the previous page; otherwise the stale zone becomes the reason
+    // it keeps wrapping after the page break.
     if (
       height > 0 &&
       cumulativeY > 0 &&
       Number.isFinite(contentHeight) &&
       cumulativeY + height > contentHeight
     ) {
-      scopeStarts.add(blockIndex);
       cumulativeY = 0;
+      activeZones = [];
+      activateAnchoredZones(blockIndex);
+      activeZones = activeZones.filter((zone) => zone.bottomY > 0);
+      zones = activeZones.length > 0 ? activeZones : undefined;
+      measure =
+        zones == null
+          ? scopes.baseMeasures[blockIndex]
+          : measureBlock(block, blockWidth, zones, cumulativeY);
+      height = measureFlowHeight(block, measure);
     }
+    measures.push(measure);
+
+    // Floating tables don't advance flow Y (their wrap zone already accounts
+    // for vertical space). Every other measurable block advances the scope pen.
     cumulativeY += height;
 
     if (
@@ -197,13 +187,33 @@ function buildFloatFlowScopes(
     ) {
       startsNewScope = true;
     }
+  }
+
+  return measures;
+}
+
+function buildFloatFlowScopes(
+  blocks: FlowBlock[],
+  blockWidthAt: (blockIndex: number) => number,
+  measureBlock: MeasureBlockFn,
+  initialGeometry?: FloatPageGeometry
+): FloatFlowScopes {
+  const geometryByBlock: Array<FloatPageGeometry | undefined> = [];
+  const baseMeasures: Measure[] = [];
+  let geometry = initialGeometry;
+
+  for (let blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
+    const block = blocks[blockIndex];
+    geometryByBlock.push(geometry);
+    const measure = measureBlock(block, blockWidthAt(blockIndex));
+    baseMeasures.push(measure);
 
     if (block.kind === 'sectionBreak') {
       geometry = geometryAfterSectionBreak(geometry, block, blockWidthAt(blockIndex + 1));
     }
   }
 
-  return { scopeStarts, geometryByBlock, baseMeasures };
+  return { geometryByBlock, baseMeasures };
 }
 
 function measureFlowHeight(block: FlowBlock, measure: Measure): number {
