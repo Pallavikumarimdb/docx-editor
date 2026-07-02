@@ -152,11 +152,24 @@ export function measureBlocksWithFloats(
     const contentHeight =
       scopes.geometryByBlock[blockIndex]?.contentHeight ?? Number.POSITIVE_INFINITY;
 
-    // A zone can increase this block's measured height enough to move the block
-    // itself onto the next page. Re-evaluate it at the new scope origin without
-    // zones from the previous page; otherwise the stale zone becomes the reason
-    // it keeps wrapping after the page break.
+    // A zone can increase an atomic/keep-lines block enough to move that whole
+    // block onto the next page. Re-evaluate only those blocks at the new scope
+    // origin. Splittable paragraphs keep their current-page lines in the zone
+    // and continue without it after pagination cuts the measured line set.
+    const remainingInScope = contentHeight - cumulativeY;
+    const firstParagraphLineHeight =
+      block.kind === 'paragraph' && measure.kind === 'paragraph'
+        ? (block.attrs?.spacing?.before ?? 0) +
+          (measure.lines[0]?.lineHeight ?? 0) +
+          (measure.lines[0]?.floatSkipBefore ?? 0)
+        : 0;
+    const movesWholeToNextScope =
+      block.kind === 'image' ||
+      block.kind === 'textBox' ||
+      (block.kind === 'paragraph' &&
+        (block.attrs?.keepLines === true || firstParagraphLineHeight > remainingInScope));
     if (
+      movesWholeToNextScope &&
       height > 0 &&
       cumulativeY > 0 &&
       Number.isFinite(contentHeight) &&

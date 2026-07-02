@@ -147,6 +147,47 @@ describe('floating exclusion flow scopes', () => {
     expect(measures[2]).toMatchObject({ kind: 'paragraph', totalHeight: 20 });
   });
 
+  test('keeps float wrapping on the current-page part of a split paragraph', () => {
+    const blocks: FlowBlock[] = [
+      paragraph('anchor', [floatingImage(0)]),
+      paragraph('split-paragraph'),
+      paragraph('following-page'),
+    ];
+
+    const measureBlock: MeasureBlockFn = (block, _width, zones) => {
+      const id = String(block.id);
+      const lineHeights =
+        id === 'anchor'
+          ? [20]
+          : id === 'split-paragraph'
+            ? zones
+              ? [60, 60]
+              : [40, 40]
+            : zones
+              ? [50]
+              : [20];
+      return {
+        kind: 'paragraph',
+        lines: lineHeights.map((lineHeight) => ({
+          fromRun: 0,
+          fromChar: 0,
+          toRun: 0,
+          toChar: 0,
+          width: 0,
+          ascent: lineHeight * 0.75,
+          descent: lineHeight * 0.25,
+          lineHeight,
+        })),
+        totalHeight: lineHeights.reduce((sum, lineHeight) => sum + lineHeight, 0),
+      };
+    };
+
+    const measures = measureBlocksWithFloats(blocks, 300, measureBlock, initialGeometry);
+
+    expect(measures[1]).toMatchObject({ kind: 'paragraph', totalHeight: 120 });
+    expect(measures[2]).toMatchObject({ kind: 'paragraph', totalHeight: 20 });
+  });
+
   test('a later-section margin band starts at its anchor with later geometry', () => {
     const textBox: TextBoxBlock = {
       kind: 'textBox',
