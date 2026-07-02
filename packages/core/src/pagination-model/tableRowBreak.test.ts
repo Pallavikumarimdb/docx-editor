@@ -78,6 +78,34 @@ describe('table row split candidates', () => {
     expect(snapRowBreak(info, 0, 0, 31)).toBe(30);
   });
 
+  test('offsets safe cuts for vertically centered cell content', () => {
+    const block: TableBlock = {
+      kind: 'table',
+      id: 'centered-table',
+      columnWidths: [50],
+      rows: [
+        {
+          id: 'row',
+          cells: [{ id: 'centered', verticalAlign: 'center', blocks: [paragraph('centered')] }],
+        },
+      ],
+    };
+    const metrics = paragraphMetrics(10, 10);
+    const measure: TableMeasure = {
+      kind: 'table',
+      totalWidth: 50,
+      totalHeight: 60,
+      columnWidths: [50],
+      rows: [{ height: 60, cells: [cellMetrics(metrics)] }],
+    };
+
+    const info = buildTableRowBreakInfo(block, measure);
+
+    expect(info.breakOffsets[0]).toEqual([30, 40, 60]);
+    expect(snapRowBreak(info, 0, 0, 25)).toBe(0);
+    expect(snapRowBreak(info, 0, 0, 30)).toBe(30);
+  });
+
   test('includes a vMerge restart when checking continuation-row cuts', () => {
     const block: TableBlock = {
       kind: 'table',

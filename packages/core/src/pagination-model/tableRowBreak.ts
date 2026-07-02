@@ -66,17 +66,27 @@ export function buildTableRowBreakInfo(node: TableBlock, metrics: TableMetrics):
       // OOXML/TableNormal default top padding is 0 (matches measureTable).
       const padTop = sourceCell.padding?.top ?? 0;
       const layout = layoutCellContent(sourceCell.blocks, measuredCell.blocks, padTop);
+      const cellBottomRow = Math.min(rowCount, g.rowIndex + g.rowSpan);
+      const cellHeight = rowTops[cellBottomRow] - rowTops[g.rowIndex];
+      const measuredHeight = measuredCell.height ?? 0;
+      const slack = Math.max(0, cellHeight - measuredHeight);
+      const verticalOffset =
+        sourceCell.verticalAlign === 'bottom'
+          ? slack
+          : sourceCell.verticalAlign === 'center'
+            ? slack / 2
+            : 0;
       // Map cell-content y (relative to the cell/region top at rowTops[startRow])
       // into this row's coordinate space (relative to rowTops[r]).
       const shift = rowTops[r] - rowTops[g.rowIndex];
       for (const b of layout.flatBottoms) {
-        const off = b - shift;
+        const off = b + verticalOffset - shift;
         if (off > 0 && off < rowHeight) candidates.add(off);
       }
       for (const range of layout.unbreakableRanges) {
         unbreakableRanges.push({
-          top: range.top - shift,
-          bottom: range.bottom - shift,
+          top: range.top + verticalOffset - shift,
+          bottom: range.bottom + verticalOffset - shift,
         });
       }
     }
