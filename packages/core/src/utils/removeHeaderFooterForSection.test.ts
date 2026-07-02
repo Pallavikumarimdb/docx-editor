@@ -63,6 +63,29 @@ describe('removeHeaderFooterForSection', () => {
     expect(serializeDocumentBody(result.package.document)).not.toContain('rId-shared');
   });
 
+  test('retains a story referenced by another inline section property', () => {
+    const input = documentWithSharedSectionHeader();
+    const first = input.package.document.sections![0].properties;
+    const second = input.package.document.sections![1].properties;
+    input.package.document.sections = undefined;
+    input.package.document.finalSectionProperties = undefined;
+    input.package.document.content = [
+      { type: 'paragraph', content: [], sectionProperties: first },
+      { type: 'paragraph', content: [], sectionProperties: second },
+    ];
+
+    const result = removeHeaderFooterForSection(input, 'header', 0, 'rId-shared');
+
+    expect(result.package.headers?.has('rId-shared')).toBe(true);
+    expect(result.package.relationships?.has('rId-shared')).toBe(true);
+    const secondRef = result.package.document.content[1];
+    expect(
+      'sectionProperties' in secondRef
+        ? secondRef.sectionProperties?.headerReferences?.[0]?.rId
+        : undefined
+    ).toBe('rId-shared');
+  });
+
   test('keeps an explicit empty story when removing a later inherited variant', () => {
     const result = removeHeaderFooterForSection(
       documentWithSharedSectionHeader(),

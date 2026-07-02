@@ -106,6 +106,11 @@ export function removeHeaderFooterForSection(
   });
   const nextBody = updateSectionPropertiesAt(pkg.document, sectionIndex, update);
   const oldStoryStillReferenced =
+    nextBody.content.some(
+      (block) =>
+        'sectionProperties' in block &&
+        (block.sectionProperties?.[refKey] ?? []).some((reference) => reference.rId === rId)
+    ) ||
     (nextBody.sections ?? []).some((section) =>
       (section.properties[refKey] ?? []).some((reference) => reference.rId === rId)
     ) ||
