@@ -481,7 +481,8 @@ export function renderHeaderFooterContent(
   // Render floating images with absolute positioning
   for (const floatImg of floatingImages) {
     const img = doc.createElement('img');
-    img.src = sanitizeImageSrc(floatImg.src) ?? '';
+    const imageSrc = sanitizeImageSrc(floatImg.src);
+    if (imageSrc) img.src = imageSrc;
     img.width = floatImg.width;
     img.height = floatImg.height;
     if (floatImg.alt) img.alt = floatImg.alt;

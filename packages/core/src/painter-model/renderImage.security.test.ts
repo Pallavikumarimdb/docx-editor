@@ -1,6 +1,7 @@
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { ImageBlock, ImageFragment, ImageMeasure } from '../pagination-model/types';
+import { paintFloatingImagesLayer } from './floatingImageLayer';
 import type { RenderContext } from './paintPage';
 import { paintImageFragment } from './renderImage';
 
@@ -29,6 +30,23 @@ describe('paintImageFragment source safety', () => {
     const painted = paintImageFragment(fragment, block, measure, {} as RenderContext);
     const image = painted.querySelector('img');
 
+    expect(image).not.toBeNull();
+    expect(image!.hasAttribute('src')).toBe(false);
+  });
+
+  test('does not create a fetching src attribute for remote floating images', () => {
+    const painted = paintFloatingImagesLayer(
+      [{ src: 'https://tracker.test/pixel.png', width: 100, height: 50, x: 0, y: 0 }],
+      document,
+      {
+        layerClass: 'float-layer',
+        itemClass: 'float-item',
+        sizing: 'inset0',
+        layerMode: 'front',
+      }
+    );
+
+    const image = painted.querySelector('img');
     expect(image).not.toBeNull();
     expect(image!.hasAttribute('src')).toBe(false);
   });
