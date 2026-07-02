@@ -86,6 +86,26 @@ describe('removeHeaderFooterForSection', () => {
     ).toBe('rId-shared');
   });
 
+  test('does not treat the final section as inline section zero without a sections array', () => {
+    const input = documentWithSharedSectionHeader();
+    const first = input.package.document.sections![0].properties;
+    const final = input.package.document.sections![1].properties;
+    input.package.document.sections = undefined;
+    input.package.document.finalSectionProperties = final;
+    input.package.document.content = [
+      { type: 'paragraph', content: [], sectionProperties: first },
+      { type: 'paragraph', content: [] },
+    ];
+
+    const result = removeHeaderFooterForSection(input, 'header', 0, 'rId-shared');
+
+    expect(result.package.document.finalSectionProperties?.headerReferences?.[0]?.rId).toBe(
+      'rId-shared'
+    );
+    expect(result.package.headers?.has('rId-shared')).toBe(true);
+    expect(result.package.relationships?.has('rId-shared')).toBe(true);
+  });
+
   test('keeps an explicit empty story when removing a later inherited variant', () => {
     const result = removeHeaderFooterForSection(
       documentWithSharedSectionHeader(),

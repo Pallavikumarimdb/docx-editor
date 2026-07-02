@@ -7,7 +7,7 @@ import type {
 
 type HeaderFooterPosition = 'header' | 'footer';
 
-function updateSectionPropertiesAt(
+export function updateSectionPropertiesAt(
   body: Document['package']['document'],
   sectionIndex: number,
   update: (properties: SectionProperties) => SectionProperties
@@ -23,7 +23,10 @@ function updateSectionPropertiesAt(
   const sections = body.sections?.map((section, index) =>
     index === sectionIndex ? { ...section, properties: update(section.properties) } : section
   );
-  const finalIndex = Math.max(0, (sections?.length ?? 1) - 1);
+  // With a normalized `sections` array the final section is its last entry.
+  // Without one, every inline sectPr ends a section, so the body-level final
+  // sectPr follows all `breakSectionIndex` inline sections.
+  const finalIndex = sections ? Math.max(0, sections.length - 1) : breakSectionIndex;
   return {
     ...body,
     content,
