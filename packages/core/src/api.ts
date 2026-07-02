@@ -32,11 +32,7 @@ import {
   type FlowBlock,
   type Measure,
 } from './pagination-model';
-import {
-  indexBlocksById,
-  paintPages,
-  type RenderPageOptions,
-} from './painter-model';
+import { indexBlocksById, paintPages, type RenderPageOptions } from './painter-model';
 import { getCaretPositionFromDom, readSelectionGeometry } from './flow-model/resolveDomPosition';
 
 /** The independent ProseMirror position space that owns a painted box. */
@@ -226,12 +222,7 @@ function measureBlock(
  */
 export function caretAt(document: RenderedDocument, position: number): RenderedBox | null {
   const geometry = rootGeometry(document.root);
-  const rect = getCaretPositionFromDom(
-    document.root,
-    position,
-    geometry.rect,
-    geometry.scaleY
-  );
+  const rect = getCaretPositionFromDom(document.root, position, geometry.rect, geometry.scaleY);
   if (!rect) return null;
   return {
     x: rect.x / geometry.scaleX,
@@ -258,15 +249,15 @@ export function rectsFor(
 ): readonly RenderedBox[] {
   const geometry = rootGeometry(document.root);
   return readSelectionGeometry(document.root, from, to, geometry.rect).map((rect) => ({
-      x: rect.x / geometry.scaleX,
-      y: rect.y / geometry.scaleY,
-      width: rect.width / geometry.scaleX,
-      height: rect.height / geometry.scaleY,
-      pageIndex: rect.pageIndex,
-      region: 'body',
-      docFrom: from,
-      docTo: to,
-    }));
+    x: rect.x / geometry.scaleX,
+    y: rect.y / geometry.scaleY,
+    width: rect.width / geometry.scaleX,
+    height: rect.height / geometry.scaleY,
+    pageIndex: rect.pageIndex,
+    region: 'body',
+    docFrom: from,
+    docTo: to,
+  }));
 }
 
 function regionOf(element: HTMLElement): RenderedRegion {

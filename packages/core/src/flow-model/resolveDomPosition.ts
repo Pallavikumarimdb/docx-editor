@@ -197,10 +197,7 @@ function enclosingPaintedSpan(
   const span = el?.closest<HTMLElement>('span[data-doc-from][data-doc-to]');
   if (!span) return null;
   if (scope === 'body' && !span.closest('.layout-page-content')) return null;
-  if (
-    scope === 'hf' &&
-    !span.closest('.layout-page-header, .layout-page-footer')
-  ) {
+  if (scope === 'hf' && !span.closest('.layout-page-header, .layout-page-footer')) {
     return null;
   }
   if (!container.contains(span)) return null;

@@ -413,8 +413,7 @@ export function paintPages(
 
         if (entry.isIntersecting) {
           // Page is near viewport — render it and neighbors
-          didPaint =
-            populatePageShell(shell, liveDataMap, liveTotalPages, liveOptions) || didPaint;
+          didPaint = populatePageShell(shell, liveDataMap, liveTotalPages, liveOptions) || didPaint;
 
           // Also render buffer pages above and below
           for (let offset = -VIRTUALIZATION_BUFFER; offset <= VIRTUALIZATION_BUFFER; offset++) {

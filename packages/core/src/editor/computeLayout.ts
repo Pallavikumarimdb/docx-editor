@@ -196,8 +196,7 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
   const resolvedFinalColumns = document ? getColumns(lastSectionProps) : finalColumns;
 
   // Step 1: PM doc → flow blocks.
-  const pageContentHeight =
-    resolvedPageSize.h - resolvedMargins.top - resolvedMargins.bottom;
+  const pageContentHeight = resolvedPageSize.h - resolvedMargins.top - resolvedMargins.bottom;
   const blocks = buildBoxTree(state.doc, { theme, pageContentHeight });
 
   // Section markers in the PM carry the authored sectPr that closes each
@@ -241,10 +240,14 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
   // and the saved DOCX keep the original floating table.
   demoteBlockLikeFloatingTables(nodes, blockWidths, contentWidth);
 
-  const measures = measureBlocks(blocks, blockWidths, pageGeometryFromPage({
-    size: resolvedPageSize,
-    margins: resolvedMargins,
-  }));
+  const measures = measureBlocks(
+    blocks,
+    blockWidths,
+    pageGeometryFromPage({
+      size: resolvedPageSize,
+      margins: resolvedMargins,
+    })
+  );
 
   // Step 2.5: Footnote references.
   const footnoteRefs = collectFootnoteRefs(nodes);
@@ -269,8 +272,7 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
     const properties = sectionProps[sectionIndex] ?? firstSectionProps;
     const sectionPageSize = getPageSize(properties);
     const sectionMargins = getMargins(properties);
-    const sectionContentWidth =
-      sectionPageSize.w - sectionMargins.left - sectionMargins.right;
+    const sectionContentWidth = sectionPageSize.w - sectionMargins.left - sectionMargins.right;
     const metrics = { section: region, pageSize: sectionPageSize, margins: sectionMargins };
     const pmDoc = getHfPmDoc(hf);
     const value = pmDoc
@@ -312,12 +314,7 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
         pageBorders: firstSectionProps.pageBorders,
       };
     }
-    const resolved = resolvePageHeaderFooter(
-      document,
-      pageNumber,
-      sectionIndex,
-      sectionPageNumber
-    );
+    const resolved = resolvePageHeaderFooter(document, pageNumber, sectionIndex, sectionPageNumber);
     return {
       sectionIndex,
       sectionPageNumber,

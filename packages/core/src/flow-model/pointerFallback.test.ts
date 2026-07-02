@@ -66,12 +66,10 @@ describe('layout pointer fallbacks', () => {
   test('click beyond a short line resolves to its trailing position', () => {
     const { block, measure } = paragraph('short', [{ text: 'Short', docFrom: 1 }]);
 
-    const result = pointerToDocPosInParagraph(
-      block,
-      measure,
-      paragraphFragment(block, measure),
-      { x: 450, y: 10 }
-    );
+    const result = pointerToDocPosInParagraph(block, measure, paragraphFragment(block, measure), {
+      x: 450,
+      y: 10,
+    });
 
     expect(result?.pos).toBe(6);
   });
@@ -82,12 +80,10 @@ describe('layout pointer fallbacks', () => {
       { text: 'Final', docFrom: 6 },
     ]);
 
-    const result = pointerToDocPosInParagraph(
-      block,
-      measure,
-      paragraphFragment(block, measure),
-      { x: 450, y: 500 }
-    );
+    const result = pointerToDocPosInParagraph(block, measure, paragraphFragment(block, measure), {
+      x: 450,
+      y: 500,
+    });
 
     expect(result?.lineIndex).toBe(1);
     expect(result?.pos).toBe(11);

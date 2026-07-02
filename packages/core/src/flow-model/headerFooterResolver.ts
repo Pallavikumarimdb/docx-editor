@@ -53,8 +53,7 @@ function resolvePart(
   region: HeaderFooterRegion,
   variant: HeaderFooterType
 ): ResolvedHeaderFooterPart {
-  const refs =
-    region === 'header' ? properties.headerReferences : properties.footerReferences;
+  const refs = region === 'header' ? properties.headerReferences : properties.footerReferences;
   const bag = region === 'header' ? doc.package.headers : doc.package.footers;
   let ref = refs?.find((entry) => entry.type === variant) ?? null;
 

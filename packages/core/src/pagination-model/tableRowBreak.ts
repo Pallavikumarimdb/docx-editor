@@ -87,9 +87,7 @@ export function buildTableRowBreakInfo(node: TableBlock, metrics: TableMetrics):
     // row). Keep it only when every active cell is between lines there.
     const safe = [...candidates].filter(
       (candidate) =>
-        !unbreakableRanges.some(
-          (range) => candidate > range.top && candidate < range.bottom
-        )
+        !unbreakableRanges.some((range) => candidate > range.top && candidate < range.bottom)
     );
     breakOffsets.push(safe.sort((a, b) => a - b));
   }
