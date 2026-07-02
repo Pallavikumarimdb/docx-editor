@@ -283,7 +283,13 @@ function extractFloatingZones(
     const pageGeometry = geometryByBlock[blockIndex];
     switch (block.kind) {
       case 'paragraph':
-        extractImageZonesFromParagraph(block as ParagraphBlock, nodeIndex, contentWidth, zones);
+        extractImageZonesFromParagraph(
+          block as ParagraphBlock,
+          blockIndex,
+          contentWidth,
+          zones,
+          pageGeometry
+        );
         break;
       case 'table':
         extractFloatingTableZone(block as TableBlock, nodeIndex, contentWidth, measureBlock, zones);
@@ -356,17 +362,35 @@ function extractImageZonesFromParagraph(
   paragraphBlock: ParagraphBlock,
   nodeIndex: number,
   contentWidth: number,
-  out: FloatingZoneWithAnchor[]
+  out: FloatingZoneWithAnchor[],
+  pageGeometry?: FloatPageGeometry
 ): void {
   for (const run of paragraphBlock.runs) {
     if (run.kind !== 'image') continue;
     const imgRun = run as ImageRun;
-    if (!isTextWrappingFloatingImageRun(imgRun)) continue;
 
     const distTop = imgRun.distTop ?? 0;
     const distBottom = imgRun.distBottom ?? 0;
     const distLeft = imgRun.distLeft ?? 12;
     const distRight = imgRun.distRight ?? 12;
+
+    if (imgRun.wrapType === 'topAndBottom') {
+      const rawTopY = resolveAnchoredObjectVerticalTop(imgRun, 0, pageGeometry);
+      const bottomY = rawTopY + imgRun.height + distBottom;
+      if (bottomY <= 0) continue;
+      out.push({
+        leftMargin: 0,
+        rightMargin: 0,
+        topY: rawTopY - distTop,
+        bottomY,
+        anchorBlockIndex: blockIndex,
+        isMarginRelative: isPositionMarginRelative(imgRun.position),
+        fullWidthBlock: true,
+      });
+      continue;
+    }
+
+    if (!isTextWrappingFloatingImageRun(imgRun)) continue;
 
     let topY = 0;
     const v = imgRun.position?.vertical;
@@ -478,11 +502,6 @@ function extractFloatingTextBoxZone(
   const distLeft = tbBlock.distLeft ?? 12;
   const distRight = tbBlock.distRight ?? 12;
 
-  // NOTE: the page-pinned topAndBottom band below is currently text-box only.
-  // A topAndBottom anchored *image* is still laid out as a block image on its
-  // own line at its anchor (see extractImageZonesFromParagraph / paintPage),
-  // so a page-anchored image band is not yet honored — follow-up.
-  //
   // topAndBottom: reserve a full-width vertical band so body text flows above
   // and below the box. Page/margin-relative boxes (e.g. a banner pinned to the
   // page top) need their offset translated into content-area coordinates.

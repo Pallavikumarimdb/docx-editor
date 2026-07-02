@@ -147,6 +147,40 @@ describe('floating exclusion flow scopes', () => {
     expect(measures[2]).toMatchObject({ kind: 'paragraph', totalHeight: 20 });
   });
 
+  test('page-anchored topAndBottom images reserve their painted vertical band', () => {
+    const image: ImageRun = {
+      kind: 'image',
+      src: 'embedded.png',
+      width: 80,
+      height: 20,
+      displayMode: 'float',
+      wrapType: 'topAndBottom',
+      distTop: 3,
+      distBottom: 5,
+      position: {
+        horizontal: { relativeTo: 'margin', align: 'center' },
+        vertical: { relativeTo: 'page', align: 'center' },
+      },
+    };
+    const blocks: FlowBlock[] = [paragraph('image-anchor', [image]), paragraph('band-overlap')];
+    const finalCalls = new Map<string, FinalCall>();
+
+    measureBlocksWithFloats(blocks, 300, recordingMeasure({}, finalCalls), initialGeometry);
+
+    expect(finalCalls.get('image-anchor')?.zones?.[0]).toMatchObject({
+      leftMargin: 0,
+      rightMargin: 0,
+      topY: 37,
+      bottomY: 65,
+      fullWidthBlock: true,
+    });
+    expect(finalCalls.get('band-overlap')?.zones?.[0]).toMatchObject({
+      topY: 37,
+      bottomY: 65,
+      fullWidthBlock: true,
+    });
+  });
+
   test('keeps float wrapping on the current-page part of a split paragraph', () => {
     const blocks: FlowBlock[] = [
       paragraph('anchor', [floatingImage(0)]),

@@ -499,16 +499,13 @@ export function paintPage(
           pageGeometry
         );
         allFloatingImages.push(...extracted);
-
-        // Note: topAndBottom images are handled by paragraphLayout as block images
-        // (they get their own line). No exclusion zones needed for them.
       }
     }
   }
 
   // Collect floating image exclusion rectangles
   for (const img of allFloatingImages) {
-    if (!floatingImageWrapsText(img)) continue;
+    if (!floatingImageWrapsText(img) && img.wrapType !== 'topAndBottom') continue;
 
     floatingRects.push({
       side: img.side,
