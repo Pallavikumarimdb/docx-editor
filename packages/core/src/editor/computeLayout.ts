@@ -443,7 +443,7 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
   }
 
   const footnotesByPage = hasFootnotes
-    ? buildFootnoteRenderItems(pageFootnoteMap, footnoteContentMap, document)
+    ? buildFootnoteRenderItems(pageFootnoteMap, footnoteContentMap, document, layout.pages)
     : undefined;
 
   for (const page of layout.pages) {

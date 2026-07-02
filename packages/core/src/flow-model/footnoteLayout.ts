@@ -1,17 +1,9 @@
 /**
  * Footnote PageLayout Utilities
  *
- * Footnote/endnote rendering pipeline plus page-mapping helpers:
- * - scanning FlowBlocks for footnote references and their PM positions
- * - mapping references to the page that ends up containing them
- * - converting a Footnote → FootnoteContent via the body pipeline
- *   (footnoteToProseDoc → buildBoxTree → caller-supplied measureBlocks)
- * - reserving per-page footnote area heights for layout
- *
- * Everything that's pure OOXML / ContentNode semantics lives here so the
- * React, Vue, and any future adapters can share the conversion logic
- * and just supply their own measurement function (which depends on
- * platform-specific Canvas/font metrics).
+ * Shared OOXML footnote conversion, reference-to-page mapping, reservation,
+ * continuation pagination, and render-item construction. Adapters supply only
+ * their platform-specific block measurement function.
  */
 
 import type {
@@ -22,6 +14,7 @@ import type {
   Page,
   PageLayout,
   FootnoteContent,
+  FootnoteFragment,
   TextRun,
 } from '../pagination-model/types';
 import { layOutPages, type LayoutConfig } from '../pagination-model';
@@ -30,6 +23,7 @@ import type { FootnoteRenderItem } from '../painter-model';
 import { footnoteToProseDoc } from '../prosemirror/conversion/toProseDoc';
 import { buildBoxTree } from './buildBoxTree';
 import { getFootnoteText } from '../docx/footnoteParser';
+import { takeFootnoteSlice, type FootnoteSliceCursor } from './footnoteSlices';
 
 /** Separator line height + vertical padding in pixels. */
 export const FOOTNOTE_SEPARATOR_HEIGHT = 12;
@@ -178,9 +172,93 @@ export function collectFootnoteRefs(nodes: ContentNode[]): FootnoteRefLocation[]
 // 2. Map footnote references to pages
 // ============================================================================
 
+interface FootnotePageIndex {
+  ranges: Array<{ from: number; to: number; pageNumber: number }>;
+  tableRows: Map<string, Array<{ fromRow: number; toRow: number; pageNumber: number }>>;
+}
+
+/**
+ * Build the immutable lookup used for all references in one layout pass.
+ *
+ * Body ranges are disjoint and sorted by PM position; table row slices are
+ * indexed per table. Lookup is therefore O(log fragments) instead of scanning
+ * every page and every fragment for every reference on every stabilization pass.
+ */
+function buildFootnotePageIndex(pages: Page[]): FootnotePageIndex {
+  const ranges: FootnotePageIndex['ranges'] = [];
+  const tableRows: FootnotePageIndex['tableRows'] = new Map();
+
+  for (const page of pages) {
+    for (const fragment of page.fragments) {
+      if (fragment.kind === 'table') {
+        const key = String(fragment.blockId);
+        const slices = tableRows.get(key) ?? [];
+        slices.push({
+          fromRow: fragment.fromRow,
+          toRow: fragment.toRow,
+          pageNumber: page.number,
+        });
+        tableRows.set(key, slices);
+        continue;
+      }
+
+      if (fragment.docFrom == null || fragment.docTo == null) continue;
+      ranges.push({
+        from: fragment.docFrom,
+        to: fragment.docTo,
+        pageNumber: page.number,
+      });
+    }
+  }
+
+  ranges.sort((a, b) => a.from - b.from || a.to - b.to);
+  for (const slices of tableRows.values()) {
+    slices.sort((a, b) => a.fromRow - b.fromRow);
+  }
+  return { ranges, tableRows };
+}
+
+function pageForPmPos(index: FootnotePageIndex, pmPos: number): number | undefined {
+  let low = 0;
+  let high = index.ranges.length - 1;
+  let candidate = -1;
+  while (low <= high) {
+    const mid = (low + high) >>> 1;
+    if (index.ranges[mid].from <= pmPos) {
+      candidate = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  if (candidate < 0) return undefined;
+  const range = index.ranges[candidate];
+  return pmPos < range.to ? range.pageNumber : undefined;
+}
+
+function pageForTableRow(
+  index: FootnotePageIndex,
+  tableBlockId: BlockId,
+  rowIndex: number
+): number | undefined {
+  const slices = index.tableRows.get(String(tableBlockId));
+  if (!slices) return undefined;
+
+  let low = 0;
+  let high = slices.length - 1;
+  while (low <= high) {
+    const mid = (low + high) >>> 1;
+    const slice = slices[mid];
+    if (rowIndex < slice.fromRow) high = mid - 1;
+    else if (rowIndex >= slice.toRow) low = mid + 1;
+    else return slice.pageNumber;
+  }
+  return undefined;
+}
+
 /**
  * After layout, determine which footnotes appear on which pages.
- * Checks each page's fragments to see if any footnoteRef PM positions fall within.
  *
  * Returns Map<pageNumber, footnoteId[]> in document order.
  */
@@ -191,6 +269,7 @@ export function mapFootnotesToPages(
   const pageFootnotes = new Map<number, number[]>();
 
   if (footnoteRefs.length === 0) return pageFootnotes;
+  const index = buildFootnotePageIndex(pages);
 
   const assign = (pageNumber: number, footnoteId: number): void => {
     const existing = pageFootnotes.get(pageNumber) ?? [];
@@ -199,35 +278,12 @@ export function mapFootnotesToPages(
     pageFootnotes.set(pageNumber, existing);
   };
 
-  // For each footnote ref, find which page it lands on.
   for (const ref of footnoteRefs) {
-    let found = false;
-    for (const page of pages) {
-      for (const fragment of page.fragments) {
-        let match = false;
-        if (ref.tableNodeId != null && ref.rowIndex != null) {
-          // In-table ref: a table splits across pages by row, but every
-          // fragment keeps the whole table's pm range, so a pm-position match
-          // would land every ref on the first table page. Attribute the ref to
-          // the fragment whose [fromRow, toRow) slice contains its row.
-          match =
-            fragment.kind === 'table' &&
-            fragment.nodeId === ref.tableNodeId &&
-            ref.rowIndex >= fragment.fromRow &&
-            ref.rowIndex < fragment.toRow;
-        } else {
-          const docFrom = fragment.docFrom ?? -1;
-          const docTo = fragment.docTo ?? -1;
-          match = docFrom >= 0 && docTo >= 0 && ref.pmPos >= docFrom && ref.pmPos < docTo;
-        }
-        if (match) {
-          assign(page.number, ref.footnoteId);
-          found = true;
-          break;
-        }
-      }
-      if (found) break;
-    }
+    const pageNumber =
+      ref.tableBlockId != null && ref.rowIndex != null
+        ? pageForTableRow(index, ref.tableBlockId, ref.rowIndex)
+        : pageForPmPos(index, ref.pmPos);
+    if (pageNumber != null) assign(pageNumber, ref.footnoteId);
   }
 
   return pageFootnotes;
@@ -513,6 +569,226 @@ export function calculateFootnoteReservedHeights(
   return reserved;
 }
 
+/** Keep enough body room for at least one ordinary footnote-reference line. */
+const MIN_BODY_FLOW_HEIGHT_PX = 12;
+
+interface PendingFootnote {
+  content: FootnoteContent;
+  cursor: FootnoteSliceCursor;
+}
+
+interface FootnotePaginationPlan {
+  reservedHeights: Map<number, number>;
+  fragmentsByPage: Map<number, FootnoteFragment[]>;
+  footnoteIdsByPage: Map<number, number[]>;
+  minimumPageCount: number;
+}
+
+function firstSliceHeight(content: FootnoteContent): number {
+  return (
+    takeFootnoteSlice(content, { blockIndex: 0, unitIndex: 0 }, 0, 0, true).fragment?.height ?? 0
+  );
+}
+
+function pageContentHeight(pages: Page[], pageNumber: number): number {
+  const page = pages[pageNumber - 1] ?? pages[pages.length - 1];
+  if (!page) return 0;
+  return Math.max(0, page.size.h - page.margins.top - page.margins.bottom);
+}
+
+/**
+ * Slice referenced footnotes into page-local fragments. Every page keeps one
+ * body-line slot, continuation content is ordered before newly referenced
+ * notes, and each new note is guaranteed a first slice on its reference page.
+ */
+function paginateFootnoteFragments(
+  pages: Page[],
+  pageFootnoteMap: Map<number, number[]>,
+  footnoteContentMap: Map<number, FootnoteContent>,
+  columns: number
+): FootnotePaginationPlan {
+  const startsByPage = new Map<number, FootnoteContent[]>();
+  const globallyStarted = new Set<number>();
+  let lastStartPage = 0;
+  for (const [pageNumber, ids] of pageFootnoteMap) {
+    const starts: FootnoteContent[] = [];
+    for (const id of ids) {
+      if (globallyStarted.has(id)) continue;
+      const content = footnoteContentMap.get(id);
+      if (!content) continue;
+      globallyStarted.add(id);
+      starts.push(content);
+    }
+    if (starts.length > 0) {
+      startsByPage.set(pageNumber, starts);
+      lastStartPage = Math.max(lastStartPage, pageNumber);
+    }
+  }
+
+  const columnCount = Math.max(1, Math.floor(columns));
+  const reservedHeights = new Map<number, number>();
+  const fragmentsByPage = new Map<number, FootnoteFragment[]>();
+  const footnoteIdsByPage = new Map<number, number[]>();
+  let pending: PendingFootnote[] = [];
+  let pageNumber = 1;
+
+  while (pageNumber <= lastStartPage || pending.length > 0) {
+    const carriedFootnoteIds = new Set(pending.map((state) => state.content.id));
+    const starts = startsByPage.get(pageNumber) ?? [];
+    const contentHeight = pageContentHeight(pages, pageNumber);
+    const columnCapacity = Math.max(
+      1,
+      contentHeight - MIN_BODY_FLOW_HEIGHT_PX - FOOTNOTE_SEPARATOR_HEIGHT
+    );
+    const pageFragments: FootnoteFragment[] = [];
+    const columnUsed = Array.from({ length: columnCount }, () => 0);
+
+    // Preserve the existing balanced-column behavior when every note is whole
+    // and no continuation is entering this page.
+    const canUseBalancedColumns =
+      columnCount > 1 &&
+      pending.length === 0 &&
+      starts.every((content) => content.height <= columnCapacity) &&
+      starts.reduce((sum, content) => sum + content.height, 0) <= columnCapacity * columnCount;
+
+    if (canUseBalancedColumns) {
+      const partitions = distributeFootnotesIntoColumns(starts, columnCount);
+      partitions.forEach((partition, columnIndex) => {
+        for (const content of partition) {
+          const taken = takeFootnoteSlice(
+            content,
+            { blockIndex: 0, unitIndex: 0 },
+            Number.POSITIVE_INFINITY,
+            columnIndex,
+            true
+          );
+          if (taken.fragment) {
+            pageFragments.push(taken.fragment);
+            columnUsed[columnIndex] += taken.fragment.height;
+          }
+        }
+      });
+      pending = [];
+    } else {
+      let columnIndex = 0;
+      const advanceColumn = (): boolean => {
+        while (columnIndex < columnCount && columnUsed[columnIndex] >= columnCapacity - 0.5) {
+          columnIndex++;
+        }
+        return columnIndex < columnCount;
+      };
+
+      const consume = (
+        state: PendingFootnote,
+        budget: { remaining: number }
+      ): PendingFootnote | undefined => {
+        let current = state;
+        while (budget.remaining > 0 && advanceColumn()) {
+          const available = Math.min(budget.remaining, columnCapacity - columnUsed[columnIndex]);
+          const taken = takeFootnoteSlice(
+            current.content,
+            current.cursor,
+            available,
+            columnIndex,
+            columnUsed[columnIndex] === 0
+          );
+          if (!taken.fragment) {
+            columnIndex++;
+            continue;
+          }
+          pageFragments.push(taken.fragment);
+          columnUsed[columnIndex] += taken.fragment.height;
+          budget.remaining -= taken.fragment.height;
+          current = { content: current.content, cursor: taken.cursor };
+          if (taken.done) return undefined;
+          if (columnUsed[columnIndex] >= columnCapacity - 0.5) columnIndex++;
+        }
+        return current;
+      };
+
+      const totalCapacity = columnCapacity * columnCount;
+      const starterReserve = starts.reduce((sum, content) => sum + firstSliceHeight(content), 0);
+      const carryBudget = { remaining: Math.max(0, totalCapacity - starterReserve) };
+      const nextPending: PendingFootnote[] = [];
+      for (const state of pending) {
+        const remainder = consume(state, carryBudget);
+        if (remainder) nextPending.push(remainder);
+      }
+
+      const starterBudget = {
+        remaining: Math.max(0, totalCapacity - columnUsed.reduce((sum, h) => sum + h, 0)),
+      };
+      for (const content of starts) {
+        const remainder = consume(
+          { content, cursor: { blockIndex: 0, unitIndex: 0 } },
+          starterBudget
+        );
+        if (remainder) nextPending.push(remainder);
+      }
+      pending = nextPending;
+    }
+
+    const continuingFootnoteIds = new Set(pending.map((state) => state.content.id));
+    for (const fragment of pageFragments) {
+      if (carriedFootnoteIds.has(fragment.footnoteId)) fragment.continuesFromPrev = true;
+      if (continuingFootnoteIds.has(fragment.footnoteId)) fragment.continuesOnNext = true;
+    }
+
+    if (pageFragments.length > 0) {
+      const maxColumnHeight = Math.max(...columnUsed);
+      reservedHeights.set(
+        pageNumber,
+        Math.min(contentHeight, FOOTNOTE_SEPARATOR_HEIGHT + maxColumnHeight)
+      );
+      fragmentsByPage.set(pageNumber, pageFragments);
+      footnoteIdsByPage.set(
+        pageNumber,
+        Array.from(new Set(pageFragments.map((fragment) => fragment.footnoteId)))
+      );
+    } else if (pending.length > 0) {
+      // Defensive escape for malformed zero-height page geometries.
+      console.warn('[docx-editor] unable to make progress while slicing a footnote continuation');
+      break;
+    }
+    pageNumber++;
+  }
+
+  return {
+    reservedHeights,
+    fragmentsByPage,
+    footnoteIdsByPage,
+    minimumPageCount: Math.max(pages.length, pageNumber - 1),
+  };
+}
+
+function footnotePlansEqual(a: FootnotePaginationPlan, b: FootnotePaginationPlan): boolean {
+  if (!footnoteReservedHeightsEqual(a.reservedHeights, b.reservedHeights)) return false;
+  if (a.minimumPageCount !== b.minimumPageCount) return false;
+  if (a.fragmentsByPage.size !== b.fragmentsByPage.size) return false;
+  for (const [pageNumber, fragments] of a.fragmentsByPage) {
+    const other = b.fragmentsByPage.get(pageNumber);
+    if (!other || other.length !== fragments.length) return false;
+    for (let i = 0; i < fragments.length; i++) {
+      const left = fragments[i];
+      const right = other[i];
+      if (
+        left.footnoteId !== right.footnoteId ||
+        left.height !== right.height ||
+        left.continuesFromPrev !== right.continuesFromPrev ||
+        left.continuesOnNext !== right.continuesOnNext ||
+        left.columnIndex !== right.columnIndex ||
+        left.blocks.length !== right.blocks.length
+      ) {
+        return false;
+      }
+      for (let j = 0; j < left.blocks.length; j++) {
+        if (JSON.stringify(left.blocks[j]) !== JSON.stringify(right.blocks[j])) return false;
+      }
+    }
+  }
+  return true;
+}
+
 // ============================================================================
 // 4b. Multi-pass footnote layout convergence
 // ============================================================================
@@ -558,70 +834,88 @@ export function stabilizeFootnoteLayout(
   const { nodes, metrics, layoutConfig, footnoteRefs, footnoteContentMap, initialLayout } = args;
   const footnoteColumns = Math.max(1, args.footnoteColumns ?? 1);
 
-  let pageFootnoteMap = mapFootnotesToPages(initialLayout.pages, footnoteRefs);
-  let footnoteReservedHeights = calculateFootnoteReservedHeights(
-    pageFootnoteMap,
+  let referenceMap = mapFootnotesToPages(initialLayout.pages, footnoteRefs);
+  let plan = paginateFootnoteFragments(
+    initialLayout.pages,
+    referenceMap,
     footnoteContentMap,
     footnoteColumns
   );
 
-  if (footnoteReservedHeights.size === 0) {
-    return { layout: initialLayout, pageFootnoteMap, converged: true };
+  if (plan.reservedHeights.size === 0) {
+    return { layout: initialLayout, pageFootnoteMap: referenceMap, converged: true };
   }
 
   let newLayout = initialLayout;
   let converged = false;
   for (let pass = 0; pass < FOOTNOTE_REFLOW_LIMIT; pass++) {
-    newLayout = layOutPages(nodes, metrics, {
-      ...layoutConfig,
-      footnoteReservedHeights,
+    newLayout = layOutPages(blocks, measures, {
+      ...layoutOpts,
+      footnoteReservedHeights: plan.reservedHeights,
+      minimumPageCount: plan.minimumPageCount,
     });
 
-    const nextPageFootnoteMap = mapFootnotesToPages(newLayout.pages, footnoteRefs);
-    const nextFootnoteReservedHeights = calculateFootnoteReservedHeights(
-      nextPageFootnoteMap,
+    const nextReferenceMap = mapFootnotesToPages(newLayout.pages, footnoteRefs);
+    const nextPlan = paginateFootnoteFragments(
+      newLayout.pages,
+      nextReferenceMap,
       footnoteContentMap,
       footnoteColumns
     );
 
-    pageFootnoteMap = nextPageFootnoteMap;
-    if (footnoteReservedHeightsEqual(footnoteReservedHeights, nextFootnoteReservedHeights)) {
-      footnoteReservedHeights = nextFootnoteReservedHeights;
+    referenceMap = nextReferenceMap;
+    if (footnotePlansEqual(plan, nextPlan)) {
+      plan = nextPlan;
       converged = true;
       break;
     }
-    footnoteReservedHeights = nextFootnoteReservedHeights;
+    plan = nextPlan;
   }
 
   if (!converged) {
-    let fallbackReservedHeights = footnoteReservedHeights;
+    let fallbackReservedHeights = plan.reservedHeights;
+    let fallbackMinimumPageCount = plan.minimumPageCount;
     let fallbackCovered = false;
     for (let pass = 0; pass < FOOTNOTE_REFLOW_LIMIT; pass++) {
       newLayout = layOutPages(nodes, metrics, {
         ...layoutConfig,
         footnoteReservedHeights: fallbackReservedHeights,
+        minimumPageCount: fallbackMinimumPageCount,
       });
-      pageFootnoteMap = mapFootnotesToPages(newLayout.pages, footnoteRefs);
-      const requiredHeights = calculateFootnoteReservedHeights(
-        pageFootnoteMap,
+      referenceMap = mapFootnotesToPages(newLayout.pages, footnoteRefs);
+      const requiredPlan = paginateFootnoteFragments(
+        newLayout.pages,
+        referenceMap,
         footnoteContentMap,
         footnoteColumns
       );
-      if (footnoteReservedHeightsCover(fallbackReservedHeights, requiredHeights)) {
+      plan = requiredPlan;
+      if (
+        footnoteReservedHeightsCover(fallbackReservedHeights, requiredPlan.reservedHeights) &&
+        fallbackMinimumPageCount >= requiredPlan.minimumPageCount
+      ) {
         fallbackCovered = true;
         break;
       }
       fallbackReservedHeights = mergeFootnoteReservedHeights(
         fallbackReservedHeights,
-        requiredHeights
+        requiredPlan.reservedHeights
       );
+      fallbackMinimumPageCount = Math.max(fallbackMinimumPageCount, requiredPlan.minimumPageCount);
     }
     if (!fallbackCovered) {
       newLayout = layOutPages(nodes, metrics, {
         ...layoutConfig,
         footnoteReservedHeights: fallbackReservedHeights,
+        minimumPageCount: fallbackMinimumPageCount,
       });
-      pageFootnoteMap = mapFootnotesToPages(newLayout.pages, footnoteRefs);
+      referenceMap = mapFootnotesToPages(newLayout.pages, footnoteRefs);
+      plan = paginateFootnoteFragments(
+        newLayout.pages,
+        referenceMap,
+        footnoteContentMap,
+        footnoteColumns
+      );
     }
     console.warn(
       `[docx-editor] footnote layout did not stabilize within ${FOOTNOTE_REFLOW_LIMIT} passes; ` +
@@ -629,15 +923,15 @@ export function stabilizeFootnoteLayout(
     );
   }
 
-  for (const [pageNum, fnIds] of pageFootnoteMap) {
-    const page = newLayout.pages.find((p) => p.number === pageNum);
-    if (page) {
-      page.footnoteIds = fnIds;
-      if (footnoteColumns > 1) page.footnoteColumns = footnoteColumns;
-    }
+  for (const page of newLayout.pages) {
+    const fragments = plan.fragmentsByPage.get(page.number);
+    if (!fragments?.length) continue;
+    page.footnoteFragments = fragments;
+    page.footnoteIds = plan.footnoteIdsByPage.get(page.number);
+    if (footnoteColumns > 1) page.footnoteColumns = footnoteColumns;
   }
 
-  return { layout: newLayout, pageFootnoteMap, converged };
+  return { layout: newLayout, pageFootnoteMap: plan.footnoteIdsByPage, converged };
 }
 
 // ============================================================================
@@ -656,7 +950,8 @@ export function stabilizeFootnoteLayout(
 export function buildFootnoteRenderItems(
   pageFootnoteMap: Map<number, number[]>,
   footnoteContentMap: Map<number, FootnoteContent>,
-  doc: Document | null
+  doc: Document | null,
+  pages?: Page[]
 ): Map<number, FootnoteRenderItem[]> {
   const result = new Map<number, FootnoteRenderItem[]>();
   if (!doc?.package?.footnotes) return result;
@@ -667,8 +962,26 @@ export function buildFootnoteRenderItems(
     fnLookup.set(fn.id, fn);
   }
 
+  const pageLookup = new Map(pages?.map((page) => [page.number, page]));
   for (const [pageNumber, footnoteIds] of pageFootnoteMap) {
     const items: FootnoteRenderItem[] = [];
+    const fragments = pageLookup.get(pageNumber)?.footnoteFragments;
+    if (fragments?.length) {
+      for (const fragment of fragments) {
+        const fn = fnLookup.get(fragment.footnoteId);
+        const content = footnoteContentMap.get(fragment.footnoteId);
+        if (!fn || !content) continue;
+        items.push({
+          displayNumber: String(fragment.displayNumber),
+          text: getFootnoteText(fn),
+          content,
+          fragment,
+        });
+      }
+      if (items.length > 0) result.set(pageNumber, items);
+      continue;
+    }
+
     for (const fnId of footnoteIds) {
       const fn = fnLookup.get(fnId);
       if (!fn) continue;

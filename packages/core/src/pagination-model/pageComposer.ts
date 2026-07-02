@@ -144,7 +144,15 @@ export function layOutPages(
     }
   }
 
-  return finish(ctx, config);
+  // A footnote may continue after the body's final fragment. Reservations for
+  // those continuation pages are already part of the fixed-point input, so
+  // materialize the pages even though there is no more body block to overflow.
+  const minimumPageCount = Math.max(1, options.minimumPageCount ?? 1);
+  while (ctx.pages.length < minimumPageCount) {
+    cursor = startPage(ctx, cursor.prev);
+  }
+
+  return finish(ctx, options);
 }
 
 /**
