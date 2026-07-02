@@ -21,6 +21,8 @@ export type FootnoteBlockFragment =
       height: number;
       fromRow: number;
       toRow: number;
+      topClip?: number;
+      bottomClip?: number;
     }
   | {
       kind: 'image' | 'textBox';

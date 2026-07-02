@@ -4,6 +4,7 @@ import {
   stabilizeFootnoteLayout,
   type FootnoteRefLocation,
 } from '../footnoteLayout';
+import { takeFootnoteSlice } from '../footnoteSlices';
 import { layOutPages } from '../../pagination-model';
 import type {
   FootnoteContent,
@@ -149,6 +150,62 @@ describe('footnote continuation planning', () => {
       expect.objectContaining({ kind: 'table', fromRow: 2, toRow: 4 }),
       expect.objectContaining({ kind: 'table', fromRow: 4, toRow: 5 }),
     ]);
+  });
+
+  test('continues an oversized table row at safe line boundaries', () => {
+    const cellParagraph = paragraph('long-cell', 100);
+    const cellMeasure = paragraphMeasure(5);
+    const table: TableBlock = {
+      kind: 'table',
+      id: 'long-row-table',
+      rows: [{ id: 'row', cells: [{ id: 'cell', blocks: [cellParagraph] }] }],
+    };
+    const tableMeasure: TableMeasure = {
+      kind: 'table',
+      rows: [
+        {
+          height: 200,
+          cells: [{ blocks: [cellMeasure], width: 180, height: 200 }],
+        },
+      ],
+      columnWidths: [180],
+      totalWidth: 180,
+      totalHeight: 200,
+    };
+    const content: FootnoteContent = {
+      id: 7,
+      displayNumber: 1,
+      blocks: [table],
+      measures: [tableMeasure],
+      height: 200,
+    };
+
+    const first = takeFootnoteSlice(content, { blockIndex: 0, unitIndex: 0 }, 90, 0, true);
+    expect(first.fragment?.blocks[0]).toMatchObject({
+      kind: 'table',
+      height: 80,
+      fromRow: 0,
+      toRow: 1,
+      bottomClip: 120,
+    });
+    expect(first.cursor).toEqual({ blockIndex: 0, unitIndex: 0, unitOffset: 80 });
+
+    const second = takeFootnoteSlice(content, first.cursor, 90, 0, true);
+    expect(second.fragment?.blocks[0]).toMatchObject({
+      kind: 'table',
+      height: 80,
+      topClip: 80,
+      bottomClip: 40,
+    });
+    expect(second.cursor).toEqual({ blockIndex: 0, unitIndex: 0, unitOffset: 160 });
+
+    const last = takeFootnoteSlice(content, second.cursor, 90, 0, true);
+    expect(last.fragment?.blocks[0]).toMatchObject({
+      kind: 'table',
+      height: 40,
+      topClip: 160,
+    });
+    expect(last.done).toBe(true);
   });
 
   test('materializes a requested minimum page count', () => {

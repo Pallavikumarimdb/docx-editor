@@ -72,7 +72,7 @@ export function layoutTable(
     const headerOverhead = repeatsHeader ? headerHeight : 0;
     const available = region.bottom - top - headerOverhead;
 
-    const slice = fitRows(node, metrics, info, row, rowOffset, available);
+    const slice = fitTableRows(block, measure, info, row, rowOffset, available);
 
     if (slice.consumed <= 0) {
       // Nothing fits. Move on — but ONLY if there is somewhere to move to.
@@ -128,7 +128,7 @@ export function layoutTable(
   return cursor;
 }
 
-interface RowSlice {
+export interface TableRowSlice {
   /** Px of table body placed. */
   consumed: number;
   /** Exclusive row bound of this fragment. */
@@ -148,15 +148,15 @@ interface RowSlice {
  * snapped to a whole text line, never through a glyph, which is what
  * `snapRowBreak` is for.
  */
-function fitRows(
-  node: TableBlock,
-  metrics: TableMetrics,
+export function fitTableRows(
+  block: TableBlock,
+  measure: TableMeasure,
   info: TableRowBreakInfo,
   row: number,
   rowOffset: number,
   available: number
-): RowSlice {
-  const rowCount = metrics.rows.length;
+): TableRowSlice {
+  const rowCount = measure.rows.length;
   let consumed = 0;
   let r = row;
   let offset = rowOffset;

@@ -3,10 +3,13 @@ import type {
   FootnoteContent,
   FootnoteFragment,
 } from '../pagination-model/types';
+import { buildTableRowBreakInfo } from '../pagination-model/tableRowBreak';
+import { fitTableRows } from '../pagination-model/tableLayout';
 
 export interface FootnoteSliceCursor {
   blockIndex: number;
   unitIndex: number;
+  unitOffset?: number;
 }
 
 function measureLineHeight(line: { lineHeight: number; floatSkipBefore?: number }): number {
@@ -35,6 +38,7 @@ export function takeFootnoteSlice(
     if (!block || !measure) {
       cursor.blockIndex++;
       cursor.unitIndex = 0;
+      cursor.unitOffset = 0;
       continue;
     }
 
@@ -43,6 +47,7 @@ export function takeFootnoteSlice(
       if (fromLine >= measure.lines.length) {
         cursor.blockIndex++;
         cursor.unitIndex = 0;
+        cursor.unitOffset = 0;
         continue;
       }
 
@@ -89,41 +94,66 @@ export function takeFootnoteSlice(
       }
       cursor.blockIndex++;
       cursor.unitIndex = 0;
+      cursor.unitOffset = 0;
       continue;
     }
 
     if (block.kind === 'table' && measure.kind === 'table') {
       const fromRow = cursor.unitIndex;
+      const fromOffset = cursor.unitOffset ?? 0;
       if (fromRow >= measure.rows.length) {
         cursor.blockIndex++;
         cursor.unitIndex = 0;
+        cursor.unitOffset = 0;
         continue;
       }
       const rowsHeight = measure.rows.reduce((sum, row) => sum + row.height, 0);
       const trailing = Math.max(0, measure.totalHeight - rowsHeight);
-      let height = 0;
-      let toRow = fromRow;
-      while (toRow < measure.rows.length) {
-        const rowHeight = measure.rows[toRow].height;
-        const finishesTable = toRow + 1 === measure.rows.length;
-        const candidate = used + height + rowHeight + (finishesTable ? trailing : 0);
-        if (candidate > capacity && (used > 0 || height > 0 || !allowOversizedFirstUnit)) {
-          break;
-        }
-        height += rowHeight;
-        toRow++;
-        if (candidate > capacity) break;
+      const available = Math.max(0, capacity - used);
+      const breakInfo = buildTableRowBreakInfo(block, measure);
+      let rowSlice = fitTableRows(block, measure, breakInfo, fromRow, fromOffset, available);
+      if (rowSlice.nextRow >= measure.rows.length && rowSlice.consumed + trailing > available) {
+        rowSlice = fitTableRows(
+          block,
+          measure,
+          breakInfo,
+          fromRow,
+          fromOffset,
+          Math.max(0, available - trailing)
+        );
       }
-      if (toRow === fromRow) break;
-      blocks.push({ kind: 'table', blockIndex, y: used, height, fromRow, toRow });
-      const finished = toRow === measure.rows.length;
-      used += height + (finished ? trailing : 0);
+      if (rowSlice.consumed <= 0) {
+        if (used > 0 || !allowOversizedFirstUnit) break;
+        const rowHeight = measure.rows[fromRow].height;
+        rowSlice = {
+          consumed: rowHeight - fromOffset,
+          toRow: fromRow + 1,
+          nextRow: fromRow + 1,
+          nextOffset: 0,
+          bottomClip: 0,
+        };
+      }
+      const finished = rowSlice.nextRow >= measure.rows.length;
+      const height = rowSlice.consumed + (finished ? trailing : 0);
+      blocks.push({
+        kind: 'table',
+        blockIndex,
+        y: used,
+        height,
+        fromRow,
+        toRow: rowSlice.toRow,
+        ...(fromOffset > 0 ? { topClip: fromOffset } : {}),
+        ...(rowSlice.bottomClip > 0 ? { bottomClip: rowSlice.bottomClip } : {}),
+      });
+      used += height;
       if (!finished) {
-        cursor.unitIndex = toRow;
+        cursor.unitIndex = rowSlice.nextRow;
+        cursor.unitOffset = rowSlice.nextOffset;
         break;
       }
       cursor.blockIndex++;
       cursor.unitIndex = 0;
+      cursor.unitOffset = 0;
       continue;
     }
 
@@ -143,6 +173,7 @@ export function takeFootnoteSlice(
       used += measure.height;
       cursor.blockIndex++;
       cursor.unitIndex = 0;
+      cursor.unitOffset = 0;
       if (used > capacity) break;
       continue;
     }
@@ -150,6 +181,7 @@ export function takeFootnoteSlice(
     // Break/section blocks occupy no footnote height.
     cursor.blockIndex++;
     cursor.unitIndex = 0;
+    cursor.unitOffset = 0;
   }
 
   const done = cursor.blockIndex >= content.blocks.length;

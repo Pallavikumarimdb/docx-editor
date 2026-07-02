@@ -9,6 +9,7 @@
 
 import type {
   FootnoteContent,
+  FootnoteBlockFragment,
   FootnoteFragment,
   ParagraphFragment,
   TableFragment,
@@ -59,7 +60,7 @@ function renderMeasuredFootnoteContent(
     container.dataset.footnoteColumn = String(footnoteFragment.columnIndex);
   }
 
-  const slices =
+  const slices: FootnoteBlockFragment[] =
     footnoteFragment?.blocks ??
     content.blocks.map((block, blockIndex) => {
       const measure = content.measures[blockIndex];
@@ -136,6 +137,8 @@ function renderMeasuredFootnoteContent(
         docTo: block.docTo,
         fromRow: slice.fromRow,
         toRow: slice.toRow,
+        topClip: slice.topClip,
+        bottomClip: slice.bottomClip,
       };
       const fragEl = paintTableFragment(
         syntheticFragment,
