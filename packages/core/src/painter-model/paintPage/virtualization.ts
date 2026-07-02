@@ -115,7 +115,7 @@ function computePageFingerprint(page: Page, options: FullPageOptions): string {
 }
 
 function computePageFurnitureFingerprint(page: Page): string {
-  return semanticDigest(getPageFurniture(page));
+  return semanticDigest(page.size, page.margins, getPageFurniture(page));
 }
 
 /**

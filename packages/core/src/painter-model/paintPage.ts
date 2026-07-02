@@ -273,11 +273,12 @@ function applyPageBorderSide(
 
 function paintPageBorderOverlay(
   page: Page,
-  config: RenderPageOptions,
-  doc: Document
+  options: RenderPageOptions,
+  doc: Document,
+  sectionPageNumber = page.number
 ): HTMLElement | null {
-  const pb = config.pageBorders;
-  if (!pb || !pageBorderShouldRender(page.number, pb.display)) return null;
+  const pb = options.pageBorders;
+  if (!pb || !pageBorderShouldRender(sectionPageNumber, pb.display)) return null;
 
   const hasBorder = [pb.top, pb.bottom, pb.left, pb.right].some(
     (border) => border && border.style !== 'none' && border.style !== 'nil'
@@ -461,8 +462,13 @@ export function paintPage(
     }
   }
 
-  const pageBorderEl = paintPageBorderOverlay(page, config, doc);
-  if (pageBorderEl && config.pageBorders?.zOrder === 'back') {
+  const pageBorderEl = paintPageBorderOverlay(
+    page,
+    options,
+    doc,
+    furniture?.sectionPageNumber ?? page.number
+  );
+  if (pageBorderEl && options.pageBorders?.zOrder === 'back') {
     pageEl.appendChild(pageBorderEl);
   }
 

@@ -431,6 +431,7 @@ export function convertHeaderFooterPmDocToContent(
  */
 type HfDomSnapshot = {
   host: HTMLElement;
+  rId: string | null;
   spans: HTMLElement[];
   ranged: HTMLElement[];
 };
@@ -465,7 +466,8 @@ export function invalidateHfDomCache(): void {
 
 function getHfDomSnapshot(
   section: 'header' | 'footer',
-  doc: globalThis.Document
+  doc: globalThis.Document,
+  rId: string | null
 ): HfDomSnapshot | null {
   // The same HF doc is painted on every page (shared by `r:id`), so any painted
   // instance carries the right PM coords. But the caret/selection overlay must
@@ -475,13 +477,14 @@ function getHfDomSnapshot(
   // saw no caret or highlight where they were typing (#691 footer).
   // Scoping to `.layout-page-${section}` keeps the header and footer from
   // shadowing each other (#671).
-  const hosts = doc.querySelectorAll<HTMLElement>(`.layout-page-${section}`);
+  const allHosts = Array.from(doc.querySelectorAll<HTMLElement>(`.layout-page-${section}`));
+  const hosts = rId ? allHosts.filter((candidate) => candidate.dataset.hfRId === rId) : allHosts;
   if (hosts.length === 0) return null;
   const win = doc.defaultView;
   const vpCenter = win ? win.innerHeight / 2 : 0;
   let host = hosts[0];
   let bestDist = Infinity;
-  for (const h of Array.from(hosts)) {
+  for (const h of hosts) {
     const r = h.getBoundingClientRect();
     const dist = Math.abs((r.top + r.bottom) / 2 - vpCenter);
     if (dist < bestDist) {
@@ -493,10 +496,11 @@ function getHfDomSnapshot(
   // (and it's still live). The host changes as the user scrolls between pages,
   // so a section-only cache would keep resolving against the wrong instance.
   const cached = hfDomCache[section];
-  if (cached && cached.host === host && cached.host.isConnected) return cached;
+  if (cached && cached.host === host && cached.rId === rId && cached.host.isConnected)
+    return cached;
   const spans = Array.from(host.querySelectorAll<HTMLElement>('span[data-doc-from][data-doc-to]'));
   const ranged = Array.from(host.querySelectorAll<HTMLElement>('[data-doc-from][data-doc-to]'));
-  const snapshot = { host, spans, ranged };
+  const snapshot = { host, rId, spans, ranged };
   hfDomCache[section] = snapshot;
   return snapshot;
 }
@@ -526,12 +530,13 @@ function getHfDomSnapshot(
 export function computeHfCaretRectFromView(
   view: EditorView,
   section: 'header' | 'footer',
-  doc: globalThis.Document = globalThis.document
+  doc: globalThis.Document = globalThis.document,
+  rId: string | null = null
 ): { top: number; left: number; height: number } | null {
   const sel = view.state.selection;
   if (!sel.empty) return null;
   const pmPos = sel.head;
-  const snapshot = getHfDomSnapshot(section, doc);
+  const snapshot = getHfDomSnapshot(section, doc, rId);
   if (!snapshot) return null;
   const { host, spans } = snapshot;
   for (const span of spans) {
@@ -660,7 +665,8 @@ export function computeHfCaretRectFromView(
 export function readHfSelectionGeometry(
   view: EditorView,
   section: 'header' | 'footer',
-  doc: globalThis.Document = globalThis.document
+  doc: globalThis.Document = globalThis.document,
+  rId: string | null = null
 ): Array<{ top: number; left: number; width: number; height: number }> {
   const sel = view.state.selection;
   if (sel.empty) return [];
@@ -672,7 +678,7 @@ export function readHfSelectionGeometry(
   // for the section shares the same PM coord space (only one HF doc, painted N
   // times for the N pages), so a single host's spans suffice for selection
   // rects.
-  const snapshot = getHfDomSnapshot(section, doc);
+  const snapshot = getHfDomSnapshot(section, doc, rId);
   if (!snapshot) return out;
   const { host, spans } = snapshot;
   for (const spanEl of spans) {
