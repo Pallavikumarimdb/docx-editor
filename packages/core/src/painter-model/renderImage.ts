@@ -174,7 +174,8 @@ export function paintImageFragment(
   // schemes — image bytes come from the (untrusted) document as data: URLs, so
   // anything else (e.g. a smuggled javascript:/external scheme) is dropped.
   const imgEl = doc.createElement('img');
-  imgEl.src = sanitizeImageSrc(block.src) ?? '';
+  const imageSrc = sanitizeImageSrc(block.src);
+  if (imageSrc) imgEl.src = imageSrc;
   imgEl.alt = block.alt ?? '';
 
   // Image sizing

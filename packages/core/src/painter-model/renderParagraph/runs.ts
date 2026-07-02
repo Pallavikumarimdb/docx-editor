@@ -469,7 +469,8 @@ function renderInlineImageRun(run: ImageRun, doc: Document): HTMLElement {
   const img = doc.createElement('img');
   img.className = `${PARAGRAPH_CLASS_NAMES.run} ${PARAGRAPH_CLASS_NAMES.image}`;
 
-  img.src = sanitizeImageSrc(run.src) ?? '';
+  const imageSrc = sanitizeImageSrc(run.src);
+  if (imageSrc) img.src = imageSrc;
   img.width = run.width;
   img.height = run.height;
   // Lock dimensions explicitly: when only the width/height attributes are set,
@@ -558,7 +559,8 @@ function renderBlockImage(run: ImageRun, doc: Document): HTMLElement {
   container.style.marginBottom = `${run.distBottom ?? 6}px`;
 
   const img = doc.createElement('img');
-  img.src = sanitizeImageSrc(run.src) ?? '';
+  const imageSrc = sanitizeImageSrc(run.src);
+  if (imageSrc) img.src = imageSrc;
   img.width = run.width;
   img.height = run.height;
   // Global CSS reset (Tailwind preflight) sets img { display: block },

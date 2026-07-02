@@ -253,9 +253,9 @@ export const ImageExtension = createNodeExtension({
       const attrs = node.attrs as ImageAttrs;
       const src = sanitizeImageSrc(attrs.src);
       const domAttrs: Record<string, string> = {
-        src: src ?? '',
         class: 'docx-image',
       };
+      if (src) domAttrs.src = src;
 
       if (attrs.alt) domAttrs.alt = attrs.alt;
       if (attrs.title) domAttrs.title = attrs.title;
