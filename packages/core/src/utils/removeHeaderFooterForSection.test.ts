@@ -50,6 +50,19 @@ function documentWithSharedSectionHeader(): Document {
 }
 
 describe('removeHeaderFooterForSection', () => {
+  test('removes an unreferenced first-section part and relationship together', () => {
+    const input = documentWithSharedSectionHeader();
+    input.package.document.sections = [input.package.document.sections![0]];
+    input.package.document.finalSectionProperties = input.package.document.sections[0].properties;
+
+    const result = removeHeaderFooterForSection(input, 'header', 0, 'rId-shared');
+
+    expect(result.package.document.sections?.[0]?.properties.headerReferences).toEqual([]);
+    expect(result.package.headers?.has('rId-shared')).toBe(false);
+    expect(result.package.relationships?.has('rId-shared')).toBe(false);
+    expect(serializeDocumentBody(result.package.document)).not.toContain('rId-shared');
+  });
+
   test('keeps an explicit empty story when removing a later inherited variant', () => {
     const result = removeHeaderFooterForSection(
       documentWithSharedSectionHeader(),

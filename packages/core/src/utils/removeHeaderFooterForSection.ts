@@ -113,6 +113,8 @@ export function removeHeaderFooterForSection(
   const stories = new Map(pkg[mapKey] ?? []);
   if (!oldStoryStillReferenced) stories.delete(rId);
   if (empty) stories.set(empty.rId, empty.story);
+  const relationships = new Map(empty?.relationships ?? pkg.relationships);
+  if (!oldStoryStillReferenced) relationships.delete(rId);
 
   return {
     ...document,
@@ -120,7 +122,7 @@ export function removeHeaderFooterForSection(
       ...pkg,
       [mapKey]: stories,
       document: nextBody,
-      ...(empty ? { relationships: empty.relationships } : {}),
+      relationships,
     },
   };
 }
