@@ -9,9 +9,11 @@ import type {
 import { layOutPages } from '../../pagination-model/pageComposer';
 import {
   pageGeometryFromPage,
+  resolveAnchoredObjectPosition,
   resolveAnchoredObjectVerticalTop,
 } from '../../painter-model/anchoredObjectPosition';
-import type { FloatingImageZone } from '../metrics/floatingZones';
+import { imageWrapTextFromCssFloat } from '../../painter-model/floatingImageFlow';
+import { rectsToFloatingZones, type FloatingImageZone } from '../metrics/floatingZones';
 import {
   measureBlocksWithFloats,
   type FloatPageGeometry,
@@ -314,6 +316,157 @@ describe('floating exclusion flow scopes', () => {
     expect(finalCalls.get('image-anchor')).toMatchObject({
       cumulativeY: 20,
       zones: [{ topY: -30, bottomY: 30, fullWidthBlock: true }],
+    });
+  });
+
+  for (const wrapType of ['square', 'tight', 'through'] as const) {
+    test(`${wrapType} page-relative zero offsets use the painted content-relative geometry`, () => {
+      const image: ImageRun = {
+        kind: 'image',
+        src: 'embedded.png',
+        width: 90,
+        height: 70,
+        displayMode: 'float',
+        wrapType,
+        distTop: 5,
+        distBottom: 7,
+        distLeft: 11,
+        distRight: 17,
+        position: {
+          horizontal: { relativeTo: 'page', posOffset: 0 },
+          vertical: { relativeTo: 'page', posOffset: 0 },
+        },
+      };
+      const geometry: FloatPageGeometry = {
+        pageWidth: 500,
+        pageHeight: 300,
+        marginLeft: 40,
+        marginRight: 80,
+        marginTop: 30,
+        marginBottom: 50,
+        contentWidth: 380,
+        contentHeight: 220,
+      };
+      const blocks: FlowBlock[] = [paragraph('preceding-text'), paragraph('image-anchor', [image])];
+      const finalCalls = new Map<string, FinalCall>();
+
+      measureBlocksWithFloats(
+        blocks,
+        geometry.contentWidth,
+        recordingMeasure({ 'preceding-text': 20 }, finalCalls),
+        geometry
+      );
+
+      const resolved = resolveAnchoredObjectPosition(image, 0, geometry.contentWidth, geometry);
+      const expectedZone = rectsToFloatingZones(
+        [
+          {
+            ...resolved,
+            width: image.width,
+            height: image.height,
+            distTop: image.distTop ?? 0,
+            distBottom: image.distBottom ?? 0,
+            distLeft: image.distLeft ?? 12,
+            distRight: image.distRight ?? 12,
+            wrapText: imageWrapTextFromCssFloat(image.cssFloat),
+            wrapType: image.wrapType,
+          },
+        ],
+        geometry.contentWidth
+      )[0];
+
+      expect(resolved).toEqual({ x: -40, y: -30, side: 'left' });
+      expect(finalCalls.get('image-anchor')?.cumulativeY).toBe(20);
+      expect(finalCalls.get('image-anchor')?.zones?.[0]).toEqual(expectedZone);
+    });
+  }
+
+  test('page-relative alignments share painter geometry after preceding flow', () => {
+    const image: ImageRun = {
+      kind: 'image',
+      src: 'embedded.png',
+      width: 100,
+      height: 50,
+      displayMode: 'float',
+      wrapType: 'square',
+      distTop: 3,
+      distBottom: 9,
+      distLeft: 11,
+      distRight: 17,
+      position: {
+        horizontal: { relativeTo: 'page', align: 'center' },
+        vertical: { relativeTo: 'page', align: 'center' },
+      },
+    };
+    const geometry: FloatPageGeometry = {
+      pageWidth: 500,
+      pageHeight: 300,
+      marginLeft: 40,
+      marginRight: 80,
+      marginTop: 30,
+      marginBottom: 50,
+      contentWidth: 380,
+      contentHeight: 220,
+    };
+    const blocks: FlowBlock[] = [paragraph('preceding-text'), paragraph('image-anchor', [image])];
+    const finalCalls = new Map<string, FinalCall>();
+
+    measureBlocksWithFloats(
+      blocks,
+      geometry.contentWidth,
+      recordingMeasure({ 'preceding-text': 35 }, finalCalls),
+      geometry
+    );
+
+    const resolved = resolveAnchoredObjectPosition(image, 0, geometry.contentWidth, geometry);
+    const expectedZone = rectsToFloatingZones(
+      [
+        {
+          ...resolved,
+          width: image.width,
+          height: image.height,
+          distTop: image.distTop ?? 0,
+          distBottom: image.distBottom ?? 0,
+          distLeft: image.distLeft ?? 12,
+          distRight: image.distRight ?? 12,
+          wrapText: imageWrapTextFromCssFloat(image.cssFloat),
+          wrapType: image.wrapType,
+        },
+      ],
+      geometry.contentWidth
+    )[0];
+
+    expect(resolved).toEqual({ x: 160, y: 95, side: 'left' });
+    expect(finalCalls.get('image-anchor')).toMatchObject({ cumulativeY: 35 });
+    expect(finalCalls.get('image-anchor')?.zones?.[0]).toEqual(expectedZone);
+  });
+
+  test('paragraph-relative side wraps still follow preceding flow', () => {
+    const image: ImageRun = {
+      kind: 'image',
+      src: 'embedded.png',
+      width: 40,
+      height: 25,
+      displayMode: 'float',
+      wrapType: 'square',
+      position: {
+        horizontal: { relativeTo: 'margin', align: 'left' },
+        vertical: { relativeTo: 'paragraph', posOffset: 5 * 9_525 },
+      },
+    };
+    const blocks: FlowBlock[] = [paragraph('preceding-text'), paragraph('image-anchor', [image])];
+    const finalCalls = new Map<string, FinalCall>();
+
+    measureBlocksWithFloats(
+      blocks,
+      initialGeometry.contentWidth,
+      recordingMeasure({ 'preceding-text': 20 }, finalCalls),
+      initialGeometry
+    );
+
+    expect(finalCalls.get('image-anchor')).toMatchObject({
+      cumulativeY: 20,
+      zones: [{ topY: 25, bottomY: 50 }],
     });
   });
 
@@ -705,11 +858,19 @@ describe('floating exclusion flow scopes', () => {
 
     expect(finalCalls.get('narrow-float')?.zones?.[0]).toMatchObject({
       leftMargin: 0,
-      rightMargin: 92,
+      rightMargin: 0,
+      segments: [
+        { leftOffset: 0, availableWidth: 208 },
+        { leftOffset: 272, availableWidth: 28 },
+      ],
     });
     expect(finalCalls.get('wide-float')?.zones?.[0]).toMatchObject({
-      leftMargin: 272,
+      leftMargin: 0,
       rightMargin: 0,
+      segments: [
+        { leftOffset: 0, availableWidth: 208 },
+        { leftOffset: 272, availableWidth: 328 },
+      ],
     });
   });
 });

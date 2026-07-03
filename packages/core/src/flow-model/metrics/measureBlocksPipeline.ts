@@ -29,15 +29,19 @@ import {
   type TableBlock,
   type TextBoxBlock,
 } from '../../pagination-model';
-import { isTextWrappingFloatingImageRun } from '../../painter-model/floatingImageFlow';
+import {
+  imageWrapTextFromCssFloat,
+  isTextWrappingFloatingImageRun,
+} from '../../painter-model/floatingImageFlow';
 import {
   pageGeometryFromPage,
+  resolveAnchoredObjectPosition,
   resolveAnchoredObjectVerticalTop,
   type PageGeometry,
 } from '../../painter-model/anchoredObjectPosition';
 import { emuToPixels } from '../../utils/units';
 import { constrainWrapMargins } from './paragraphLayout';
-import type { FloatingImageZone } from './floatingZones';
+import { rectsToFloatingZones, type FloatingImageZone } from './floatingZones';
 import { measureTable } from '../measureTable';
 
 /**
@@ -681,34 +685,35 @@ function extractImageZonesFromParagraph(
 
     if (!isTextWrappingFloatingImageRun(imgRun)) continue;
 
-    let topY = 0;
-    const v = imgRun.position?.vertical;
-    if (v?.align === 'top' && v.relativeTo === 'margin') {
-      topY = 0;
-    } else if (v?.posOffset !== undefined) {
-      topY = emuToPixels(v.posOffset);
-    }
-    const bottomY = topY + imgRun.height;
-
-    const { leftMargin, rightMargin } = computeAnchoredMargins(
-      imgRun.position,
-      imgRun.cssFloat,
-      imgRun.width,
-      distLeft,
-      distRight,
+    // Resolve the image through the same content-relative coordinate path as
+    // the painter, then convert that painted rectangle through the same zone
+    // helper. In particular, page-relative zero offsets begin in the page
+    // margin (negative content coordinates), not at the content origin.
+    const resolved = resolveAnchoredObjectPosition(imgRun, 0, contentWidth, pageGeometry);
+    const [zone] = rectsToFloatingZones(
+      [
+        {
+          ...resolved,
+          width: imgRun.width,
+          height: imgRun.height,
+          distTop,
+          distBottom,
+          distLeft,
+          distRight,
+          wrapText: imageWrapTextFromCssFloat(imgRun.cssFloat),
+          wrapType: imgRun.wrapType,
+        },
+      ],
       contentWidth
     );
-
-    if (leftMargin > 0 || rightMargin > 0) {
-      out.push({
-        leftMargin,
-        rightMargin,
-        topY: topY - distTop,
-        bottomY: bottomY + distBottom,
-        anchorBlockIndex: blockIndex,
-        isParagraphRelative: isPositionParagraphRelative(imgRun.position),
-      });
-    }
+    out.push({
+      ...zone,
+      anchorBlockIndex: blockIndex,
+      // The shared resolver used fragmentY=0 above. Paragraph/line-relative
+      // images retain their existing flow-relative behavior when activation
+      // adds the anchor paragraph's cumulative Y.
+      isParagraphRelative: isPositionParagraphRelative(imgRun.position),
+    });
   }
 }
 
