@@ -22,7 +22,9 @@ const initialGeometry: FloatPageGeometry = {
   pageWidth: 400,
   pageHeight: 120,
   marginLeft: 50,
+  marginRight: 50,
   marginTop: 10,
+  marginBottom: 10,
   contentWidth: 300,
   contentHeight: 100,
 };
@@ -31,7 +33,9 @@ const laterGeometry: FloatPageGeometry = {
   pageWidth: 600,
   pageHeight: 220,
   marginLeft: 80,
+  marginRight: 80,
   marginTop: 40,
+  marginBottom: 20,
   contentWidth: 440,
   contentHeight: 160,
 };
@@ -504,7 +508,9 @@ describe('floating exclusion flow scopes', () => {
         pageWidth: 1_000,
         pageHeight: 220,
         marginLeft: 100,
+        marginRight: 100,
         marginTop: 20,
+        marginBottom: 20,
         contentWidth: 800,
         contentHeight: 180,
       }

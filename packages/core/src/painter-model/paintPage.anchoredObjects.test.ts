@@ -69,6 +69,58 @@ describe('anchored object paint parity', () => {
     expect(line?.style.marginTop).toBe('25px');
   });
 
+  test('uses asymmetric right and bottom margins for body anchors', () => {
+    const block: ParagraphBlock = {
+      kind: 'paragraph',
+      id: 'asymmetric-body-anchor',
+      runs: [
+        {
+          kind: 'image',
+          src: '',
+          width: 20,
+          height: 10,
+          displayMode: 'float',
+          wrapType: 'square',
+          position: {
+            horizontal: { relativeTo: 'rightMargin', align: 'center' },
+            vertical: { relativeTo: 'bottomMargin', align: 'bottom' },
+          },
+        },
+      ],
+    };
+    const measure = paragraphLayout(block, 380);
+    const page: Page = {
+      number: 1,
+      size: { w: 500, h: 300 },
+      margins: { top: 20, right: 80, bottom: 60, left: 40 },
+      fragments: [
+        {
+          kind: 'paragraph',
+          blockId: block.id,
+          x: 40,
+          y: 20,
+          width: 380,
+          height: measure.totalHeight,
+          fromLine: 0,
+          toLine: measure.lines.length,
+        },
+      ],
+    };
+
+    const painted = paintPage(
+      page,
+      { pageNumber: 1, totalPages: 1, section: 'body' },
+      {
+        document,
+        blockLookup: new Map([[String(block.id), { block, measure }]]),
+      }
+    );
+
+    const image = painted.querySelector<HTMLElement>('.layout-page-floating-image');
+    expect(image?.style.left).toBe('410px');
+    expect(image?.style.top).toBe('270px');
+  });
+
   test('positions floating header text boxes from positionV like floating images', () => {
     const position = {
       horizontal: { relativeTo: 'page', align: 'left' },
@@ -123,5 +175,65 @@ describe('anchored object paint parity', () => {
 
     expect(painted.querySelector('img')?.style.top).toBe('60px');
     expect(painted.querySelector<HTMLElement>('.layout-textbox')?.style.top).toBe('60px');
+  });
+
+  test('uses asymmetric right and bottom margins for header/footer anchors', () => {
+    const position = {
+      horizontal: { relativeTo: 'rightMargin', align: 'center' },
+      vertical: { relativeTo: 'bottomMargin', align: 'bottom' },
+    };
+    const imageParagraph: ParagraphBlock = {
+      kind: 'paragraph',
+      id: 'asymmetric-header-image',
+      runs: [
+        {
+          kind: 'image',
+          src: '',
+          width: 20,
+          height: 10,
+          displayMode: 'float',
+          wrapType: 'square',
+          position,
+        },
+      ],
+    };
+    const textBox: TextBoxBlock = {
+      kind: 'textBox',
+      id: 'asymmetric-header-textbox',
+      width: 20,
+      height: 10,
+      content: [],
+      displayMode: 'float',
+      wrapType: 'square',
+      position,
+    };
+
+    const painted = renderHeaderFooterContent(
+      {
+        blocks: [imageParagraph, textBox],
+        measures: [
+          { kind: 'paragraph', lines: [], totalHeight: 0 },
+          { kind: 'textBox', width: 20, height: 10, innerMeasures: [] },
+        ],
+        height: 10,
+      },
+      { pageNumber: 1, totalPages: 1, section: 'header', contentWidth: 380 },
+      { document },
+      {
+        flowTop: 30,
+        flowLeft: 40,
+        contentWidth: 380,
+        pageWidth: 500,
+        pageHeight: 300,
+        margins: { top: 20, right: 80, bottom: 60, left: 40 },
+      }
+    );
+
+    const image = painted.querySelector<HTMLElement>('img');
+    const paintedTextBox = painted.querySelector<HTMLElement>('.layout-textbox');
+    expect(image?.style.left).toBe('410px');
+    expect(image?.style.top).toBe('260px');
+    expect(paintedTextBox?.style.left).toBe('410px');
+    expect(paintedTextBox?.style.top).toBe('260px');
   });
 });

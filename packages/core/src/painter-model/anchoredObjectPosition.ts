@@ -9,7 +9,9 @@ export interface PageGeometry {
   pageWidth: number;
   pageHeight: number;
   marginLeft: number;
+  marginRight: number;
   marginTop: number;
+  marginBottom: number;
   contentWidth: number;
   contentHeight: number;
 }
@@ -35,7 +37,9 @@ export function pageGeometryFromPage(page: Pick<Page, 'size' | 'margins'>): Page
     pageWidth: page.size.w,
     pageHeight: page.size.h,
     marginLeft: page.margins.left,
+    marginRight: page.margins.right,
     marginTop: page.margins.top,
+    marginBottom: page.margins.bottom,
     contentWidth: page.size.w - page.margins.left - page.margins.right,
     contentHeight: page.size.h - page.margins.top - page.margins.bottom,
   };
@@ -104,6 +108,7 @@ function horizontalAnchorBand(
 ): { base: number; size: number } {
   const pageWidth = geometry?.pageWidth ?? 0;
   const marginLeft = geometry?.marginLeft ?? 0;
+  const marginRight = geometry?.marginRight ?? 0;
 
   switch (relativeTo) {
     case 'page':
@@ -111,7 +116,7 @@ function horizontalAnchorBand(
     case 'leftMargin':
       return { base: -marginLeft, size: marginLeft };
     case 'rightMargin':
-      return { base: contentWidth, size: marginLeft };
+      return { base: contentWidth, size: marginRight };
     case 'character':
       return { base: 0, size: 0 };
     case 'column':
@@ -157,6 +162,7 @@ function verticalAnchorBand(
 ): { base: number; size: number } {
   const pageHeight = geometry?.pageHeight ?? 0;
   const marginTop = geometry?.marginTop ?? 0;
+  const marginBottom = geometry?.marginBottom ?? 0;
   const contentHeight = geometry?.contentHeight ?? 0;
 
   switch (relativeTo) {
@@ -168,7 +174,7 @@ function verticalAnchorBand(
     case 'topMargin':
       return { base: -marginTop, size: marginTop };
     case 'bottomMargin':
-      return { base: contentHeight, size: marginTop };
+      return { base: contentHeight, size: marginBottom };
     case 'margin':
     case 'insideMargin':
     case 'outsideMargin':

@@ -480,8 +480,8 @@ function sectionConfigFromGeometry(geometry: FloatPageGeometry) {
     pageSize: { w: geometry.pageWidth, h: geometry.pageHeight },
     margins: {
       top: geometry.marginTop,
-      right: Math.max(0, geometry.pageWidth - geometry.marginLeft - geometry.contentWidth),
-      bottom: Math.max(0, geometry.pageHeight - geometry.marginTop - geometry.contentHeight),
+      right: geometry.marginRight,
+      bottom: geometry.marginBottom,
       left: geometry.marginLeft,
     },
   };
