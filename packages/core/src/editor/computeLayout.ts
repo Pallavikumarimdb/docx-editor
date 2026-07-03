@@ -33,6 +33,7 @@ import {
   computePerBlockWidths,
   demoteBlockLikeFloatingTables,
   collectFootnoteRefs,
+  mapFootnotesToPages,
   convertHeaderFooterToContent,
   convertHeaderFooterPmDocToContent,
   buildFootnoteContentMap,
@@ -43,7 +44,6 @@ import {
   getMargins,
   getPageSize,
   resolvePageHeaderFooter,
-  twipsToPixels,
   type FloatPageGeometry,
 } from '../flow-model';
 import {
@@ -115,38 +115,19 @@ export interface LayoutComputation {
 }
 
 /**
- * Resolve the document-level footnote column layout from `w15:footnoteColumns`.
- *
- * Footnotes paint N-up when any section opts into multiple footnote columns.
- * In a mixed-section document we take the first multi-column section's count
- * and full content width (a documented limitation — per-section footnote
- * column counts are a follow-up); the overwhelmingly common case is a single
- * uniform setting. Returns `{ columns: 1, columnWidth: fallback }` — i.e. the
- * unchanged single-column path — when no section opts in.
+ * Resolve one section's footnote column geometry. Footnotes span the section's
+ * full content box independently of the body's `w:cols`.
  */
 function resolveFootnoteColumnLayout(
-  document: Document | null,
+  properties: SectionProperties | null | undefined,
   fallbackColumnWidth: number
 ): { columns: number; columnWidth: number } {
-  const body = document?.package?.document;
-  const sectionProps: Array<SectionProperties | null | undefined> = body
-    ? [...(body.sections ?? []).map((s) => s.properties), body.finalSectionProperties]
-    : [];
-  const fnSection = sectionProps.find((p) => (p?.footnoteColumns ?? 1) > 1);
-  if (!fnSection?.footnoteColumns) {
-    return { columns: 1, columnWidth: fallbackColumnWidth };
-  }
-
-  const columns = fnSection.footnoteColumns;
-  // Footnote columns span the section's full content width, independent of the
-  // body's w:cols. Mirror the painter's width math so a footnote measured here
-  // wraps exactly as it paints.
+  if (!properties) return { columns: 1, columnWidth: fallbackColumnWidth };
+  const columns = Math.max(1, Math.floor(properties.footnoteColumns ?? 1));
+  const sectionPageSize = getPageSize(properties);
+  const sectionMargins = getMargins(properties);
   const sectionContentWidthPx =
-    fnSection.pageWidth != null
-      ? twipsToPixels(
-          fnSection.pageWidth - (fnSection.marginLeft ?? 1440) - (fnSection.marginRight ?? 1440)
-        )
-      : fallbackColumnWidth;
+    sectionPageSize.w - sectionMargins.left - sectionMargins.right || fallbackColumnWidth;
   const columnWidth = (sectionContentWidthPx - (columns - 1) * FOOTNOTE_COLUMN_GAP_PX) / columns;
   return { columns, columnWidth: Math.max(1, columnWidth) };
 }
@@ -410,16 +391,28 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
   let footnoteContentMap = new Map<number, FootnoteContent>();
 
   if (hasFootnotes) {
-    const pass1Layout = layOutPages(nodes, metrics, layoutConfig);
-    // w15:footnoteColumns: when a section lays its footnotes out in multiple
-    // columns, measure each footnote at the column width (so it wraps the way
-    // it will paint) rather than the full content width.
-    const { columns: footnoteColumns, columnWidth: footnoteColumnWidth } =
-      resolveFootnoteColumnLayout(document, contentWidth);
+    const pass1Layout = layOutPages(blocks, measures, layoutOpts);
+    const pass1Footnotes = mapFootnotesToPages(pass1Layout.pages, footnoteRefs);
+    const firstPageByFootnote = new Map<number, number>();
+    for (const [pageNumber, ids] of pass1Footnotes) {
+      for (const id of ids) {
+        if (!firstPageByFootnote.has(id)) firstPageByFootnote.set(id, pageNumber);
+      }
+    }
+    const footnoteLayoutForPage = (pageNumber: number) => {
+      let furniture = furnitureByPageNumber.get(pageNumber);
+      for (let previous = pageNumber - 1; !furniture && previous >= 1; previous--) {
+        furniture = furnitureByPageNumber.get(previous);
+      }
+      const properties =
+        sectionProps[furniture?.sectionIndex ?? sectionProps.length - 1] ?? lastSectionProps;
+      return resolveFootnoteColumnLayout(properties, contentWidth);
+    };
+
     footnoteContentMap = buildFootnoteContentMap(
       document!.package.footnotes!,
       footnoteRefs,
-      footnoteColumnWidth,
+      (footnoteId) => footnoteLayoutForPage(firstPageByFootnote.get(footnoteId) ?? 1).columnWidth,
       {
         styles: styles ?? undefined,
         theme: theme ?? null,
@@ -434,7 +427,7 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
       footnoteRefs,
       footnoteContentMap,
       initialLayout: pass1Layout,
-      footnoteColumns,
+      resolveFootnoteColumns: (pageNumber) => footnoteLayoutForPage(pageNumber).columns,
     });
     layout = stabilized.layout;
     pageFootnoteMap = stabilized.pageFootnoteMap;

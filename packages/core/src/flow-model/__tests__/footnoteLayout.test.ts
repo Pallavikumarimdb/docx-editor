@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  buildFootnoteContentMap,
   mapFootnotesToPages,
   stabilizeFootnoteLayout,
   type FootnoteRefLocation,
@@ -16,6 +17,7 @@ import type {
   TableBlock,
   TableMeasure,
 } from '../../pagination-model/types';
+import type { Footnote } from '../../types/document';
 
 const layoutOpts: LayoutOptions = {
   pageSize: { w: 200, h: 140 },
@@ -254,6 +256,119 @@ describe('footnote continuation planning', () => {
       }))
     );
   });
+
+  test('resolves footnote columns independently for each physical page', () => {
+    const blocks = [paragraph('page-one', 1, 1), paragraph('page-two', 11, 2)];
+    const measures = [paragraphMeasure(1, 80), paragraphMeasure(1, 80)];
+    const initialLayout = layOutPages(blocks, measures, layoutOpts);
+    const contentMap = new Map<number, FootnoteContent>([
+      [
+        1,
+        {
+          id: 1,
+          displayNumber: 1,
+          blocks: [paragraph('footnote-one', 101)],
+          measures: [paragraphMeasure(1, 20)],
+          height: 20,
+        },
+      ],
+      [
+        2,
+        {
+          id: 2,
+          displayNumber: 2,
+          blocks: [paragraph('footnote-two', 201)],
+          measures: [paragraphMeasure(1, 20)],
+          height: 20,
+        },
+      ],
+    ]);
+    const result = stabilizeFootnoteLayout({
+      blocks,
+      measures,
+      layoutOpts,
+      footnoteRefs: [
+        { footnoteId: 1, pmPos: 1 },
+        { footnoteId: 2, pmPos: 11 },
+      ],
+      footnoteContentMap: contentMap,
+      initialLayout,
+      resolveFootnoteColumns: (pageNumber: number) => (pageNumber === 2 ? 2 : 1),
+    });
+
+    expect(result.layout.pages.map((page) => page.footnoteColumns)).toEqual([undefined, 2]);
+  });
+
+  test('moves dense reference lines until every footnote starts beside its reference', () => {
+    const blocks = Array.from({ length: 5 }, (_, index) =>
+      paragraph(`body-${index + 1}`, index * 10 + 1, index + 1)
+    );
+    const measures = blocks.map(() => paragraphMeasure(1, 5));
+    const initialLayout = layOutPages(blocks, measures, layoutOpts);
+    const footnoteContentMap = new Map<number, FootnoteContent>(
+      blocks.map((_, index) => {
+        const id = index + 1;
+        return [
+          id,
+          {
+            id,
+            displayNumber: id,
+            blocks: [paragraph(`footnote-${id}`, 100 + id * 10)],
+            measures: [paragraphMeasure(1, 60)],
+            height: 60,
+          },
+        ];
+      })
+    );
+    const result = stabilizeFootnoteLayout({
+      blocks,
+      measures,
+      layoutOpts,
+      footnoteRefs: blocks.map((_, index) => ({
+        footnoteId: index + 1,
+        pmPos: index * 10 + 1,
+      })),
+      footnoteContentMap,
+      initialLayout,
+    });
+
+    expect(result.converged).toBe(true);
+    for (let id = 1; id <= blocks.length; id++) {
+      const referencePage = result.layout.pages.find((page) =>
+        page.fragments.some((fragment) => fragment.blockId === `body-${id}`)
+      );
+      const startPage = result.layout.pages.find((page) =>
+        page.footnoteFragments?.some((fragment) => fragment.footnoteId === id)
+      );
+      const firstFragment = startPage?.footnoteFragments?.find(
+        (fragment) => fragment.footnoteId === id
+      );
+      expect(startPage?.number).toBe(referencePage?.number);
+      expect(firstFragment?.continuesFromPrev).toBeUndefined();
+    }
+  });
+});
+
+test('measures each footnote at its reference section column width', () => {
+  const footnotes: Footnote[] = [
+    { type: 'footnote', id: 1, content: [] },
+    { type: 'footnote', id: 2, content: [] },
+  ];
+  const measuredWidths: number[] = [];
+
+  buildFootnoteContentMap(
+    footnotes,
+    [{ footnoteId: 1 }, { footnoteId: 2 }],
+    (footnoteId) => (footnoteId === 1 ? 180 : 78),
+    {
+      measureBlocks: (blocks, contentWidth) => {
+        measuredWidths.push(contentWidth);
+        return blocks.map(() => paragraphMeasure(1, 10));
+      },
+    }
+  );
+
+  expect(measuredWidths).toEqual([180, 78]);
 });
 
 test('footnote page lookup indexes pages once for many references', () => {

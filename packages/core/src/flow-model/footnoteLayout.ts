@@ -24,6 +24,16 @@ import { footnoteToProseDoc } from '../prosemirror/conversion/toProseDoc';
 import { buildBoxTree } from './buildBoxTree';
 import { getFootnoteText } from '../docx/footnoteParser';
 import { takeFootnoteSlice, type FootnoteSliceCursor } from './footnoteSlices';
+import {
+  addDeferredStartReservationFloors,
+  footnotePlansEqual,
+  footnoteReservedHeightsCover,
+  footnoteReservedHeightsEqual,
+  mergeFootnoteReservedHeights,
+  type FootnotePaginationPlan,
+} from './footnotePlan';
+
+export { footnoteReservedHeightsEqual };
 
 /** Separator line height + vertical padding in pixels. */
 export const FOOTNOTE_SEPARATOR_HEIGHT = 12;
@@ -43,42 +53,6 @@ export const FOOTNOTE_COLUMN_GAP_PX = 24;
  * 2–3 passes in practice; 6 is a safe ceiling.
  */
 export const FOOTNOTE_REFLOW_LIMIT = 6;
-
-/**
- * Compare two per-page footnote reservation maps. Used by the React +
- * Vue adapters to detect when the multi-pass loop has converged.
- */
-export function footnoteReservedHeightsEqual(
-  a: Map<number, number>,
-  b: Map<number, number>
-): boolean {
-  if (a.size !== b.size) return false;
-  for (const [pageNumber, height] of a) {
-    if (b.get(pageNumber) !== height) return false;
-  }
-  return true;
-}
-
-function footnoteReservedHeightsCover(
-  reserved: Map<number, number>,
-  required: Map<number, number>
-): boolean {
-  for (const [pageNumber, height] of required) {
-    if ((reserved.get(pageNumber) ?? 0) < height) return false;
-  }
-  return true;
-}
-
-function mergeFootnoteReservedHeights(
-  a: Map<number, number>,
-  b: Map<number, number>
-): Map<number, number> {
-  const merged = new Map(a);
-  for (const [pageNumber, height] of b) {
-    merged.set(pageNumber, Math.max(merged.get(pageNumber) ?? 0, height));
-  }
-  return merged;
-}
 
 /**
  * Default footnote font size in points. Word's built-in "Footnote Text"
@@ -448,8 +422,8 @@ export function convertFootnoteToContent(
 export function buildFootnoteContentMap(
   footnotes: Footnote[],
   footnoteRefs: Array<{ footnoteId: number }>,
-  contentWidth: number,
-  config: ConvertFootnoteOptions
+  contentWidth: number | ((footnoteId: number) => number),
+  options: ConvertFootnoteOptions
 ): Map<number, FootnoteContent> {
   const contentMap = new Map<number, FootnoteContent>();
   const footnoteById = new Map<number, Footnote>();
@@ -472,7 +446,12 @@ export function buildFootnoteContentMap(
 
     contentMap.set(
       ref.footnoteId,
-      convertFootnoteToContent(footnote, displayNumber, contentWidth, config)
+      convertFootnoteToContent(
+        footnote,
+        displayNumber,
+        typeof contentWidth === 'function' ? contentWidth(ref.footnoteId) : contentWidth,
+        options
+      )
     );
     displayNumber++;
   }
@@ -575,13 +554,8 @@ const MIN_BODY_FLOW_HEIGHT_PX = 12;
 interface PendingFootnote {
   content: FootnoteContent;
   cursor: FootnoteSliceCursor;
-}
-
-interface FootnotePaginationPlan {
-  reservedHeights: Map<number, number>;
-  fragmentsByPage: Map<number, FootnoteFragment[]>;
-  footnoteIdsByPage: Map<number, number[]>;
-  minimumPageCount: number;
+  /** Whether at least one slice has already appeared on an earlier page. */
+  started: boolean;
 }
 
 function firstSliceHeight(content: FootnoteContent): number {
@@ -605,7 +579,7 @@ function paginateFootnoteFragments(
   pages: Page[],
   pageFootnoteMap: Map<number, number[]>,
   footnoteContentMap: Map<number, FootnoteContent>,
-  columns: number
+  columns: number | ((pageNumber: number) => number)
 ): FootnotePaginationPlan {
   const startsByPage = new Map<number, FootnoteContent[]>();
   const globallyStarted = new Set<number>();
@@ -625,15 +599,21 @@ function paginateFootnoteFragments(
     }
   }
 
-  const columnCount = Math.max(1, Math.floor(columns));
   const reservedHeights = new Map<number, number>();
   const fragmentsByPage = new Map<number, FootnoteFragment[]>();
   const footnoteIdsByPage = new Map<number, number[]>();
+  const deferredStartIdsByPage = new Map<number, number[]>();
   let pending: PendingFootnote[] = [];
   let pageNumber = 1;
 
   while (pageNumber <= lastStartPage || pending.length > 0) {
-    const carriedFootnoteIds = new Set(pending.map((state) => state.content.id));
+    const columnCount = Math.max(
+      1,
+      Math.floor(typeof columns === 'function' ? columns(pageNumber) : columns)
+    );
+    const carriedFootnoteIds = new Set(
+      pending.filter((state) => state.started).map((state) => state.content.id)
+    );
     const starts = startsByPage.get(pageNumber) ?? [];
     const contentHeight = pageContentHeight(pages, pageNumber);
     const columnCapacity = Math.max(
@@ -699,7 +679,7 @@ function paginateFootnoteFragments(
           pageFragments.push(taken.fragment);
           columnUsed[columnIndex] += taken.fragment.height;
           budget.remaining -= taken.fragment.height;
-          current = { content: current.content, cursor: taken.cursor };
+          current = { content: current.content, cursor: taken.cursor, started: true };
           if (taken.done) return undefined;
           if (columnUsed[columnIndex] >= columnCapacity - 0.5) columnIndex++;
         }
@@ -719,16 +699,24 @@ function paginateFootnoteFragments(
         remaining: Math.max(0, totalCapacity - columnUsed.reduce((sum, h) => sum + h, 0)),
       };
       for (const content of starts) {
+        const fragmentCountBefore = pageFragments.length;
         const remainder = consume(
-          { content, cursor: { blockIndex: 0, unitIndex: 0 } },
+          { content, cursor: { blockIndex: 0, unitIndex: 0 }, started: false },
           starterBudget
         );
         if (remainder) nextPending.push(remainder);
+        if (pageFragments.length === fragmentCountBefore) {
+          const deferred = deferredStartIdsByPage.get(pageNumber) ?? [];
+          deferred.push(content.id);
+          deferredStartIdsByPage.set(pageNumber, deferred);
+        }
       }
       pending = nextPending;
     }
 
-    const continuingFootnoteIds = new Set(pending.map((state) => state.content.id));
+    const continuingFootnoteIds = new Set(
+      pending.filter((state) => state.started).map((state) => state.content.id)
+    );
     for (const fragment of pageFragments) {
       if (carriedFootnoteIds.has(fragment.footnoteId)) fragment.continuesFromPrev = true;
       if (continuingFootnoteIds.has(fragment.footnoteId)) fragment.continuesOnNext = true;
@@ -755,38 +743,12 @@ function paginateFootnoteFragments(
 
   return {
     reservedHeights,
+    areaHeights: new Map(reservedHeights),
     fragmentsByPage,
     footnoteIdsByPage,
+    deferredStartIdsByPage,
     minimumPageCount: Math.max(pages.length, pageNumber - 1),
   };
-}
-
-function footnotePlansEqual(a: FootnotePaginationPlan, b: FootnotePaginationPlan): boolean {
-  if (!footnoteReservedHeightsEqual(a.reservedHeights, b.reservedHeights)) return false;
-  if (a.minimumPageCount !== b.minimumPageCount) return false;
-  if (a.fragmentsByPage.size !== b.fragmentsByPage.size) return false;
-  for (const [pageNumber, fragments] of a.fragmentsByPage) {
-    const other = b.fragmentsByPage.get(pageNumber);
-    if (!other || other.length !== fragments.length) return false;
-    for (let i = 0; i < fragments.length; i++) {
-      const left = fragments[i];
-      const right = other[i];
-      if (
-        left.footnoteId !== right.footnoteId ||
-        left.height !== right.height ||
-        left.continuesFromPrev !== right.continuesFromPrev ||
-        left.continuesOnNext !== right.continuesOnNext ||
-        left.columnIndex !== right.columnIndex ||
-        left.blocks.length !== right.blocks.length
-      ) {
-        return false;
-      }
-      for (let j = 0; j < left.blocks.length; j++) {
-        if (JSON.stringify(left.blocks[j]) !== JSON.stringify(right.blocks[j])) return false;
-      }
-    }
-  }
-  return true;
 }
 
 // ============================================================================
@@ -808,6 +770,8 @@ export interface StabilizeFootnoteLayoutArgs {
    * written onto each footnote-bearing page as `page.footnoteColumns`.
    */
   footnoteColumns?: number;
+  /** Resolve `w15:footnoteColumns` for each physical page's owning section. */
+  resolveFootnoteColumns?: (pageNumber: number) => number;
 }
 
 export interface StabilizeFootnoteLayoutResult {
@@ -831,15 +795,22 @@ export interface StabilizeFootnoteLayoutResult {
 export function stabilizeFootnoteLayout(
   args: StabilizeFootnoteLayoutArgs
 ): StabilizeFootnoteLayoutResult {
-  const { nodes, metrics, layoutConfig, footnoteRefs, footnoteContentMap, initialLayout } = args;
-  const footnoteColumns = Math.max(1, args.footnoteColumns ?? 1);
+  const { blocks, measures, layoutOpts, footnoteRefs, footnoteContentMap, initialLayout } = args;
+  const footnoteColumns =
+    args.resolveFootnoteColumns ?? Math.max(1, Math.floor(args.footnoteColumns ?? 1));
+  const reservationFloors = new Map<number, number>();
 
   let referenceMap = mapFootnotesToPages(initialLayout.pages, footnoteRefs);
-  let plan = paginateFootnoteFragments(
+  let plan = addDeferredStartReservationFloors(
+    paginateFootnoteFragments(
+      initialLayout.pages,
+      referenceMap,
+      footnoteContentMap,
+      footnoteColumns
+    ),
     initialLayout.pages,
-    referenceMap,
-    footnoteContentMap,
-    footnoteColumns
+    footnoteRefs,
+    reservationFloors
   );
 
   if (plan.reservedHeights.size === 0) {
@@ -856,15 +827,20 @@ export function stabilizeFootnoteLayout(
     });
 
     const nextReferenceMap = mapFootnotesToPages(newLayout.pages, footnoteRefs);
-    const nextPlan = paginateFootnoteFragments(
+    const nextPlan = addDeferredStartReservationFloors(
+      paginateFootnoteFragments(
+        newLayout.pages,
+        nextReferenceMap,
+        footnoteContentMap,
+        footnoteColumns
+      ),
       newLayout.pages,
-      nextReferenceMap,
-      footnoteContentMap,
-      footnoteColumns
+      footnoteRefs,
+      reservationFloors
     );
 
     referenceMap = nextReferenceMap;
-    if (footnotePlansEqual(plan, nextPlan)) {
+    if (nextPlan.deferredStartIdsByPage.size === 0 && footnotePlansEqual(plan, nextPlan)) {
       plan = nextPlan;
       converged = true;
       break;
@@ -883,11 +859,16 @@ export function stabilizeFootnoteLayout(
         minimumPageCount: fallbackMinimumPageCount,
       });
       referenceMap = mapFootnotesToPages(newLayout.pages, footnoteRefs);
-      const requiredPlan = paginateFootnoteFragments(
+      const requiredPlan = addDeferredStartReservationFloors(
+        paginateFootnoteFragments(
+          newLayout.pages,
+          referenceMap,
+          footnoteContentMap,
+          footnoteColumns
+        ),
         newLayout.pages,
-        referenceMap,
-        footnoteContentMap,
-        footnoteColumns
+        footnoteRefs,
+        reservationFloors
       );
       plan = requiredPlan;
       if (
@@ -910,11 +891,16 @@ export function stabilizeFootnoteLayout(
         minimumPageCount: fallbackMinimumPageCount,
       });
       referenceMap = mapFootnotesToPages(newLayout.pages, footnoteRefs);
-      plan = paginateFootnoteFragments(
+      plan = addDeferredStartReservationFloors(
+        paginateFootnoteFragments(
+          newLayout.pages,
+          referenceMap,
+          footnoteContentMap,
+          footnoteColumns
+        ),
         newLayout.pages,
-        referenceMap,
-        footnoteContentMap,
-        footnoteColumns
+        footnoteRefs,
+        reservationFloors
       );
     }
     console.warn(
@@ -926,9 +912,13 @@ export function stabilizeFootnoteLayout(
   for (const page of newLayout.pages) {
     const fragments = plan.fragmentsByPage.get(page.number);
     if (!fragments?.length) continue;
+    const areaHeight = plan.areaHeights.get(page.number);
+    if (areaHeight != null) page.footnoteReservedHeight = areaHeight;
     page.footnoteFragments = fragments;
     page.footnoteIds = plan.footnoteIdsByPage.get(page.number);
-    if (footnoteColumns > 1) page.footnoteColumns = footnoteColumns;
+    const pageColumns =
+      typeof footnoteColumns === 'function' ? footnoteColumns(page.number) : footnoteColumns;
+    if (pageColumns > 1) page.footnoteColumns = pageColumns;
   }
 
   return { layout: newLayout, pageFootnoteMap: plan.footnoteIdsByPage, converged };
