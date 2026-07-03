@@ -17,12 +17,10 @@ import type {
   FootnoteFragment,
   TextRun,
 } from '../pagination-model/types';
-import { layOutPages, type LayoutConfig } from '../pagination-model';
-import type { Document, Footnote, StyleDefinitions, Theme } from '../types/document';
-import type { FootnoteRenderItem } from '../painter-model';
+import { layOutPages, type LayoutOptions } from '../pagination-model';
+import type { Footnote, StyleDefinitions, Theme } from '../types/document';
 import { footnoteToProseDoc } from '../prosemirror/conversion/toProseDoc';
 import { buildBoxTree } from './buildBoxTree';
-import { getFootnoteText } from '../docx/footnoteParser';
 import { takeFootnoteSlice, type FootnoteSliceCursor } from './footnoteSlices';
 import type { FootnoteRefLocation } from './footnoteReferenceLayout';
 import {
@@ -344,6 +342,17 @@ export type ConvertFootnoteOptions = {
 };
 
 /**
+ * Resolve the measured representation of a footnote for one physical page.
+ * The page is the last materialized page when pagination is planning a
+ * continuation beyond the current body layout.
+ */
+export type ResolveFootnoteContent = (
+  footnoteId: number,
+  pageNumber: number,
+  page: Page | undefined
+) => FootnoteContent | undefined;
+
+/**
  * Convert a Footnote to renderable FootnoteContent via the body pipeline:
  * `footnoteToProseDoc → buildBoxTree → applyFootnotePresentation →
  * measureBlocks`. Pre-PR (#378) this lived in a hand-rolled shadow stack
@@ -385,6 +394,48 @@ export function convertFootnoteToContent(
 }
 
 /**
+ * Build a lazy width-keyed footnote measurer. A note is converted at most once
+ * for each distinct width, even when stabilization revisits the same pages.
+ */
+export function createWidthSpecificFootnoteContentResolver(
+  footnotes: Footnote[],
+  footnoteRefs: Array<{ footnoteId: number }>,
+  options: ConvertFootnoteOptions
+): (footnoteId: number, contentWidth: number) => FootnoteContent | undefined {
+  const footnoteById = new Map<number, Footnote>();
+  for (const footnote of footnotes) {
+    if (footnote.noteType === 'normal' || footnote.noteType == null) {
+      footnoteById.set(footnote.id, footnote);
+    }
+  }
+
+  const displayNumberById = new Map<number, number>();
+  for (const ref of footnoteRefs) {
+    if (displayNumberById.has(ref.footnoteId) || !footnoteById.has(ref.footnoteId)) continue;
+    displayNumberById.set(ref.footnoteId, displayNumberById.size + 1);
+  }
+
+  const contentByWidth = new Map<number, Map<number, FootnoteContent>>();
+  return (footnoteId, contentWidth) => {
+    const footnote = footnoteById.get(footnoteId);
+    const displayNumber = displayNumberById.get(footnoteId);
+    if (!footnote || displayNumber == null) return undefined;
+
+    let contentById = contentByWidth.get(contentWidth);
+    if (!contentById) {
+      contentById = new Map();
+      contentByWidth.set(contentWidth, contentById);
+    }
+    let content = contentById.get(footnoteId);
+    if (!content) {
+      content = convertFootnoteToContent(footnote, displayNumber, contentWidth, options);
+      contentById.set(footnoteId, content);
+    }
+    return content;
+  };
+}
+
+/**
  * Build footnote content for all footnotes referenced in the document.
  * Display numbers are assigned by first-appearance order (the same way
  * Word renders them).
@@ -396,34 +447,20 @@ export function buildFootnoteContentMap(
   options: ConvertFootnoteOptions
 ): Map<number, FootnoteContent> {
   const contentMap = new Map<number, FootnoteContent>();
-  const footnoteById = new Map<number, Footnote>();
-
-  for (const fn of footnotes) {
-    if (fn.noteType === 'normal' || fn.noteType == null) {
-      footnoteById.set(fn.id, fn);
-    }
-  }
-
-  let displayNumber = 1;
+  const resolveContent = createWidthSpecificFootnoteContentResolver(
+    footnotes,
+    footnoteRefs,
+    options
+  );
   const seen = new Set<number>();
 
   for (const ref of footnoteRefs) {
     if (seen.has(ref.footnoteId)) continue;
     seen.add(ref.footnoteId);
 
-    const footnote = footnoteById.get(ref.footnoteId);
-    if (!footnote) continue;
-
-    contentMap.set(
-      ref.footnoteId,
-      convertFootnoteToContent(
-        footnote,
-        displayNumber,
-        typeof contentWidth === 'function' ? contentWidth(ref.footnoteId) : contentWidth,
-        options
-      )
-    );
-    displayNumber++;
+    const width = typeof contentWidth === 'function' ? contentWidth(ref.footnoteId) : contentWidth;
+    const content = resolveContent(ref.footnoteId, width);
+    if (content) contentMap.set(ref.footnoteId, content);
   }
 
   return contentMap;
@@ -522,7 +559,7 @@ export function calculateFootnoteReservedHeights(
 const MIN_BODY_FLOW_HEIGHT_PX = 12;
 
 interface PendingFootnote {
-  content: FootnoteContent;
+  footnoteId: number;
   cursor: FootnoteSliceCursor;
   /** Whether at least one slice has already appeared on an earlier page. */
   started: boolean;
@@ -549,19 +586,18 @@ function paginateFootnoteFragments(
   pages: Page[],
   pageFootnoteMap: Map<number, number[]>,
   footnoteContentMap: Map<number, FootnoteContent>,
-  columns: number | ((pageNumber: number) => number)
+  columns: number | ((pageNumber: number, page: Page | undefined) => number),
+  resolveFootnoteContent?: ResolveFootnoteContent
 ): FootnotePaginationPlan {
-  const startsByPage = new Map<number, FootnoteContent[]>();
+  const startsByPage = new Map<number, number[]>();
   const globallyStarted = new Set<number>();
   let lastStartPage = 0;
   for (const [pageNumber, ids] of pageFootnoteMap) {
-    const starts: FootnoteContent[] = [];
+    const starts: number[] = [];
     for (const id of ids) {
       if (globallyStarted.has(id)) continue;
-      const content = footnoteContentMap.get(id);
-      if (!content) continue;
       globallyStarted.add(id);
-      starts.push(content);
+      starts.push(id);
     }
     if (starts.length > 0) {
       startsByPage.set(pageNumber, starts);
@@ -577,14 +613,19 @@ function paginateFootnoteFragments(
   let pageNumber = 1;
 
   while (pageNumber <= lastStartPage || pending.length > 0) {
+    const page = pages[pageNumber - 1] ?? pages[pages.length - 1];
+    const contentForPage = (footnoteId: number): FootnoteContent | undefined =>
+      resolveFootnoteContent?.(footnoteId, pageNumber, page) ?? footnoteContentMap.get(footnoteId);
     const columnCount = Math.max(
       1,
-      Math.floor(typeof columns === 'function' ? columns(pageNumber) : columns)
+      Math.floor(typeof columns === 'function' ? columns(pageNumber, page) : columns)
     );
     const carriedFootnoteIds = new Set(
-      pending.filter((state) => state.started).map((state) => state.content.id)
+      pending.filter((state) => state.started).map((state) => state.footnoteId)
     );
-    const starts = startsByPage.get(pageNumber) ?? [];
+    const starts = (startsByPage.get(pageNumber) ?? [])
+      .map((footnoteId) => contentForPage(footnoteId))
+      .filter((content): content is FootnoteContent => content != null);
     const contentHeight = pageContentHeight(pages, pageNumber);
     const columnCapacity = Math.max(
       1,
@@ -630,13 +671,14 @@ function paginateFootnoteFragments(
 
       const consume = (
         state: PendingFootnote,
+        content: FootnoteContent,
         budget: { remaining: number }
       ): PendingFootnote | undefined => {
         let current = state;
         while (budget.remaining > 0 && advanceColumn()) {
           const available = Math.min(budget.remaining, columnCapacity - columnUsed[columnIndex]);
           const taken = takeFootnoteSlice(
-            current.content,
+            content,
             current.cursor,
             available,
             columnIndex,
@@ -649,7 +691,7 @@ function paginateFootnoteFragments(
           pageFragments.push(taken.fragment);
           columnUsed[columnIndex] += taken.fragment.height;
           budget.remaining -= taken.fragment.height;
-          current = { content: current.content, cursor: taken.cursor, started: true };
+          current = { footnoteId: current.footnoteId, cursor: taken.cursor, started: true };
           if (taken.done) return undefined;
           if (columnUsed[columnIndex] >= columnCapacity - 0.5) columnIndex++;
         }
@@ -661,7 +703,9 @@ function paginateFootnoteFragments(
       const carryBudget = { remaining: Math.max(0, totalCapacity - starterReserve) };
       const nextPending: PendingFootnote[] = [];
       for (const state of pending) {
-        const remainder = consume(state, carryBudget);
+        const content = contentForPage(state.footnoteId);
+        if (!content) continue;
+        const remainder = consume(state, content, carryBudget);
         if (remainder) nextPending.push(remainder);
       }
 
@@ -671,7 +715,8 @@ function paginateFootnoteFragments(
       for (const content of starts) {
         const fragmentCountBefore = pageFragments.length;
         const remainder = consume(
-          { content, cursor: { blockIndex: 0, unitIndex: 0 }, started: false },
+          { footnoteId: content.id, cursor: { blockIndex: 0, unitIndex: 0 }, started: false },
+          content,
           starterBudget
         );
         if (remainder) nextPending.push(remainder);
@@ -685,7 +730,7 @@ function paginateFootnoteFragments(
     }
 
     const continuingFootnoteIds = new Set(
-      pending.filter((state) => state.started).map((state) => state.content.id)
+      pending.filter((state) => state.started).map((state) => state.footnoteId)
     );
     for (const fragment of pageFragments) {
       if (carriedFootnoteIds.has(fragment.footnoteId)) fragment.continuesFromPrev = true;
@@ -744,6 +789,14 @@ export interface StabilizeFootnoteLayoutArgs {
   resolveFootnoteColumns?: (pageNumber: number) => number;
 }
 
+type StabilizeFootnoteLayoutWithPageContentArgs = Omit<
+  StabilizeFootnoteLayoutArgs,
+  'resolveFootnoteColumns'
+> & {
+  resolveFootnoteColumns?: (pageNumber: number, page: Page | undefined) => number;
+  resolveFootnoteContent?: ResolveFootnoteContent;
+};
+
 export interface StabilizeFootnoteLayoutResult {
   layout: PageLayout;
   pageFootnoteMap: Map<number, number[]>;
@@ -762,10 +815,18 @@ export interface StabilizeFootnoteLayoutResult {
  * lockstep on convergence behaviour. Writes `page.footnoteIds` onto each
  * page in the returned layout so renderers can paint footnote areas.
  */
-export function stabilizeFootnoteLayout(
-  args: StabilizeFootnoteLayoutArgs
+function stabilizeFootnoteLayoutInternal(
+  args: StabilizeFootnoteLayoutWithPageContentArgs
 ): StabilizeFootnoteLayoutResult {
-  const { blocks, measures, layoutOpts, footnoteRefs, footnoteContentMap, initialLayout } = args;
+  const {
+    blocks,
+    measures,
+    layoutOpts,
+    footnoteRefs,
+    footnoteContentMap,
+    initialLayout,
+    resolveFootnoteContent,
+  } = args;
   const footnoteColumns =
     args.resolveFootnoteColumns ?? Math.max(1, Math.floor(args.footnoteColumns ?? 1));
   const reservationFloors = new Map<number, number>();
@@ -776,7 +837,8 @@ export function stabilizeFootnoteLayout(
       initialLayout.pages,
       referenceMap,
       footnoteContentMap,
-      footnoteColumns
+      footnoteColumns,
+      resolveFootnoteContent
     ),
     initialLayout.pages,
     footnoteRefs,
@@ -802,7 +864,8 @@ export function stabilizeFootnoteLayout(
         newLayout.pages,
         nextReferenceMap,
         footnoteContentMap,
-        footnoteColumns
+        footnoteColumns,
+        resolveFootnoteContent
       ),
       newLayout.pages,
       footnoteRefs,
@@ -834,7 +897,8 @@ export function stabilizeFootnoteLayout(
           newLayout.pages,
           referenceMap,
           footnoteContentMap,
-          footnoteColumns
+          footnoteColumns,
+          resolveFootnoteContent
         ),
         newLayout.pages,
         footnoteRefs,
@@ -866,7 +930,8 @@ export function stabilizeFootnoteLayout(
           newLayout.pages,
           referenceMap,
           footnoteContentMap,
-          footnoteColumns
+          footnoteColumns,
+          resolveFootnoteContent
         ),
         newLayout.pages,
         footnoteRefs,
@@ -887,74 +952,24 @@ export function stabilizeFootnoteLayout(
     page.footnoteFragments = fragments;
     page.footnoteIds = plan.footnoteIdsByPage.get(page.number);
     const pageColumns =
-      typeof footnoteColumns === 'function' ? footnoteColumns(page.number) : footnoteColumns;
+      typeof footnoteColumns === 'function' ? footnoteColumns(page.number, page) : footnoteColumns;
     if (pageColumns > 1) page.footnoteColumns = pageColumns;
   }
 
   return { layout: newLayout, pageFootnoteMap: plan.footnoteIdsByPage, converged };
 }
 
-// ============================================================================
-// 5. Build per-page render items
-// ============================================================================
-
-/**
- * Turn the page→footnote-id map into the per-page render payload that
- * `paintPages` consumes via `footnotesByPage`. Skips non-`normal` notes
- * (separators, continuation notices), reads the display number out of the
- * content map, and pulls plain text via `getFootnoteText`.
- *
- * Lives in core (not in either adapter) so React + Vue both call the
- * same helper — same rule as the rest of this module.
- */
-export function buildFootnoteRenderItems(
-  pageFootnoteMap: Map<number, number[]>,
-  footnoteContentMap: Map<number, FootnoteContent>,
-  doc: Document | null,
-  pages?: Page[]
-): Map<number, FootnoteRenderItem[]> {
-  const result = new Map<number, FootnoteRenderItem[]>();
-  if (!doc?.package?.footnotes) return result;
-
-  const fnLookup = new Map<number, Footnote>();
-  for (const fn of doc.package.footnotes) {
-    if (fn.noteType && fn.noteType !== 'normal') continue;
-    fnLookup.set(fn.id, fn);
-  }
-
-  const pageLookup = new Map(pages?.map((page) => [page.number, page]));
-  for (const [pageNumber, footnoteIds] of pageFootnoteMap) {
-    const items: FootnoteRenderItem[] = [];
-    const fragments = pageLookup.get(pageNumber)?.footnoteFragments;
-    if (fragments?.length) {
-      for (const fragment of fragments) {
-        const fn = fnLookup.get(fragment.footnoteId);
-        const content = footnoteContentMap.get(fragment.footnoteId);
-        if (!fn || !content) continue;
-        items.push({
-          displayNumber: String(fragment.displayNumber),
-          text: getFootnoteText(fn),
-          content,
-          fragment,
-        });
-      }
-      if (items.length > 0) result.set(pageNumber, items);
-      continue;
-    }
-
-    for (const fnId of footnoteIds) {
-      const fn = fnLookup.get(fnId);
-      if (!fn) continue;
-      const content = footnoteContentMap.get(fnId);
-      const displayNum = content?.displayNumber ?? 0;
-      items.push({
-        displayNumber: String(displayNum),
-        text: getFootnoteText(fn),
-        content,
-      });
-    }
-    if (items.length > 0) result.set(pageNumber, items);
-  }
-
-  return result;
+export function stabilizeFootnoteLayout(
+  args: StabilizeFootnoteLayoutArgs
+): StabilizeFootnoteLayoutResult {
+  return stabilizeFootnoteLayoutInternal(args);
 }
+
+/** Internal page-aware entry point used by the shared layout compute pass. */
+export function stabilizeFootnoteLayoutWithPageContent(
+  args: StabilizeFootnoteLayoutWithPageContentArgs
+): StabilizeFootnoteLayoutResult {
+  return stabilizeFootnoteLayoutInternal(args);
+}
+
+export { buildFootnoteRenderItems, buildFootnoteRenderItemsForPages } from './footnoteRenderItems';

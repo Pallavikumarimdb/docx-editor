@@ -23,8 +23,9 @@ import {
   type ColumnLayout,
   type ContentNode,
   type FootnoteContent,
-  type PageLayout,
-  type LayoutMetrics,
+  type Layout,
+  type Measure,
+  type Page,
   type PageMargins,
   type SectionMarkerBlock,
 } from '../pagination-model';
@@ -33,12 +34,8 @@ import {
   computePerBlockWidths,
   demoteBlockLikeFloatingTables,
   collectFootnoteRefs,
-  mapFootnotesToPages,
   convertHeaderFooterToContent,
   convertHeaderFooterPmDocToContent,
-  buildFootnoteContentMap,
-  buildFootnoteRenderItems,
-  stabilizeFootnoteLayout,
   FOOTNOTE_COLUMN_GAP_PX,
   getColumns,
   getMargins,
@@ -46,6 +43,11 @@ import {
   resolvePageHeaderFooter,
   type FloatPageGeometry,
 } from '../flow-model';
+import {
+  buildFootnoteRenderItemsForPages,
+  createWidthSpecificFootnoteContentResolver,
+  stabilizeFootnoteLayoutWithPageContent,
+} from '../flow-model/footnoteLayout';
 import {
   pageGeometryFromPage,
   type FootnoteRenderItem,
@@ -121,14 +123,18 @@ export interface LayoutComputation {
  */
 function resolveFootnoteColumnLayout(
   properties: SectionProperties | null | undefined,
-  fallbackColumnWidth: number
+  fallbackColumnWidth: number,
+  page?: Page
 ): { columns: number; columnWidth: number } {
   if (!properties) return { columns: 1, columnWidth: fallbackColumnWidth };
   const columns = Math.max(1, Math.floor(properties.footnoteColumns ?? 1));
-  const sectionPageSize = getPageSize(properties);
-  const sectionMargins = getMargins(properties);
-  const sectionContentWidthPx =
-    sectionPageSize.w - sectionMargins.left - sectionMargins.right || fallbackColumnWidth;
+  const sectionContentWidthPx = page
+    ? page.size.w - page.margins.left - page.margins.right
+    : (() => {
+        const sectionPageSize = getPageSize(properties);
+        const sectionMargins = getMargins(properties);
+        return sectionPageSize.w - sectionMargins.left - sectionMargins.right;
+      })();
   const columnWidth = (sectionContentWidthPx - (columns - 1) * FOOTNOTE_COLUMN_GAP_PX) / columns;
   return { columns, columnWidth: Math.max(1, columnWidth) };
 }
@@ -275,6 +281,7 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
   };
 
   const furnitureByPageNumber = new Map<number, PageFurniture>();
+  const sectionIndexByPageNumber = new Map<number, number>();
   const resolveFurniture = (
     pageNumber: number,
     sectionIndex: number,
@@ -390,6 +397,7 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
       sectionIndex: number;
       sectionPageNumber: number;
     }) => {
+      sectionIndexByPageNumber.set(pageNumber, sectionIndex);
       furnitureByPageNumber.set(
         pageNumber,
         resolveFurniture(pageNumber, sectionIndex, sectionPageNumber)
@@ -399,31 +407,24 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
 
   let layout: PageLayout;
   let pageFootnoteMap = new Map<number, number[]>();
-  let footnoteContentMap = new Map<number, FootnoteContent>();
+  const footnoteContentMap = new Map<number, FootnoteContent>();
+  let resolveFootnoteContent:
+    | ((footnoteId: number, pageNumber: number, page?: Page) => FootnoteContent | undefined)
+    | undefined;
 
   if (hasFootnotes) {
     const pass1Layout = layOutPages(blocks, measures, layoutOpts);
-    const pass1Footnotes = mapFootnotesToPages(pass1Layout.pages, footnoteRefs);
-    const firstPageByFootnote = new Map<number, number>();
-    for (const [pageNumber, ids] of pass1Footnotes) {
-      for (const id of ids) {
-        if (!firstPageByFootnote.has(id)) firstPageByFootnote.set(id, pageNumber);
-      }
-    }
-    const footnoteLayoutForPage = (pageNumber: number) => {
-      let furniture = furnitureByPageNumber.get(pageNumber);
-      for (let previous = pageNumber - 1; !furniture && previous >= 1; previous--) {
-        furniture = furnitureByPageNumber.get(previous);
-      }
-      const properties =
-        sectionProps[furniture?.sectionIndex ?? sectionProps.length - 1] ?? lastSectionProps;
-      return resolveFootnoteColumnLayout(properties, contentWidth);
+    const footnoteLayoutForPage = (pageNumber: number, page?: Page) => {
+      const physicalPageNumber = page?.number ?? pageNumber;
+      const sectionIndex =
+        sectionIndexByPageNumber.get(physicalPageNumber) ?? sectionProps.length - 1;
+      const properties = sectionProps[Math.max(0, sectionIndex)] ?? lastSectionProps;
+      return resolveFootnoteColumnLayout(properties, contentWidth, page);
     };
 
-    footnoteContentMap = buildFootnoteContentMap(
+    const resolveContentAtWidth = createWidthSpecificFootnoteContentResolver(
       document!.package.footnotes!,
       footnoteRefs,
-      (footnoteId) => footnoteLayoutForPage(firstPageByFootnote.get(footnoteId) ?? 1).columnWidth,
       {
         styles: styles ?? undefined,
         theme: theme ?? null,
@@ -431,14 +432,17 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
         defaultTabMarkTwips,
       }
     );
-    const stabilized = stabilizeFootnoteLayout({
-      nodes,
-      metrics,
-      layoutConfig,
+    resolveFootnoteContent = (footnoteId: number, pageNumber: number, page?: Page) =>
+      resolveContentAtWidth(footnoteId, footnoteLayoutForPage(pageNumber, page).columnWidth);
+    const stabilized = stabilizeFootnoteLayoutWithPageContent({
+      blocks,
+      measures,
+      layoutOpts,
       footnoteRefs,
       footnoteContentMap,
       initialLayout: pass1Layout,
-      resolveFootnoteColumns: (pageNumber) => footnoteLayoutForPage(pageNumber).columns,
+      resolveFootnoteColumns: (pageNumber, page) => footnoteLayoutForPage(pageNumber, page).columns,
+      resolveFootnoteContent,
     });
     layout = stabilized.layout;
     pageFootnoteMap = stabilized.pageFootnoteMap;
@@ -447,7 +451,13 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
   }
 
   const footnotesByPage = hasFootnotes
-    ? buildFootnoteRenderItems(pageFootnoteMap, footnoteContentMap, document, layout.pages)
+    ? buildFootnoteRenderItemsForPages(
+        pageFootnoteMap,
+        footnoteContentMap,
+        document,
+        layout.pages,
+        resolveFootnoteContent!
+      )
     : undefined;
 
   for (const page of layout.pages) {

@@ -2,8 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import {
   buildFootnoteContentMap,
   collectFootnoteRefs,
+  createWidthSpecificFootnoteContentResolver,
   mapFootnotesToPages,
   stabilizeFootnoteLayout,
+  stabilizeFootnoteLayoutWithPageContent,
   type FootnoteRefLocation,
 } from '../footnoteLayout';
 import { takeFootnoteSlice } from '../footnoteSlices';
@@ -15,6 +17,7 @@ import type {
   Page,
   ParagraphBlock,
   ParagraphMetrics,
+  SectionMarkerBlock,
   TableBlock,
   TableMeasure,
 } from '../../pagination-model/types';
@@ -348,6 +351,138 @@ describe('footnote continuation planning', () => {
       expect(firstFragment?.continuesFromPrev).toBeUndefined();
     }
   });
+
+  test('uses the new physical page width after stabilization moves a reference', () => {
+    const sectionBreak: SectionMarkerBlock = {
+      kind: 'sectionBreak',
+      id: 'old-section-end',
+      pageSize: layoutOpts.pageSize,
+      margins: layoutOpts.margins,
+    };
+    const ref = paragraph('moved-reference', 11, 7);
+    const blocks = [paragraph('preamble', 1, 1), sectionBreak, ref];
+    const measures = [
+      paragraphMeasure(1, 60),
+      { kind: 'sectionBreak' as const },
+      paragraphMeasure(1, 20),
+    ];
+    const options: LayoutOptions = {
+      ...layoutOpts,
+      finalPageSize: { w: 110, h: 140 },
+      finalMargins: layoutOpts.margins,
+      bodyBreakType: 'continuous',
+    };
+    const initialLayout = layOutPages(blocks, measures, options);
+    const wideContent: FootnoteContent = {
+      id: 7,
+      displayNumber: 2,
+      blocks: [paragraph('wide-note', 100)],
+      measures: [paragraphMeasure(1, 40)],
+      height: 40,
+    };
+    const narrowContent: FootnoteContent = {
+      id: 7,
+      displayNumber: 2,
+      blocks: [paragraph('narrow-note', 100)],
+      measures: [paragraphMeasure(2, 20)],
+      height: 40,
+    };
+    const anchoringContent: FootnoteContent = {
+      id: 1,
+      displayNumber: 1,
+      blocks: [paragraph('anchoring-note', 90)],
+      measures: [paragraphMeasure(1, 40)],
+      height: 40,
+    };
+    const resolvedPageWidths: number[] = [];
+
+    const result = stabilizeFootnoteLayoutWithPageContent({
+      blocks,
+      measures,
+      layoutOpts: options,
+      footnoteRefs: [
+        { footnoteId: 1, pmPos: 1 },
+        { footnoteId: 7, pmPos: 11 },
+      ],
+      footnoteContentMap: new Map(),
+      initialLayout,
+      resolveFootnoteColumns: (_pageNumber, page) => (page?.size.w === 110 ? 2 : 1),
+      resolveFootnoteContent: (footnoteId, _pageNumber, page) => {
+        resolvedPageWidths.push(page?.size.w ?? 0);
+        if (footnoteId === 1) return anchoringContent;
+        return page?.size.w === 110 ? narrowContent : wideContent;
+      },
+    });
+
+    const referencePage = result.layout.pages.find((page) =>
+      page.fragments.some((fragment) => fragment.blockId === ref.id)
+    );
+    expect(referencePage?.number).toBe(2);
+    expect(referencePage?.size.w).toBe(110);
+    expect(referencePage?.footnoteColumns).toBe(2);
+    expect(referencePage?.footnoteFragments?.[0]?.blocks[0]).toMatchObject({
+      kind: 'paragraph',
+      fromLine: 0,
+      toLine: 2,
+    });
+    expect(resolvedPageWidths).toContain(200);
+    expect(resolvedPageWidths).toContain(110);
+  });
+
+  test('switches measurement variants when a continuation enters a narrower page', () => {
+    const sectionBreak: SectionMarkerBlock = {
+      kind: 'sectionBreak',
+      id: 'old-section-end',
+      pageSize: layoutOpts.pageSize,
+      margins: layoutOpts.margins,
+    };
+    const ref = paragraph('continued-reference', 1, 7);
+    const blocks = [ref, sectionBreak];
+    const measures = [paragraphMeasure(1, 20), { kind: 'sectionBreak' as const }];
+    const options: LayoutOptions = {
+      ...layoutOpts,
+      finalPageSize: { w: 110, h: 140 },
+      finalMargins: layoutOpts.margins,
+      bodyBreakType: 'continuous',
+    };
+    const initialLayout = layOutPages(blocks, measures, options);
+    const wideContent: FootnoteContent = {
+      id: 7,
+      displayNumber: 1,
+      blocks: [paragraph('wide-continuation', 100)],
+      measures: [paragraphMeasure(6, 25)],
+      height: 150,
+    };
+    const narrowContent: FootnoteContent = {
+      id: 7,
+      displayNumber: 1,
+      blocks: [paragraph('narrow-continuation', 100)],
+      measures: [paragraphMeasure(10, 10)],
+      height: 100,
+    };
+
+    const result = stabilizeFootnoteLayoutWithPageContent({
+      blocks,
+      measures,
+      layoutOpts: options,
+      footnoteRefs: [{ footnoteId: 7, pmPos: 1 }],
+      footnoteContentMap: new Map(),
+      initialLayout,
+      resolveFootnoteContent: (_footnoteId, _pageNumber, page) =>
+        page?.size.w === 110 ? narrowContent : wideContent,
+    });
+
+    expect(result.layout.pages[0].size.w).toBe(200);
+    expect(result.layout.pages[0].footnoteFragments?.[0]).toMatchObject({
+      continuesOnNext: true,
+      blocks: [{ kind: 'paragraph', fromLine: 0, toLine: 3 }],
+    });
+    expect(result.layout.pages[1].size.w).toBe(110);
+    expect(result.layout.pages[1].footnoteFragments?.[0]).toMatchObject({
+      continuesFromPrev: true,
+      blocks: [{ kind: 'paragraph', fromLine: 3, toLine: 10 }],
+    });
+  });
 });
 
 test('measures each footnote at its reference section column width', () => {
@@ -369,6 +504,27 @@ test('measures each footnote at its reference section column width', () => {
     }
   );
 
+  expect(measuredWidths).toEqual([180, 78]);
+});
+
+test('memoizes each footnote measurement by width', () => {
+  const measuredWidths: number[] = [];
+  const resolve = createWidthSpecificFootnoteContentResolver(
+    [{ type: 'footnote', id: 1, content: [] }],
+    [{ footnoteId: 1 }],
+    {
+      measureBlocks: (blocks, contentWidth) => {
+        measuredWidths.push(contentWidth);
+        return blocks.map(() => paragraphMeasure(1, 10));
+      },
+    }
+  );
+
+  const wide = resolve(1, 180);
+  expect(resolve(1, 180)).toBe(wide);
+  const narrow = resolve(1, 78);
+  expect(resolve(1, 78)).toBe(narrow);
+  expect(narrow).not.toBe(wide);
   expect(measuredWidths).toEqual([180, 78]);
 });
 
