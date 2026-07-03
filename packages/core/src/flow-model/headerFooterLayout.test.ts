@@ -1,7 +1,12 @@
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { EditorView } from 'prosemirror-view';
-import type { FlowBlock, Measure, ParagraphBlock, TextBoxBlock } from '../pagination-model/types';
+import type {
+  ContentNode,
+  LayoutMetrics,
+  ParagraphBlock,
+  TextBoxBlock,
+} from '../pagination-model/types';
 import { schema } from '../prosemirror/schema';
 import { extendMarginsForHeaderFooter } from './headerFooterMargins';
 import {
@@ -73,7 +78,7 @@ describe('header/footer positioned text-box layout', () => {
       calculateHeaderFooterVisualBounds(
         [textBox, followingParagraph],
         [
-          { kind: 'textBox', width: 80, height: 20, innerMeasures: [] },
+          { kind: 'textBox', width: 80, height: 20, innerMetrics: [] },
           { kind: 'paragraph', lines: [], totalHeight: 70 },
         ],
         70,
@@ -109,7 +114,7 @@ describe('header/footer positioned text-box layout', () => {
       calculateHeaderFooterVisualBounds(
         [textBox, followingParagraph],
         [
-          { kind: 'textBox', width: 80, height: 20, innerMeasures: [] },
+          { kind: 'textBox', width: 80, height: 20, innerMetrics: [] },
           { kind: 'paragraph', lines: [], totalHeight: 16 },
         ],
         16,
@@ -140,8 +145,8 @@ describe('header/footer positioned text-box layout', () => {
         vertical: { relativeTo, align: 'bottom' },
       },
     });
-    const measures = [
-      { kind: 'textBox' as const, width: 20, height: 10, innerMeasures: [] },
+    const metrics = [
+      { kind: 'textBox' as const, width: 20, height: 10, innerMetrics: [] },
       { kind: 'paragraph' as const, lines: [], totalHeight: 16 },
     ];
     const margins = { top: 40, right: 80, bottom: 70, left: 30, header: 20, footer: 30 };
@@ -149,7 +154,7 @@ describe('header/footer positioned text-box layout', () => {
     expect(
       calculateHeaderFooterVisualBounds(
         [makeTextBox('header-top-margin', 'topMargin'), followingParagraph],
-        measures,
+        metrics,
         16,
         {
           section: 'header',
@@ -162,7 +167,7 @@ describe('header/footer positioned text-box layout', () => {
     expect(
       calculateHeaderFooterVisualBounds(
         [makeTextBox('footer-bottom-margin', 'bottomMargin'), followingParagraph],
-        measures,
+        metrics,
         16,
         {
           section: 'footer',
@@ -196,8 +201,8 @@ describe('header/footer floating-table layout', () => {
       schema.text('following header/footer paragraph')
     );
     const pmDoc = schema.nodes.doc.create({}, [table, followingParagraph]);
-    const measureBlocks = (blocks: FlowBlock[]): Measure[] =>
-      blocks.map((block) => {
+    const measureBlocks = (nodes: ContentNode[]): LayoutMetrics[] =>
+      nodes.map((block) => {
         if (block.kind === 'table') {
           return {
             kind: 'table',
@@ -246,8 +251,8 @@ describe('header/footer floating-table layout', () => {
       }
     );
 
-    expect(header?.blocks[0]?.kind).toBe('table');
-    expect(header?.blocks[0] && contributesToHeaderFooterFlowHeight(header.blocks[0])).toBe(false);
+    expect(header?.nodes[0]?.kind).toBe('table');
+    expect(header?.nodes[0] && contributesToHeaderFooterFlowHeight(header.nodes[0])).toBe(false);
     expect(header?.flowHeight).toBe(16);
     expect(footer?.flowHeight).toBe(16);
     // The page-positioned table contributes to visual bounds at its authored

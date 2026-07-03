@@ -1,16 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 import type {
-  Layout,
+  PageLayout,
   MeasuredLine,
   ParagraphBlock,
   ParagraphFragment,
   ParagraphMetrics,
   TableBlock,
   TableFragment,
-  TableMeasure,
+  TableMetrics,
 } from '../pagination-model/types';
 import { resetCanvasContext } from './metrics/textMetrics';
-import { resolveFragmentHit, resolveTableCellHit } from './pointerHitResolve';
+import { resolveFragmentTarget, resolveTableCellTarget } from './pointerTargetResolve';
 import { pointerToDocPos, pointerToDocPosInParagraph } from './pointerToDocPos';
 import { getCaretPosition, rectsForSelection } from './selectionGeometry';
 
@@ -54,7 +54,7 @@ function paragraph(
 function paragraphFragment(block: ParagraphBlock, measure: ParagraphMetrics): ParagraphFragment {
   return {
     kind: 'paragraph',
-    blockId: block.id,
+    nodeId: block.id,
     x: 0,
     y: 0,
     width: 500,
@@ -108,14 +108,14 @@ describe('layout pointer fallbacks', () => {
           cells: [
             {
               id: 'cell',
-              blocks: [first.block, second.block, visible.block],
+              nodes: [first.block, second.block, visible.block],
               padding: { top: 0, right: 0, bottom: 0, left: 0 },
             },
           ],
         },
       ],
     };
-    const tableMeasure: TableMeasure = {
+    const tableMetrics: TableMetrics = {
       kind: 'table',
       columnWidths: [200],
       totalWidth: 200,
@@ -125,7 +125,7 @@ describe('layout pointer fallbacks', () => {
           height: 60,
           cells: [
             {
-              blocks: [first.measure, second.measure, visible.measure],
+              metrics: [first.measure, second.measure, visible.measure],
               width: 200,
               height: 60,
             },
@@ -135,7 +135,7 @@ describe('layout pointer fallbacks', () => {
     };
     const fragment: TableFragment = {
       kind: 'table',
-      blockId: table.id,
+      nodeId: table.id,
       x: 0,
       y: 0,
       width: 200,
@@ -147,7 +147,7 @@ describe('layout pointer fallbacks', () => {
       topClip: 40,
       continuesFromPrev: true,
     };
-    const layout: Layout = {
+    const layout: PageLayout = {
       pageSize: { w: 300, h: 400 },
       pages: [
         {
@@ -158,14 +158,14 @@ describe('layout pointer fallbacks', () => {
         },
       ],
     };
-    const pageHit = { pageIndex: 0, page: layout.pages[0], pageY: 5 };
+    const pageTarget = { pageIndex: 0, page: layout.pages[0], pageY: 5 };
     const point = { x: 0, y: 5 };
-    const fragmentHit = resolveFragmentHit(pageHit, [table], [tableMeasure], point);
-    const cellHit = resolveTableCellHit(pageHit, [table], [tableMeasure], point);
+    const fragmentTarget = resolveFragmentTarget(pageTarget, [table], [tableMetrics], point);
+    const cellTarget = resolveTableCellTarget(pageTarget, [table], [tableMetrics], point);
 
-    expect(fragmentHit).not.toBeNull();
-    expect(cellHit?.localY).toBe(45);
-    expect(fragmentHit && pointerToDocPos(fragmentHit, cellHit)).toBe(14);
+    expect(fragmentTarget).not.toBeNull();
+    expect(cellTarget?.localY).toBe(45);
+    expect(fragmentTarget && pointerToDocPos(fragmentTarget, cellTarget)).toBe(14);
 
     const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
     Object.defineProperty(globalThis, 'document', {
@@ -181,13 +181,13 @@ describe('layout pointer fallbacks', () => {
     });
     resetCanvasContext();
     try {
-      expect(getCaretPosition(layout, [table], [tableMeasure], 16)).toEqual({
+      expect(getCaretPosition(layout, [table], [tableMetrics], 16)).toEqual({
         x: 28,
         y: 0,
         height: 20,
         pageIndex: 0,
       });
-      expect(rectsForSelection(layout, [table], [tableMeasure], 14, 21)).toEqual([
+      expect(rectsForSelection(layout, [table], [tableMetrics], 14, 21)).toEqual([
         {
           x: 12,
           y: 0,

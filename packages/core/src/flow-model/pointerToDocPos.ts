@@ -90,12 +90,12 @@ export function pointerToDocPos(
  * @public
  */
 export function pointerToDocPosInParagraph(
-  block: ParagraphBlock,
-  measure: ParagraphMetrics,
+  node: ParagraphBlock,
+  metrics: ParagraphMetrics,
   fragment: ParagraphFragment,
   point: Point
 ): PositionResult | null {
-  const lines = measure.lines;
+  const lines = metrics.lines;
   if (lines.length === 0) return null;
 
   const lineIndex = lineAt(lines, fragment, point.y);
@@ -105,10 +105,10 @@ export function pointerToDocPosInParagraph(
   // Text starts inside the line's own indent — and, on the first line of a list
   // item, after the marker, which is painted but is not part of the document.
   const isFirstLine = lineIndex === 0;
-  const indent = lineStartOffset(block, isFirstLine) + (line.leftOffset ?? 0);
+  const indent = lineStartOffset(node, isFirstLine) + (line.leftOffset ?? 0);
   const x = point.x - indent;
 
-  return characterAt(block, line, lineIndex, x);
+  return characterAt(node, line, lineIndex, x);
 }
 
 /**
@@ -122,44 +122,44 @@ export function pointerToDocPosInTableCell(
   cellTarget: TableCellTarget,
   point: Point
 ): PositionResult | null {
-  // A cell holds a block flow of its own, so walk it the way a page walks its
+  // A cell holds a node flow of its own, so walk it the way a page walks its
   // nodes: down, accumulating heights, until the point is inside one. The last
-  // block absorbs anything below it, so a click in the cell's bottom padding
+  // node absorbs anything below it, so a click in the cell's bottom padding
   // lands at the end of its text rather than nowhere.
   const nodes = cellTarget.cell.nodes;
-  const metrics = cellTarget.metrics.metrics;
+  const cellMetrics = cellTarget.metrics.metrics;
 
   let y = 0;
   let last: PositionResult | null = null;
 
   for (let i = 0; i < nodes.length; i++) {
-    const block = nodes[i];
-    const measure = metrics[i];
-    const height = blockHeight(measure);
+    const node = nodes[i];
+    const metrics = cellMetrics[i];
+    const height = blockHeight(metrics);
 
     const inside = point.y < y + height;
 
-    if (block.kind === 'paragraph' && measure?.kind === 'paragraph') {
+    if (node.kind === 'paragraph' && metrics?.kind === 'paragraph') {
       const local: Point = { x: point.x, y: point.y - y };
       const wholeBlock: ParagraphFragment = {
         kind: 'paragraph',
-        nodeId: block.id,
+        nodeId: node.id,
         x: 0,
         y: 0,
         width: cellTarget.contentWidth,
         height,
         fromLine: 0,
-        toLine: measure.lines.length,
+        toLine: metrics.lines.length,
       };
-      const result = pointerToDocPosInParagraph(block, measure, wholeBlock, local);
+      const result = pointerToDocPosInParagraph(node, metrics, wholeBlock, local);
       if (result) {
         if (inside) return result;
         last = result;
       }
-    } else if (block.docFrom !== undefined) {
+    } else if (node.docFrom !== undefined) {
       // A nested table or an image: the caret goes to its front.
       const result: PositionResult = {
-        pos: block.docFrom,
+        pos: node.docFrom,
         lineIndex: 0,
         runIndex: 0,
         charOffset: 0,
@@ -174,16 +174,16 @@ export function pointerToDocPosInTableCell(
   return last;
 }
 
-/** Vertical footprint of one block inside a cell. */
-function blockHeight(measure: LayoutMetrics | undefined): number {
-  if (!measure) return 0;
-  switch (measure.kind) {
+/** Vertical footprint of one node inside a cell. */
+function blockHeight(metrics: LayoutMetrics | undefined): number {
+  if (!metrics) return 0;
+  switch (metrics.kind) {
     case 'paragraph':
     case 'table':
-      return measure.totalHeight;
+      return metrics.totalHeight;
     case 'image':
     case 'textBox':
-      return measure.height;
+      return metrics.height;
     default:
       return 0;
   }
@@ -196,18 +196,18 @@ function blockHeight(measure: LayoutMetrics | undefined): number {
  * @public
  */
 export function positionToX(
-  block: ParagraphBlock,
-  measure: ParagraphMetrics,
+  node: ParagraphBlock,
+  metrics: ParagraphMetrics,
   line: MeasuredLine,
   pmPos: number
 ): number {
-  const lineIndex = measure.lines.indexOf(line);
-  const indent = lineStartOffset(block, lineIndex === 0) + (line.leftOffset ?? 0);
+  const lineIndex = metrics.lines.indexOf(line);
+  const indent = lineStartOffset(node, lineIndex === 0) + (line.leftOffset ?? 0);
 
   let x = indent;
 
   for (let runIndex = line.fromRun; runIndex <= line.toRun; runIndex++) {
-    const run = block.runs[runIndex];
+    const run = node.runs[runIndex];
     if (!run) continue;
 
     const from = runIndex === line.fromRun ? line.fromChar : 0;
@@ -215,10 +215,10 @@ export function positionToX(
 
     const runStart = run.docFrom;
     if (runStart !== undefined && pmPos >= runStart + from && pmPos <= runStart + to) {
-      return x + advanceWithin(block, line, runIndex, run, from, pmPos - runStart);
+      return x + advanceWithin(node, line, runIndex, run, from, pmPos - runStart);
     }
 
-    x += advanceWithin(block, line, runIndex, run, from, to);
+    x += advanceWithin(node, line, runIndex, run, from, to);
   }
 
   return x;
@@ -231,26 +231,26 @@ export function positionToX(
  * @public
  */
 export function getPositionRect(
-  block: ContentNode,
-  measure: LayoutMetrics,
+  node: ContentNode,
+  metrics: LayoutMetrics,
   fragment: Fragment,
   pmPos: number
 ): { x: number; y: number; width: number; height: number } | null {
-  if (fragment.kind !== 'paragraph' || block.kind !== 'paragraph' || measure.kind !== 'paragraph') {
+  if (fragment.kind !== 'paragraph' || node.kind !== 'paragraph' || metrics.kind !== 'paragraph') {
     // A non-paragraph fragment has no interior — its box IS its position.
     return { x: fragment.x, y: fragment.y, width: fragment.width, height: fragment.height };
   }
 
-  const lines = measure.lines;
+  const lines = metrics.lines;
   let y = fragment.y;
 
   for (let i = fragment.fromLine; i < fragment.toLine && i < lines.length; i++) {
     const line = lines[i];
     y += line.floatSkipBefore ?? 0;
 
-    if (containsPosition(block, line, pmPos)) {
+    if (containsPosition(node, line, pmPos)) {
       return {
-        x: fragment.x + positionToX(block, measure, line, pmPos),
+        x: fragment.x + positionToX(node, metrics, line, pmPos),
         y,
         width: 0,
         height: line.lineHeight,
@@ -290,7 +290,7 @@ function lineAt(lines: MeasuredLine[], fragment: ParagraphFragment, localY: numb
 
 /** The character boundary nearest `x` on a line. */
 function characterAt(
-  block: ParagraphBlock,
+  node: ParagraphBlock,
   line: MeasuredLine,
   lineIndex: number,
   x: number
@@ -298,16 +298,16 @@ function characterAt(
   let penX = 0;
 
   for (let runIndex = line.fromRun; runIndex <= line.toRun; runIndex++) {
-    const run = block.runs[runIndex];
+    const run = node.runs[runIndex];
     if (!run) continue;
 
     const from = runIndex === line.fromRun ? line.fromChar : 0;
     const to = runIndex === line.toRun ? line.toChar : runLength(run);
-    const width = advanceWithin(block, line, runIndex, run, from, to);
+    const width = advanceWithin(node, line, runIndex, run, from, to);
 
     if (x <= penX + width || runIndex === line.toRun) {
       const within = Math.max(0, x - penX);
-      const charOffset = charOffsetAt(block, line, runIndex, run, from, to, within);
+      const charOffset = charOffsetAt(node, line, runIndex, run, from, to, within);
       const runStart = run.docFrom;
 
       return {
@@ -326,7 +326,7 @@ function characterAt(
 
 /** Characters into `run` (from its start) at `x` px into the `[from, to)` slice. */
 function charOffsetAt(
-  block: ParagraphBlock,
+  node: ParagraphBlock,
   line: MeasuredLine,
   runIndex: number,
   run: Run,
@@ -337,11 +337,11 @@ function charOffsetAt(
   if (run.kind !== 'text') {
     // An atom — a tab, an image, a field. The caret goes before it or after it,
     // never inside.
-    return x > advanceWithin(block, line, runIndex, run, from, to) / 2 ? to : from;
+    return x > advanceWithin(node, line, runIndex, run, from, to) / 2 ? to : from;
   }
 
   const slice = run.text.slice(from, to);
-  const style = resolveFontStyle(run, documentDefaults(block));
+  const style = resolveFontStyle(run, documentDefaults(node));
   return from + charIndexAtX(slice, style, x);
 }
 
@@ -359,7 +359,7 @@ function charOffsetAt(
  * table-of-contents entry and every right-tabbed header.
  */
 function advanceWithin(
-  block: ParagraphBlock,
+  node: ParagraphBlock,
   line: MeasuredLine,
   runIndex: number,
   run: Run,
@@ -373,12 +373,12 @@ function advanceWithin(
   if (run.kind === 'image') return run.width;
 
   if (run.kind === 'text') {
-    const style = resolveFontStyle(run, documentDefaults(block));
+    const style = resolveFontStyle(run, documentDefaults(node));
     return getXForCharacter(run.text.slice(from, to), style, to - from);
   }
 
   if (run.kind === 'field') {
-    const style = resolveFontStyle(run, documentDefaults(block));
+    const style = resolveFontStyle(run, documentDefaults(node));
     return getXForCharacter(run.fallback, style, run.fallback.length);
   }
 
@@ -393,9 +393,9 @@ function runLength(run: Run): number {
   return run.kind === 'text' ? run.text.length : 1;
 }
 
-function containsPosition(block: ParagraphBlock, line: MeasuredLine, pmPos: number): boolean {
-  const first = block.runs[line.fromRun];
-  const last = block.runs[line.toRun];
+function containsPosition(node: ParagraphBlock, line: MeasuredLine, pmPos: number): boolean {
+  const first = node.runs[line.fromRun];
+  const last = node.runs[line.toRun];
   if (!first || !last || first.docFrom === undefined || last.docFrom === undefined) return false;
 
   return pmPos >= first.docFrom + line.fromChar && pmPos <= last.docFrom + line.toChar;
@@ -406,19 +406,19 @@ function containsPosition(block: ParagraphBlock, line: MeasuredLine, pmPos: numb
  * of a list item — the marker, which occupies width but holds no document
  * position.
  */
-function lineStartOffset(block: ParagraphBlock, isFirstLine: boolean): number {
-  const indent = block.attrs?.indent;
+function lineStartOffset(node: ParagraphBlock, isFirstLine: boolean): number {
+  const indent = node.attrs?.indent;
   const left = indent?.left ?? 0;
   if (!isFirstLine) return left;
 
   const firstLine = indent?.firstLine ?? 0;
   const hanging = indent?.hanging ?? 0;
-  return left + firstLine - hanging + getListMarkerInlineWidth(block);
+  return left + firstLine - hanging + getListMarkerInlineWidth(node);
 }
 
-function documentDefaults(block: ParagraphBlock): { fontFamily?: string; fontSize?: number } {
+function documentDefaults(node: ParagraphBlock): { fontFamily?: string; fontSize?: number } {
   return {
-    fontFamily: block.attrs?.defaultFontFamily,
-    fontSize: block.attrs?.defaultFontSize,
+    fontFamily: node.attrs?.defaultFontFamily,
+    fontSize: node.attrs?.defaultFontSize,
   };
 }

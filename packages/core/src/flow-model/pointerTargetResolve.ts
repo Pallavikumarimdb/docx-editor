@@ -57,7 +57,7 @@ export interface PageTarget {
 }
 
 /**
- * A fragment, the block it paints, and where in it the point fell.
+ * A fragment, the node it paints, and where in it the point fell.
  *
  * @public
  */
@@ -256,7 +256,7 @@ export function resolveTableCellTarget(
   // `topClip` when it began on the previous page. Local Y is measured from the
   // fragment's top, so the clipped part has to be added back to land in the
   // table's own coordinate space.
-  const tableY = hit.localY + rowTop(measure, fragment.fromRow) + (fragment.topClip ?? 0);
+  const tableY = hit.localY + rowTop(tableMetrics, fragment.fromRow) + (fragment.topClip ?? 0);
   const tableX = hit.localX;
 
   const rowIndex = rowAt(tableMetrics, tableY, fragment.fromRow, fragment.toRow);
@@ -406,69 +406,69 @@ function distanceToBox(
 }
 
 /**
- * `block.id → (block, measure)`, so a fragment can find what it paints.
+ * `node.id → (node, metrics)`, so a fragment can find what it paints.
  *
  * A fragment carries a `nodeId`, not an index, because a paragraph that split
- * across three pages produces three fragments that all point at the same block.
+ * across three pages produces three fragments that all point at the same node.
  */
 function nodeIndex(
   nodes: ContentNode[],
-  metrics: LayoutMetrics[]
+  allMetrics: LayoutMetrics[]
 ): Map<string, { node: ContentNode; metrics: LayoutMetrics }> {
   const map = new Map<string, { node: ContentNode; metrics: LayoutMetrics }>();
   for (let i = 0; i < nodes.length; i++) {
-    const nodeMetrics = metrics[i];
-    if (nodeMetrics) map.set(String(nodes[i].id), { node: nodes[i], metrics: nodeMetrics });
+    const metrics = allMetrics[i];
+    if (metrics) map.set(String(nodes[i].id), { node: nodes[i], metrics });
   }
   return map;
 }
 
-function rowTop(measure: TableMetrics, rowIndex: number): number {
+function rowTop(metrics: TableMetrics, rowIndex: number): number {
   let y = 0;
-  for (let i = 0; i < rowIndex && i < measure.rows.length; i++) {
-    y += measure.rows[i].height;
+  for (let i = 0; i < rowIndex && i < metrics.rows.length; i++) {
+    y += metrics.rows[i].height;
   }
   return y;
 }
 
-function rowAt(measure: TableMetrics, y: number, fromRow: number, toRow: number): number | null {
-  if (measure.rows.length === 0) return null;
+function rowAt(metrics: TableMetrics, y: number, fromRow: number, toRow: number): number | null {
+  if (metrics.rows.length === 0) return null;
 
-  let top = rowTop(measure, fromRow);
-  for (let i = fromRow; i < Math.min(toRow, measure.rows.length); i++) {
-    const bottom = top + measure.rows[i].height;
+  let top = rowTop(metrics, fromRow);
+  for (let i = fromRow; i < Math.min(toRow, metrics.rows.length); i++) {
+    const bottom = top + metrics.rows[i].height;
     if (y < bottom) return i;
     top = bottom;
   }
-  return Math.min(toRow, measure.rows.length) - 1;
+  return Math.min(toRow, metrics.rows.length) - 1;
 }
 
-function columnLeft(measure: TableMetrics, columnIndex: number): number {
+function columnLeft(metrics: TableMetrics, columnIndex: number): number {
   let x = 0;
-  for (let i = 0; i < columnIndex && i < measure.columnWidths.length; i++) {
-    x += measure.columnWidths[i];
+  for (let i = 0; i < columnIndex && i < metrics.columnWidths.length; i++) {
+    x += metrics.columnWidths[i];
   }
   return x;
 }
 
-function columnWidth(measure: TableMetrics, columnIndex: number, span: number): number {
+function columnWidth(metrics: TableMetrics, columnIndex: number, span: number): number {
   let w = 0;
-  for (let i = columnIndex; i < columnIndex + span && i < measure.columnWidths.length; i++) {
-    w += measure.columnWidths[i];
+  for (let i = columnIndex; i < columnIndex + span && i < metrics.columnWidths.length; i++) {
+    w += metrics.columnWidths[i];
   }
   return w;
 }
 
-function columnAt(measure: TableMetrics, x: number): number | null {
-  if (measure.columnWidths.length === 0) return null;
+function columnAt(metrics: TableMetrics, x: number): number | null {
+  if (metrics.columnWidths.length === 0) return null;
 
   let left = 0;
-  for (let i = 0; i < measure.columnWidths.length; i++) {
-    const right = left + measure.columnWidths[i];
+  for (let i = 0; i < metrics.columnWidths.length; i++) {
+    const right = left + metrics.columnWidths[i];
     if (x < right) return i;
     left = right;
   }
-  return measure.columnWidths.length - 1;
+  return metrics.columnWidths.length - 1;
 }
 
 function clamp(value: number, min: number, max: number): number {

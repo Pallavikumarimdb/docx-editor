@@ -53,7 +53,7 @@ export function buildTableRowBreakInfo(node: TableBlock, metrics: TableMetrics):
   const resolved = resolveCellGrid(node);
   const breakOffsets: number[][] = [];
   for (let r = 0; r < rowCount; r++) {
-    const rowHeight = measure.rows[r]?.height ?? 0;
+    const rowHeight = metrics.rows[r]?.height ?? 0;
     const candidates = new Set<number>();
     candidates.add(rowHeight);
     const unbreakableRanges: Array<{ top: number; bottom: number }> = [];
@@ -65,7 +65,7 @@ export function buildTableRowBreakInfo(node: TableBlock, metrics: TableMetrics):
       if (!sourceCell || !measuredCell) continue;
       // OOXML/TableNormal default top padding is 0 (matches measureTable).
       const padTop = sourceCell.padding?.top ?? 0;
-      const layout = layoutCellContent(sourceCell.blocks, measuredCell.blocks, padTop);
+      const layout = layoutCellContent(sourceCell.nodes, measuredCell.metrics, padTop);
       const cellBottomRow = Math.min(rowCount, g.rowIndex + g.rowSpan);
       const cellHeight = rowTops[cellBottomRow] - rowTops[g.rowIndex];
       const measuredHeight = measuredCell.height ?? 0;

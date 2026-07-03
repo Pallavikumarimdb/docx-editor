@@ -72,7 +72,7 @@ export function layoutTable(
     const headerOverhead = repeatsHeader ? headerHeight : 0;
     const available = region.bottom - top - headerOverhead;
 
-    const slice = fitTableRows(block, measure, info, row, rowOffset, available);
+    const slice = fitTableRows(node, metrics, info, row, rowOffset, available);
 
     if (slice.consumed <= 0) {
       // Nothing fits. Move on — but ONLY if there is somewhere to move to.
@@ -149,14 +149,14 @@ export interface TableRowSlice {
  * `snapRowBreak` is for.
  */
 export function fitTableRows(
-  block: TableBlock,
-  measure: TableMeasure,
+  node: TableBlock,
+  metrics: TableMetrics,
   info: TableRowBreakInfo,
   row: number,
   rowOffset: number,
   available: number
 ): TableRowSlice {
-  const rowCount = measure.rows.length;
+  const rowCount = metrics.rows.length;
   let consumed = 0;
   let r = row;
   let offset = rowOffset;

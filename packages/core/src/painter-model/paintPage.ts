@@ -273,11 +273,11 @@ function applyPageBorderSide(
 
 function paintPageBorderOverlay(
   page: Page,
-  options: RenderPageOptions,
+  config: RenderPageOptions,
   doc: Document,
   sectionPageNumber = page.number
 ): HTMLElement | null {
-  const pb = options.pageBorders;
+  const pb = config.pageBorders;
   if (!pb || !pageBorderShouldRender(sectionPageNumber, pb.display)) return null;
 
   const hasBorder = [pb.top, pb.bottom, pb.left, pb.right].some(
@@ -438,8 +438,8 @@ export function paintPage(
 ): HTMLElement {
   const furniture = getPageFurniture(page);
   if (furniture) {
-    options = {
-      ...options,
+    config = {
+      ...config,
       headerContent: furniture.headerContent,
       footerContent: furniture.footerContent,
       firstPageHeaderContent: undefined,
@@ -450,7 +450,7 @@ export function paintPage(
       pageBorders: furniture.pageBorders,
     };
   }
-  const doc = options.document ?? document;
+  const doc = config.document ?? document;
 
   // Create page container
   const pageEl = doc.createElement('div');
@@ -474,11 +474,11 @@ export function paintPage(
 
   const pageBorderEl = paintPageBorderOverlay(
     page,
-    options,
+    config,
     doc,
     furniture?.sectionPageNumber ?? page.number
   );
-  if (pageBorderEl && options.pageBorders?.zOrder === 'back') {
+  if (pageBorderEl && config.pageBorders?.zOrder === 'back') {
     pageEl.appendChild(pageBorderEl);
   }
 
@@ -496,15 +496,15 @@ export function paintPage(
   const floatingRects: FloatingExclusionRect[] = [];
 
   for (const fragment of page.fragments) {
-    if (fragment.kind === 'paragraph' && options.blockLookup) {
-      const blockData = options.blockLookup.get(String(fragment.blockId));
-      if (blockData?.block.kind === 'paragraph' && blockData.measure.kind === 'paragraph') {
-        const paragraphBlock = blockData.block as ParagraphBlock;
+    if (fragment.kind === 'paragraph' && config.nodeLookup) {
+      const nodeData = config.nodeLookup.get(String(fragment.nodeId));
+      if (nodeData?.node.kind === 'paragraph' && nodeData.metrics.kind === 'paragraph') {
+        const paragraphBlock = nodeData.node as ParagraphBlock;
         // Fragment Y is relative to page top, we need it relative to content area
         const contentRelativeY = fragment.y - page.margins.top;
         const extracted = extractFloatingImagesFromParagraph(
           paragraphBlock,
-          blockData.measure as ParagraphMetrics,
+          nodeData.metrics as ParagraphMetrics,
           fragment.fromLine,
           fragment.toLine,
           contentRelativeY,
@@ -539,9 +539,9 @@ export function paintPage(
   if (config.nodeLookup) {
     for (const fragment of page.fragments) {
       if (fragment.kind !== 'table') continue;
-      const blockData = config.nodeLookup.get(String(fragment.nodeId));
-      if (blockData?.block.kind !== 'table') continue;
-      const tableBlock = blockData.block as TableBlock;
+      const nodeData = config.nodeLookup.get(String(fragment.nodeId));
+      if (nodeData?.node.kind !== 'table') continue;
+      const tableBlock = nodeData.node as TableBlock;
       const floating = tableBlock.floating;
       if (!floating) continue;
 
@@ -573,9 +573,9 @@ export function paintPage(
   if (config.nodeLookup) {
     for (const fragment of page.fragments) {
       if (fragment.kind !== 'textBox') continue;
-      const blockData = config.nodeLookup.get(String(fragment.nodeId));
-      if (blockData?.block.kind !== 'textBox') continue;
-      const textBoxBlock = blockData.block as TextBoxBlock;
+      const nodeData = config.nodeLookup.get(String(fragment.nodeId));
+      if (nodeData?.node.kind !== 'textBox') continue;
+      const textBoxBlock = nodeData.node as TextBoxBlock;
       if (!isFloatingTextBoxBlock(textBoxBlock)) continue;
 
       const anchorContentY = fragment.y - page.margins.top;
@@ -637,9 +637,9 @@ export function paintPage(
   // Helper to peek at a fragment's paragraph borders (for border grouping)
   const getParaBorders = (frag: Fragment): ParagraphBorders | undefined => {
     if (frag.kind !== 'paragraph' || !config.nodeLookup || !frag.nodeId) return undefined;
-    const blockData = config.nodeLookup.get(String(frag.nodeId));
-    if (blockData?.block.kind === 'paragraph')
-      return (blockData.block as ParagraphBlock).attrs?.borders;
+    const nodeData = config.nodeLookup.get(String(frag.nodeId));
+    if (nodeData?.node.kind === 'paragraph')
+      return (nodeData.node as ParagraphBlock).attrs?.borders;
     return undefined;
   };
 
@@ -650,7 +650,7 @@ export function paintPage(
   // fragment, derived from its block's `sdtGroups` (set in buildBoxTree).
   const sdtGroupsOf = (frag: Fragment): SdtGroup[] => {
     if (!config.nodeLookup || !frag.nodeId) return [];
-    return config.nodeLookup.get(String(frag.nodeId))?.block.sdtGroups ?? [];
+    return config.nodeLookup.get(String(frag.nodeId))?.node.sdtGroups ?? [];
   };
 
   /**
@@ -682,14 +682,14 @@ export function paintPage(
 
     // If we have block lookup, try to render full content based on fragment type
     if (config.nodeLookup && fragment.nodeId) {
-      const blockData = config.nodeLookup.get(String(fragment.nodeId));
+      const nodeData = config.nodeLookup.get(String(fragment.nodeId));
 
       if (
         fragment.kind === 'paragraph' &&
-        blockData?.block.kind === 'paragraph' &&
-        blockData?.measure.kind === 'paragraph'
+        nodeData?.node.kind === 'paragraph' &&
+        nodeData?.metrics.kind === 'paragraph'
       ) {
-        const paragraphBlock = blockData.block as ParagraphBlock;
+        const paragraphBlock = nodeData.node as ParagraphBlock;
         const nextBorders =
           i + 1 < page.fragments.length ? getParaBorders(page.fragments[i + 1]) : undefined;
         const blockKey = String(fragment.nodeId);
@@ -700,7 +700,7 @@ export function paintPage(
         }
 
         // Re-measure paragraph with floating zones for text wrapping
-        let paragraphMetrics = blockData.measure as ParagraphMetrics;
+        let paragraphMetrics = nodeData.metrics as ParagraphMetrics;
         if (floatingZones.length > 0) {
           paragraphMetrics = paragraphLayout(paragraphBlock, contentWidth, {
             floatingZones,
@@ -724,39 +724,39 @@ export function paintPage(
         prevParagraphBorders = paragraphBlock.attrs?.borders;
       } else if (
         fragment.kind === 'table' &&
-        blockData?.block.kind === 'table' &&
-        blockData?.measure.kind === 'table'
+        nodeData?.node.kind === 'table' &&
+        nodeData?.metrics.kind === 'table'
       ) {
         fragmentEl = paintTableFragment(
           fragment as TableFragment,
-          blockData.block as TableBlock,
-          blockData.measure as TableMetrics,
+          nodeData.node as TableBlock,
+          nodeData.metrics as TableMetrics,
           fragmentContext,
           { document: doc }
         );
         prevParagraphBorders = undefined;
       } else if (
         fragment.kind === 'image' &&
-        blockData?.block.kind === 'image' &&
-        blockData?.measure.kind === 'image'
+        nodeData?.node.kind === 'image' &&
+        nodeData?.metrics.kind === 'image'
       ) {
         fragmentEl = paintImageFragment(
           fragment as ImageFragment,
-          blockData.block as ImageBlock,
-          blockData.measure as ImageMetrics,
+          nodeData.node as ImageBlock,
+          nodeData.metrics as ImageMetrics,
           fragmentContext,
           { document: doc }
         );
         prevParagraphBorders = undefined;
       } else if (
         fragment.kind === 'textBox' &&
-        blockData?.block.kind === 'textBox' &&
-        blockData?.measure.kind === 'textBox'
+        nodeData?.node.kind === 'textBox' &&
+        nodeData?.metrics.kind === 'textBox'
       ) {
         fragmentEl = paintTextBoxFragment(
           fragment as TextBoxFragment,
-          blockData.block as TextBoxBlock,
-          blockData.measure as TextBoxMetrics,
+          nodeData.node as TextBoxBlock,
+          nodeData.metrics as TextBoxMetrics,
           fragmentContext,
           { document: doc }
         );
@@ -854,10 +854,9 @@ export function paintPage(
     const headerDistance = config.headerDistance ?? page.margins.header ?? defaultHeaderDistance;
     const headerContentWidth = page.size.w - page.margins.left - page.margins.right;
     const availableHeaderHeight = Math.max(page.margins.top - headerDistance, 48);
-    const headerVisualTop = options.headerContent?.visualTop ?? 0;
-    const headerFlowHeight =
-      options.headerContent?.flowHeight ?? options.headerContent?.height ?? 0;
-    const headerVisualBottom = options.headerContent?.visualBottom ?? headerFlowHeight;
+    const headerVisualTop = config.headerContent?.visualTop ?? 0;
+    const headerFlowHeight = config.headerContent?.flowHeight ?? config.headerContent?.height ?? 0;
+    const headerVisualBottom = config.headerContent?.visualBottom ?? headerFlowHeight;
     // The interactive box height tracks the in-flow band (`flowHeight`), NOT the
     // float-inclusive `visualBottom`. A page/margin-anchored shape (e.g. a
     // full-page letterhead in a header) overflows the band visually but must not
@@ -890,7 +889,7 @@ export function paintPage(
     headerEl.style.minHeight = `${interactiveHeaderHeight}px`;
 
     let shouldClipHeader = !headerOverflows && !headerExtendsBeyondFlow;
-    if (options.headerContent && options.headerContent.blocks.length > 0) {
+    if (config.headerContent && config.headerContent.nodes.length > 0) {
       const layout: HeaderFooterLayoutInfo = {
         flowTop: headerDistance,
         flowLeft: page.margins.left,
@@ -926,10 +925,9 @@ export function paintPage(
     const footerDistance = config.footerDistance ?? page.margins.footer ?? defaultFooterDistance;
     const footerContentWidth = page.size.w - page.margins.left - page.margins.right;
     const availableFooterHeight = Math.max(page.margins.bottom - footerDistance, 48);
-    const footerVisualTop = options.footerContent?.visualTop ?? 0;
-    const footerFlowHeight =
-      options.footerContent?.flowHeight ?? options.footerContent?.height ?? 0;
-    const footerVisualBottom = options.footerContent?.visualBottom ?? footerFlowHeight;
+    const footerVisualTop = config.footerContent?.visualTop ?? 0;
+    const footerFlowHeight = config.footerContent?.flowHeight ?? config.footerContent?.height ?? 0;
+    const footerVisualBottom = config.footerContent?.visualBottom ?? footerFlowHeight;
     const footerVisualHeight =
       Math.max(footerFlowHeight, footerVisualBottom) - Math.min(0, footerVisualTop);
     const footerOverflows = footerVisualHeight > availableFooterHeight;
@@ -958,7 +956,7 @@ export function paintPage(
     footerEl.style.minHeight = `${interactiveFooterHeight}px`;
 
     let shouldClipFooter = !footerOverflows && !footerExtendsBeyondFlow;
-    if (options.footerContent && options.footerContent.blocks.length > 0) {
+    if (config.footerContent && config.footerContent.nodes.length > 0) {
       const layout: HeaderFooterLayoutInfo = {
         flowTop: page.size.h - footerDistance - footerFlowHeight,
         flowLeft: page.margins.left,

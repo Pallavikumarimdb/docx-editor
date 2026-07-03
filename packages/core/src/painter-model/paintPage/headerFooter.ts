@@ -19,7 +19,7 @@ import type {
   ImageFragment,
   TextBoxFragment,
 } from '../../pagination-model/types';
-import { assertExhaustiveFlowBlock } from '../../pagination-model/types';
+import { assertExhaustiveContentNode } from '../../pagination-model/types';
 import { isFloatingTextBoxBlock } from '../../pagination-model/textBoxFlow';
 import { paintParagraphFragment } from '../renderParagraph';
 import { paintTableFragment } from '../renderTable';

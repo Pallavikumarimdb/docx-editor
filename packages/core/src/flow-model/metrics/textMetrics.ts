@@ -340,7 +340,7 @@ export function measureText(text: string, style: FontStyle): TextMeasurement {
 }
 
 /**
- * LayoutMetrics a run, including the per-character advances hit-testing needs.
+ * Measure a run, including the per-character advances hit-testing needs.
  *
  * @public
  */
@@ -471,7 +471,7 @@ interface SegmenterLike {
 
 type SegmenterConstructor = new (
   locales?: string | string[],
-  options?: { granularity: 'grapheme' }
+  config?: { granularity: 'grapheme' }
 ) => SegmenterLike;
 
 /**

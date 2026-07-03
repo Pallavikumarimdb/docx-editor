@@ -1,22 +1,31 @@
 /**
- * A block slice inside one page's footnote area.
+ * A content-node slice inside one page's footnote area.
  *
- * The source block index points into the owning FootnoteContent.
+ * The source node index points into the owning FootnoteContent.
  *
  * @public
  */
-export type FootnoteBlockFragment =
+export type FootnoteNodeFragment =
   | {
       kind: 'paragraph';
-      blockIndex: number;
+      nodeIndex: number;
       y: number;
       height: number;
       fromLine: number;
       toLine: number;
+      /**
+       * Exact half-open content range painted by this slice. These addresses
+       * remain stable when the same footnote is remeasured at another width,
+       * while `fromLine`/`toLine` are local to that page's measurement.
+       */
+      fromRun?: number;
+      fromChar?: number;
+      toRun?: number;
+      toChar?: number;
     }
   | {
       kind: 'table';
-      blockIndex: number;
+      nodeIndex: number;
       y: number;
       height: number;
       fromRow: number;
@@ -26,7 +35,7 @@ export type FootnoteBlockFragment =
     }
   | {
       kind: 'image' | 'textBox';
-      blockIndex: number;
+      nodeIndex: number;
       y: number;
       height: number;
     };
@@ -39,7 +48,7 @@ export type FootnoteBlockFragment =
 export interface FootnoteFragment {
   footnoteId: number;
   displayNumber: number;
-  blocks: FootnoteBlockFragment[];
+  nodes: FootnoteNodeFragment[];
   height: number;
   /** The page starts with content carried from an earlier page. */
   continuesFromPrev?: boolean;

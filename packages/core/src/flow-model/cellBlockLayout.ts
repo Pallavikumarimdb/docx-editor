@@ -15,9 +15,9 @@
 import type { ContentNode, LayoutMetrics } from '../pagination-model/types';
 
 export interface CellContentLayout {
-  /** Per block, its top y relative to `startY`; unavailable for unmeasured blocks. */
+  /** Per block, its top y relative to `startY`; unavailable for unmeasured nodes. */
   blockTops: Array<number | undefined>;
-  /** Per block, the top y of each line (relative to `startY`). Atomic/non-paragraph blocks → []. */
+  /** Per block, the top y of each line (relative to `startY`). Atomic/non-paragraph nodes → []. */
   lineTops: number[][];
   /**
    * All line bottoms in document order, plus one entry per atomic block (its

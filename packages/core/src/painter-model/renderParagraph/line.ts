@@ -410,11 +410,11 @@ export function paintLine(
     const run = runsForLine[i];
 
     if (isTabRun(run) && tabRuler) {
-      // LayoutMetrics the content after this tab so end/center/decimal stops can
+      // Measure the content after this tab so end/center/decimal stops can
       // anchor it to the stop. Per-run measurement (not a single-font pass)
       // keeps the tab width accurate when trailing runs differ in font/size.
-      const followingWidth = measureFollowingContentWidth(runsForLine, i, options?.context);
-      const followingText = getTextAfterTab(runsForLine, i, options?.context);
+      const followingWidth = measureFollowingContentWidth(runsForLine, i, config?.context);
+      const followingText = getTextAfterTab(runsForLine, i, config?.context);
       const decimalIndex = followingText.indexOf('.');
       const decimalPrefixWidth =
         decimalIndex >= 0 ? measureDefaultText(followingText.slice(0, decimalIndex)) : 0;
@@ -585,8 +585,8 @@ export function paintLine(
       lineEl.appendChild(runEl);
       // Estimate field text width for tab calculations
       let fieldText = run.fallback ?? '';
-      if (run.fieldType === 'PAGE') fieldText = String(options.context.pageNumber);
-      else if (run.fieldType === 'NUMPAGES') fieldText = String(options.context.totalPages);
+      if (run.fieldType === 'PAGE') fieldText = String(config.context.pageNumber);
+      else if (run.fieldType === 'NUMPAGES') fieldText = String(config.context.totalPages);
       currentX += measureTextWidth(fieldText, resolveFontStyle(run));
     } else {
       // Fallback for unknown run types

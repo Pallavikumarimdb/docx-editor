@@ -8,11 +8,11 @@
 
 import {
   DEFAULT_TEXTBOX_MARGINS,
-  type BlockId,
-  type FlowBlock,
-  type Measure,
+  type NodeId,
+  type ContentNode,
+  type LayoutMetrics,
   type ParagraphMetrics,
-  type TableMeasure,
+  type TableMetrics,
 } from '../pagination-model/types';
 import { layoutCellContent } from './cellBlockLayout';
 
@@ -23,20 +23,20 @@ const MAX_REFERENCE_GEOMETRY_BLOCKS = 10_000;
  * Where a footnote reference lives.
  *
  * `pmPos` identifies ordinary paragraph fragments. Table references also carry
- * their outer row and, when measures are available, the marker line's midpoint
+ * their outer row and, when metrics are available, the marker line's midpoint
  * within that row.
  */
 export type FootnoteRefLocation = {
   footnoteId: number;
   pmPos: number;
-  tableBlockId?: BlockId;
+  tableNodeId?: NodeId;
   rowIndex?: number;
   rowOffset?: number;
   rowHeight?: number;
 };
 
 interface TableContext {
-  tableBlockId: BlockId;
+  tableNodeId: NodeId;
   rowTops: number[];
   sourceRowIndex: number;
 }
@@ -54,9 +54,9 @@ interface GeometryBudget {
 function measuredRowLocation(
   tableCtx: TableContext,
   geometry: CellGeometry | undefined,
-  blockIndex: number,
+  nodeIndex: number,
   runIndex: number,
-  measure: Measure | undefined
+  measure: LayoutMetrics | undefined
 ): Pick<FootnoteRefLocation, 'rowIndex' | 'rowOffset' | 'rowHeight'> {
   if (!geometry || measure?.kind !== 'paragraph') {
     return { rowIndex: tableCtx.sourceRowIndex };
@@ -67,7 +67,7 @@ function measuredRowLocation(
     const endsAfterRun = line.toRun > runIndex || (line.toRun === runIndex && line.toChar > 0);
     return startsBeforeRun && endsAfterRun;
   });
-  const lineTop = geometry.lineTops[blockIndex]?.[lineIndex];
+  const lineTop = geometry.lineTops[nodeIndex]?.[lineIndex];
   const line = measure.lines[lineIndex];
   if (lineTop == null || !line) return { rowIndex: tableCtx.sourceRowIndex };
 
@@ -108,11 +108,11 @@ function paragraphLineTops(measure: ParagraphMetrics, startY: number): number[] 
  * physical location to the enclosing row.
  */
 function collectRefsWithoutGeometry(
-  input: readonly FlowBlock[],
+  input: readonly ContentNode[],
   refs: FootnoteRefLocation[],
   inheritedTableCtx?: TableContext
 ): void {
-  const stack: Array<{ block: FlowBlock; tableCtx?: TableContext }> = [];
+  const stack: Array<{ block: ContentNode; tableCtx?: TableContext }> = [];
   for (let index = input.length - 1; index >= 0; index--) {
     stack.push({ block: input[index], tableCtx: inheritedTableCtx });
   }
@@ -128,7 +128,7 @@ function collectRefsWithoutGeometry(
           pmPos: run.docFrom ?? 0,
           ...(tableCtx
             ? {
-                tableBlockId: tableCtx.tableBlockId,
+                tableNodeId: tableCtx.tableNodeId,
                 rowIndex: tableCtx.sourceRowIndex,
               }
             : {}),
@@ -137,18 +137,18 @@ function collectRefsWithoutGeometry(
       continue;
     }
 
-    const children: Array<{ block: FlowBlock; tableCtx?: TableContext }> = [];
+    const children: Array<{ block: ContentNode; tableCtx?: TableContext }> = [];
     if (block.kind === 'table') {
       block.rows.forEach((row, rowIndex) => {
         const nextTableCtx =
           tableCtx ??
           ({
-            tableBlockId: block.id,
+            tableNodeId: block.id,
             rowTops: [],
             sourceRowIndex: rowIndex,
           } satisfies TableContext);
         for (const cell of row.cells) {
-          for (const child of cell.blocks) children.push({ block: child, tableCtx: nextTableCtx });
+          for (const child of cell.nodes) children.push({ block: child, tableCtx: nextTableCtx });
         }
       });
     } else if (block.kind === 'textBox') {
@@ -161,20 +161,20 @@ function collectRefsWithoutGeometry(
 /**
  * Scan FlowBlocks for runs with `footnoteRefId`, in document order.
  *
- * When measures are supplied, table refs use the shared cell-content stack
+ * When metrics are supplied, table refs use the shared cell-content stack
  * from row breaking to capture their physical position inside a split row.
- * Callers without measures retain the row-only fallback.
+ * Callers without metrics retain the row-only fallback.
  */
 export function collectFootnoteRefs(
-  blocks: FlowBlock[],
-  measures?: Measure[]
+  nodes: ContentNode[],
+  metrics?: LayoutMetrics[]
 ): FootnoteRefLocation[] {
   const refs: FootnoteRefLocation[] = [];
   const geometryBudget: GeometryBudget = { remaining: MAX_REFERENCE_GEOMETRY_BLOCKS };
 
   const walk = (
-    input: FlowBlock[],
-    inputMeasures?: Measure[],
+    input: ContentNode[],
+    inputMetrics?: LayoutMetrics[],
     tableCtx?: TableContext,
     cellGeometry?: CellGeometry,
     depth = 0
@@ -184,9 +184,9 @@ export function collectFootnoteRefs(
       return;
     }
 
-    for (let blockIndex = 0; blockIndex < input.length; blockIndex++) {
-      const block = input[blockIndex];
-      const measure = inputMeasures?.[blockIndex];
+    for (let nodeIndex = 0; nodeIndex < input.length; nodeIndex++) {
+      const block = input[nodeIndex];
+      const measure = inputMetrics?.[nodeIndex];
       const geometryAllowed = geometryBudget.remaining-- > 0;
       const activeGeometry = geometryAllowed ? cellGeometry : undefined;
       if (block.kind === 'paragraph') {
@@ -195,8 +195,8 @@ export function collectFootnoteRefs(
           if (run.kind !== 'text' || run.footnoteRefId == null) continue;
           const tableLocation = tableCtx
             ? {
-                tableBlockId: tableCtx.tableBlockId,
-                ...measuredRowLocation(tableCtx, activeGeometry, blockIndex, runIndex, measure),
+                tableNodeId: tableCtx.tableNodeId,
+                ...measuredRowLocation(tableCtx, activeGeometry, nodeIndex, runIndex, measure),
               }
             : {};
           refs.push({
@@ -206,7 +206,7 @@ export function collectFootnoteRefs(
           });
         }
       } else if (block.kind === 'table') {
-        const tableMeasure: TableMeasure | undefined =
+        const tableMeasure: TableMetrics | undefined =
           geometryAllowed && measure?.kind === 'table' ? measure : undefined;
         const rowTops = [0];
         for (const rowMeasure of tableMeasure?.rows ?? []) {
@@ -214,13 +214,13 @@ export function collectFootnoteRefs(
         }
         const nestedTableTop =
           tableCtx && activeGeometry
-            ? activeGeometry.tableOffset + (activeGeometry.blockTops[blockIndex] ?? Number.NaN)
+            ? activeGeometry.tableOffset + (activeGeometry.blockTops[nodeIndex] ?? Number.NaN)
             : 0;
         block.rows.forEach((row, rowIndex) => {
           row.cells.forEach((cell, cellIndex) => {
             const cellMeasure = tableMeasure?.rows[rowIndex]?.cells[cellIndex];
             const nextTableCtx = tableCtx ?? {
-              tableBlockId: block.id,
+              tableNodeId: block.id,
               rowTops,
               sourceRowIndex: rowIndex,
             };
@@ -229,7 +229,7 @@ export function collectFootnoteRefs(
               rowTops.length > rowIndex + 1 &&
               (!tableCtx || Number.isFinite(nestedTableTop));
             if (!hasMeasuredPosition) {
-              walk(cell.blocks, cellMeasure?.blocks, nextTableCtx, undefined, depth + 1);
+              walk(cell.nodes, cellMeasure?.metrics, nextTableCtx, undefined, depth + 1);
               return;
             }
             const rowSpan = Math.max(1, cell.rowSpan ?? 1);
@@ -243,13 +243,13 @@ export function collectFootnoteRefs(
                   ? slack / 2
                   : 0;
             const content = layoutCellContent(
-              cell.blocks,
-              cellMeasure.blocks,
+              cell.nodes,
+              cellMeasure.metrics,
               cell.padding?.top ?? 0
             );
             walk(
-              cell.blocks,
-              cellMeasure.blocks,
+              cell.nodes,
+              cellMeasure.metrics,
               nextTableCtx,
               {
                 blockTops: content.blockTops,
@@ -261,14 +261,14 @@ export function collectFootnoteRefs(
           });
         });
       } else if (block.kind === 'textBox') {
-        const innerMeasures = measure?.kind === 'textBox' ? measure.innerMeasures : undefined;
-        const relativeTextBoxTop = activeGeometry?.blockTops[blockIndex];
+        const innerMetrics = measure?.kind === 'textBox' ? measure.innerMetrics : undefined;
+        const relativeTextBoxTop = activeGeometry?.blockTops[nodeIndex];
         const textBoxTop =
           !activeGeometry || relativeTextBoxTop == null
             ? undefined
             : activeGeometry.tableOffset + relativeTextBoxTop;
-        if (!tableCtx || textBoxTop == null || !innerMeasures) {
-          walk(block.content, innerMeasures, tableCtx, undefined, depth + 1);
+        if (!tableCtx || textBoxTop == null || !innerMetrics) {
+          walk(block.content, innerMetrics, tableCtx, undefined, depth + 1);
           continue;
         }
 
@@ -276,14 +276,14 @@ export function collectFootnoteRefs(
         let paragraphTop = margins.top;
         const blockTops: number[] = [];
         const lineTops: number[][] = [];
-        for (const innerMeasure of innerMeasures) {
+        for (const innerMeasure of innerMetrics) {
           blockTops.push(paragraphTop);
           lineTops.push(paragraphLineTops(innerMeasure, paragraphTop));
           paragraphTop += innerMeasure.totalHeight;
         }
         walk(
           block.content,
-          innerMeasures,
+          innerMetrics,
           tableCtx,
           { blockTops, lineTops, tableOffset: textBoxTop },
           depth + 1
@@ -292,6 +292,6 @@ export function collectFootnoteRefs(
     }
   };
 
-  walk(blocks, measures);
+  walk(nodes, metrics);
   return refs;
 }

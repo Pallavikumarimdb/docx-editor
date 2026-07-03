@@ -37,22 +37,22 @@ const DEFAULT_CELL_PADDING_Y = 0;
  */
 export function measureTableCellBlockVisualHeight(
   block: ContentNode,
-  blockMeasure: LayoutMetrics
+  nodeMetrics: LayoutMetrics
 ): number {
-  if (block.kind !== 'paragraph' || blockMeasure.kind !== 'paragraph') {
-    if ('totalHeight' in blockMeasure) return blockMeasure.totalHeight;
-    if ('height' in blockMeasure) return blockMeasure.height;
+  if (block.kind !== 'paragraph' || nodeMetrics.kind !== 'paragraph') {
+    if ('totalHeight' in nodeMetrics) return nodeMetrics.totalHeight;
+    if ('height' in nodeMetrics) return nodeMetrics.height;
     return 0;
   }
 
   const nonEmptyRuns = block.runs.filter((run) => run.kind !== 'text' || run.text.length > 0);
   const imageOnlySingleLine =
-    blockMeasure.lines.length === 1 &&
+    nodeMetrics.lines.length === 1 &&
     nonEmptyRuns.length > 0 &&
     nonEmptyRuns.every((run) => run.kind === 'image');
 
   if (!imageOnlySingleLine) {
-    return blockMeasure.totalHeight;
+    return nodeMetrics.totalHeight;
   }
 
   const maxImageHeight = nonEmptyRuns.reduce(
@@ -72,7 +72,7 @@ function getTableCellVerticalBorderHeight(cell: TableCell | undefined): number {
 }
 
 /**
- * LayoutMetrics a `TableBlock` against a content-width budget.
+ * Measure a `TableBlock` against a content-width budget.
  *
  * `measureBlock` is the per-cell-content measurement callback the
  * adapter uses for everything inside a cell. The adapter passes its
@@ -153,12 +153,12 @@ export function measureTable(
       // page break).
       let contentHeight = 0;
       let prevAfter = 0;
-      for (let blockIdx = 0; blockIdx < cell.metrics.length; blockIdx++) {
-        const sourceBlock = sourceCell?.nodes[blockIdx];
-        const blockMeasure = cell.metrics[blockIdx];
-        if (!sourceBlock || !blockMeasure) continue;
-        const visual = measureTableCellBlockVisualHeight(sourceBlock, blockMeasure);
-        const spacing = sourceBlock.kind === 'paragraph' ? sourceBlock.attrs?.spacing : undefined;
+      for (let nodeIndex = 0; nodeIndex < cell.metrics.length; nodeIndex++) {
+        const sourceNode = sourceCell?.nodes[nodeIndex];
+        const nodeMetrics = cell.metrics[nodeIndex];
+        if (!sourceNode || !nodeMetrics) continue;
+        const visual = measureTableCellBlockVisualHeight(sourceNode, nodeMetrics);
+        const spacing = sourceNode.kind === 'paragraph' ? sourceNode.attrs?.spacing : undefined;
         const before = spacing?.before ?? 0;
         const after = spacing?.after ?? 0;
         contentHeight += Math.max(prevAfter, before) + (visual - before - after);

@@ -295,7 +295,7 @@ export function calculateHeaderFooterVisualBounds(
   pageMetrics: HeaderFooterMetrics
 ): { visualTop: number; visualBottom: number } {
   let visualTop = 0;
-  // Accumulate the real extent from the blocks below. Do NOT seed with the
+  // Accumulate the real extent from the nodes below. Do NOT seed with the
   // caller's `flowHeight`: when a floating box doesn't advance the cursor,
   // seeding with the in-flow total would still keep `visualBottom` taller than
   // the content actually encountered in malformed block/measure pairs.
@@ -324,7 +324,7 @@ export function calculateHeaderFooterVisualBounds(
     } else if (block.kind === 'table' && measure.kind === 'table') {
       const positioned = Boolean(block.floating);
       const blockTopY = block.floating
-        ? resolveHeaderFooterFloatingTableTop(block.floating, flowHeight, metrics)
+        ? resolveHeaderFooterFloatingTableTop(block.floating, flowHeight, pageMetrics)
         : cursorY;
       const blockBottomY = blockTopY + measure.totalHeight;
       visualTop = Math.min(visualTop, blockTopY);
@@ -347,7 +347,7 @@ export function calculateHeaderFooterVisualBounds(
             { height: measure.height, position: block.position },
             cursorY,
             flowHeight,
-            metrics
+            pageMetrics
           )
         : cursorY;
       const blockBottomY = blockTopY + measure.height;
@@ -433,27 +433,27 @@ export function convertHeaderFooterPmDocToContent(
   const nodes = buildBoxTree(pmDoc, { theme: config.theme ?? undefined });
   if (nodes.length === 0) return undefined;
 
-  const nodesForMetrics = normalizeHeaderFooterMeasureBlocks(nodes);
-  const layoutMetrics = config.measureBlocks(nodesForMetrics, contentWidth);
+  const nodesForMeasure = normalizeHeaderFooterMeasureBlocks(nodes);
+  const layoutMetrics = config.measureBlocks(nodesForMeasure, contentWidth);
   let totalHeight = 0;
   let flowHeight = 0;
-  for (let i = 0; i < nodesForMetrics.length; i++) {
+  for (let i = 0; i < nodesForMeasure.length; i++) {
     const h = measureFlowHeight(layoutMetrics[i]);
     totalHeight += h;
-    if (contributesToHeaderFooterFlowHeight(nodesForMetrics[i])) flowHeight += h;
+    if (contributesToHeaderFooterFlowHeight(nodesForMeasure[i])) flowHeight += h;
   }
-  // Use `nodesForMetrics` (the normalized list the `metrics` were computed
+  // Use `nodesForMeasure` (the normalized list the `metrics` were computed
   // from), NOT the raw `nodes` — otherwise block[i] and measure[i] can desync
   // and per-block flags like `displayMode` are read off the wrong block.
   const { visualTop, visualBottom } = calculateHeaderFooterVisualBounds(
-    blocksForMeasure,
-    measures,
+    nodesForMeasure,
+    layoutMetrics,
     flowHeight,
-    metrics
+    pageMetrics
   );
 
   return {
-    nodes: nodesForMetrics,
+    nodes: nodesForMeasure,
     metrics: layoutMetrics,
     height: totalHeight,
     flowHeight,

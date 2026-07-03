@@ -1,7 +1,7 @@
 /**
  * Deterministic digest for painter inputs.
  *
- * Layout geometry alone is not a content version: equal-length text edits,
+ * PageLayout geometry alone is not a content version: equal-length text edits,
  * marks, comments, revisions, and image source changes can all preserve every
  * fragment coordinate. This digest gives the virtualization reconciler a
  * compact semantic version without retaining a second serialized block tree.

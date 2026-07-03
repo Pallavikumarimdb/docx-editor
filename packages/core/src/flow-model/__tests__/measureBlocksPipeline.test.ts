@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import type {
-  FlowBlock,
+  ContentNode,
   ImageRun,
-  Measure,
+  LayoutMetrics,
   ParagraphBlock,
   TextBoxBlock,
 } from '../../pagination-model/types';
@@ -72,7 +72,7 @@ function recordingMeasure(
   finalCalls: Map<string, FinalCall>
 ): MeasureBlockFn {
   const calls = new Map<string, number>();
-  return (block, width, zones, cumulativeY): Measure => {
+  return (block, width, zones, cumulativeY): LayoutMetrics => {
     const id = String(block.id);
     const call = (calls.get(id) ?? 0) + 1;
     calls.set(id, call);
@@ -103,7 +103,7 @@ function recordingMeasure(
           kind: 'textBox',
           width: block.width,
           height: block.height ?? 20,
-          innerMeasures: [],
+          innerMetrics: [],
         };
       case 'sectionBreak':
         return { kind: 'sectionBreak' };
@@ -129,7 +129,7 @@ function bandAwareMeasure(
   heights: Record<string, number>,
   finalCalls: Map<string, FinalCall>
 ): MeasureBlockFn {
-  return (block, width, zones, cumulativeY = 0): Measure => {
+  return (block, width, zones, cumulativeY = 0): LayoutMetrics => {
     if (zones) finalCalls.set(String(block.id), { width, zones, cumulativeY });
 
     switch (block.kind) {
@@ -165,7 +165,7 @@ function bandAwareMeasure(
           kind: 'textBox',
           width: block.width,
           height: block.height ?? 20,
-          innerMeasures: [],
+          innerMetrics: [],
         };
       case 'sectionBreak':
         return { kind: 'sectionBreak' };
@@ -205,12 +205,12 @@ function centeredPageBand(id: string): TextBoxBlock {
 }
 
 describe('floating exclusion flow scopes', () => {
-  test('does not remeasure blocks when no float zone applies', () => {
-    const blocks = [paragraph('one'), paragraph('two'), paragraph('three')];
+  test('does not remeasure nodes when no float zone applies', () => {
+    const nodes = [paragraph('one'), paragraph('two'), paragraph('three')];
     let calls = 0;
     const measure = recordingMeasure({}, new Map());
     const measured = measureBlocksWithFloats(
-      blocks,
+      nodes,
       300,
       (...args) => {
         calls++;
@@ -224,15 +224,15 @@ describe('floating exclusion flow scopes', () => {
   });
 
   test('a bottom-page float cannot affect the following page', () => {
-    const blocks: FlowBlock[] = [
+    const nodes: ContentNode[] = [
       paragraph('anchor', [floatingImage(0)]),
       paragraph('page-one-tail'),
       paragraph('page-two'),
     ];
     const finalCalls = new Map<string, FinalCall>();
 
-    const measures = measureBlocksWithFloats(
-      blocks,
+    const metrics = measureBlocksWithFloats(
+      nodes,
       300,
       recordingMeasure(
         { anchor: 20, 'page-one-tail': 70, 'page-two': 20, 'page-two:wrapped': 50 },
@@ -243,7 +243,7 @@ describe('floating exclusion flow scopes', () => {
 
     expect(finalCalls.get('anchor')?.zones).toHaveLength(1);
     expect(finalCalls.get('page-one-tail')?.zones).toHaveLength(1);
-    expect(measures[2]).toMatchObject({ kind: 'paragraph', totalHeight: 20 });
+    expect(metrics[2]).toMatchObject({ kind: 'paragraph', totalHeight: 20 });
   });
 
   test('page-anchored topAndBottom images reserve their painted vertical band', () => {
@@ -261,10 +261,10 @@ describe('floating exclusion flow scopes', () => {
         vertical: { relativeTo: 'page', align: 'center' },
       },
     };
-    const blocks: FlowBlock[] = [paragraph('image-anchor', [image]), paragraph('band-overlap')];
+    const nodes: ContentNode[] = [paragraph('image-anchor', [image]), paragraph('band-overlap')];
     const finalCalls = new Map<string, FinalCall>();
 
-    measureBlocksWithFloats(blocks, 300, recordingMeasure({}, finalCalls), initialGeometry);
+    measureBlocksWithFloats(nodes, 300, recordingMeasure({}, finalCalls), initialGeometry);
 
     expect(finalCalls.get('image-anchor')?.zones?.[0]).toMatchObject({
       leftMargin: 0,
@@ -303,11 +303,11 @@ describe('floating exclusion flow scopes', () => {
       contentWidth: 300,
       contentHeight: 200,
     };
-    const blocks: FlowBlock[] = [paragraph('preceding-text'), paragraph('image-anchor', [image])];
+    const nodes: ContentNode[] = [paragraph('preceding-text'), paragraph('image-anchor', [image])];
     const finalCalls = new Map<string, FinalCall>();
 
     measureBlocksWithFloats(
-      blocks,
+      nodes,
       300,
       recordingMeasure({ 'preceding-text': 20 }, finalCalls),
       geometry
@@ -347,11 +347,14 @@ describe('floating exclusion flow scopes', () => {
         contentWidth: 380,
         contentHeight: 220,
       };
-      const blocks: FlowBlock[] = [paragraph('preceding-text'), paragraph('image-anchor', [image])];
+      const nodes: ContentNode[] = [
+        paragraph('preceding-text'),
+        paragraph('image-anchor', [image]),
+      ];
       const finalCalls = new Map<string, FinalCall>();
 
       measureBlocksWithFloats(
-        blocks,
+        nodes,
         geometry.contentWidth,
         recordingMeasure({ 'preceding-text': 20 }, finalCalls),
         geometry
@@ -408,11 +411,11 @@ describe('floating exclusion flow scopes', () => {
       contentWidth: 380,
       contentHeight: 220,
     };
-    const blocks: FlowBlock[] = [paragraph('preceding-text'), paragraph('image-anchor', [image])];
+    const nodes: ContentNode[] = [paragraph('preceding-text'), paragraph('image-anchor', [image])];
     const finalCalls = new Map<string, FinalCall>();
 
     measureBlocksWithFloats(
-      blocks,
+      nodes,
       geometry.contentWidth,
       recordingMeasure({ 'preceding-text': 35 }, finalCalls),
       geometry
@@ -454,11 +457,11 @@ describe('floating exclusion flow scopes', () => {
         vertical: { relativeTo: 'paragraph', posOffset: 5 * 9_525 },
       },
     };
-    const blocks: FlowBlock[] = [paragraph('preceding-text'), paragraph('image-anchor', [image])];
+    const nodes: ContentNode[] = [paragraph('preceding-text'), paragraph('image-anchor', [image])];
     const finalCalls = new Map<string, FinalCall>();
 
     measureBlocksWithFloats(
-      blocks,
+      nodes,
       initialGeometry.contentWidth,
       recordingMeasure({ 'preceding-text': 20 }, finalCalls),
       initialGeometry
@@ -494,11 +497,11 @@ describe('floating exclusion flow scopes', () => {
       contentWidth: 300,
       contentHeight: 200,
     };
-    const blocks: FlowBlock[] = [paragraph('preceding-text'), paragraph('image-anchor', [image])];
+    const nodes: ContentNode[] = [paragraph('preceding-text'), paragraph('image-anchor', [image])];
     const finalCalls = new Map<string, FinalCall>();
 
     measureBlocksWithFloats(
-      blocks,
+      nodes,
       300,
       recordingMeasure({ 'preceding-text': 40 }, finalCalls),
       geometry
@@ -511,7 +514,7 @@ describe('floating exclusion flow scopes', () => {
   });
 
   test('keeps float wrapping only on the current-page part of a split paragraph', () => {
-    const blocks: FlowBlock[] = [
+    const nodes: ContentNode[] = [
       paragraph('split-paragraph', [floatingImage(0), { kind: 'text', text: 'abcdefgh' }]),
       paragraph('following-page'),
     ];
@@ -551,9 +554,9 @@ describe('floating exclusion flow scopes', () => {
       };
     };
 
-    const measures = measureBlocksWithFloats(blocks, 300, measureBlock, initialGeometry);
+    const metrics = measureBlocksWithFloats(nodes, 300, measureBlock, initialGeometry);
 
-    expect(measures[0]).toMatchObject({
+    expect(metrics[0]).toMatchObject({
       kind: 'paragraph',
       totalHeight: 120,
       lines: [
@@ -562,11 +565,11 @@ describe('floating exclusion flow scopes', () => {
         { fromChar: 4, toChar: 8 },
       ],
     });
-    expect(measures[1]).toMatchObject({ kind: 'paragraph', totalHeight: 20 });
+    expect(metrics[1]).toMatchObject({ kind: 'paragraph', totalHeight: 20 });
   });
 
   test('keeps active float zones across a continuous section on the same page', () => {
-    const blocks: FlowBlock[] = [
+    const nodes: ContentNode[] = [
       paragraph('anchor', [floatingImage(0)]),
       {
         kind: 'sectionBreak',
@@ -577,7 +580,7 @@ describe('floating exclusion flow scopes', () => {
     ];
     const finalCalls = new Map<string, FinalCall>();
 
-    measureBlocksWithFloats(blocks, 300, recordingMeasure({}, finalCalls), initialGeometry);
+    measureBlocksWithFloats(nodes, 300, recordingMeasure({}, finalCalls), initialGeometry);
 
     expect(finalCalls.get('same-page-section')).toMatchObject({
       cumulativeY: 20,
@@ -587,7 +590,7 @@ describe('floating exclusion flow scopes', () => {
 
   test('uses the current physical page geometry through a continuous section', () => {
     const band = centeredPageBand('current-page-band');
-    const blocks: FlowBlock[] = [
+    const nodes: ContentNode[] = [
       paragraph('earlier'),
       {
         kind: 'sectionBreak',
@@ -600,8 +603,8 @@ describe('floating exclusion flow scopes', () => {
       paragraph('same-page-text'),
     ];
     const finalCalls = new Map<string, FinalCall>();
-    const measures = measureBlocksWithFloats(
-      blocks,
+    const metrics = measureBlocksWithFloats(
+      nodes,
       [300, 300, 440, 440],
       bandAwareMeasure({ earlier: 45, 'same-page-text': 10 }, finalCalls),
       initialGeometry,
@@ -610,12 +613,12 @@ describe('floating exclusion flow scopes', () => {
 
     const zone = finalCalls.get('same-page-text')?.zones?.[0];
     expect(zone).toMatchObject({ topY: 40, bottomY: 65, fullWidthBlock: true });
-    expect(measures[3]).toMatchObject({
+    expect(metrics[3]).toMatchObject({
       kind: 'paragraph',
       lines: [{ lineHeight: 10, floatSkipBefore: 20 }],
     });
 
-    const layout = layOutPages(blocks, measures, {
+    const layout = layOutPages(nodes, metrics, {
       pageSize: { w: 400, h: 120 },
       margins: { top: 10, right: 50, bottom: 10, left: 50 },
       finalPageSize: { w: 600, h: 220 },
@@ -626,7 +629,7 @@ describe('floating exclusion flow scopes', () => {
     expect(pageGeometryFromPage(layout.pages[0])).toEqual(initialGeometry);
 
     const textFragment = layout.pages[0].fragments.find(
-      (fragment) => fragment.blockId === 'same-page-text'
+      (fragment) => fragment.nodeId === 'same-page-text'
     );
     const paintedBandTop = resolveAnchoredObjectVerticalTop(
       { width: band.width, height: band.height ?? 0, position: band.position },
@@ -637,7 +640,7 @@ describe('floating exclusion flow scopes', () => {
     const textTop =
       (textFragment?.y ?? 0) -
       layout.pages[0].margins.top +
-      ((measures[3].kind === 'paragraph' && measures[3].lines[0]?.floatSkipBefore) || 0);
+      ((metrics[3].kind === 'paragraph' && metrics[3].lines[0]?.floatSkipBefore) || 0);
     expect(zone).toBeDefined();
     expect(paintedBandTop).toBe(zone!.topY);
     expect(textTop).toBeGreaterThanOrEqual(paintedBandBottom);
@@ -645,7 +648,7 @@ describe('floating exclusion flow scopes', () => {
 
   test('adopts the continuous section geometry after physical-page overflow', () => {
     const band = centeredPageBand('next-page-band');
-    const blocks: FlowBlock[] = [
+    const nodes: ContentNode[] = [
       paragraph('page-one-fill'),
       {
         kind: 'sectionBreak',
@@ -659,8 +662,8 @@ describe('floating exclusion flow scopes', () => {
       paragraph('next-page-text'),
     ];
     const finalCalls = new Map<string, FinalCall>();
-    const measures = measureBlocksWithFloats(
-      blocks,
+    const metrics = measureBlocksWithFloats(
+      nodes,
       [300, 300, 440, 440, 440],
       bandAwareMeasure({ 'page-one-fill': 90, overflowing: 65, 'next-page-text': 10 }, finalCalls),
       initialGeometry,
@@ -669,12 +672,12 @@ describe('floating exclusion flow scopes', () => {
 
     const zone = finalCalls.get('next-page-text')?.zones?.[0];
     expect(zone).toMatchObject({ topY: 60, bottomY: 85, fullWidthBlock: true });
-    expect(measures[4]).toMatchObject({
+    expect(metrics[4]).toMatchObject({
       kind: 'paragraph',
       lines: [{ lineHeight: 10, floatSkipBefore: 20 }],
     });
 
-    const layout = layOutPages(blocks, measures, {
+    const layout = layOutPages(nodes, metrics, {
       pageSize: { w: 400, h: 120 },
       margins: { top: 10, right: 50, bottom: 10, left: 50 },
       finalPageSize: { w: 600, h: 220 },
@@ -686,7 +689,7 @@ describe('floating exclusion flow scopes', () => {
     expect(pageGeometryFromPage(layout.pages[1])).toEqual(laterGeometry);
 
     const textFragment = layout.pages[1].fragments.find(
-      (fragment) => fragment.blockId === 'next-page-text'
+      (fragment) => fragment.nodeId === 'next-page-text'
     );
     const paintedBandTop = resolveAnchoredObjectVerticalTop(
       { width: band.width, height: band.height ?? 0, position: band.position },
@@ -697,7 +700,7 @@ describe('floating exclusion flow scopes', () => {
     const textTop =
       (textFragment?.y ?? 0) -
       layout.pages[1].margins.top +
-      ((measures[4].kind === 'paragraph' && measures[4].lines[0]?.floatSkipBefore) || 0);
+      ((metrics[4].kind === 'paragraph' && metrics[4].lines[0]?.floatSkipBefore) || 0);
     expect(zone).toBeDefined();
     expect(paintedBandTop).toBe(zone!.topY);
     expect(textTop).toBeGreaterThanOrEqual(paintedBandBottom);
@@ -718,7 +721,7 @@ describe('floating exclusion flow scopes', () => {
       },
     };
     const columns = { count: 2, gap: 20, equalWidth: true };
-    const blocks: FlowBlock[] = [
+    const nodes: ContentNode[] = [
       paragraph('single-column-intro'),
       {
         kind: 'sectionBreak',
@@ -733,8 +736,8 @@ describe('floating exclusion flow scopes', () => {
       paragraph('next-page-anchor', [centeredImage]),
     ];
     const finalCalls = new Map<string, FinalCall>();
-    const measures = measureBlocksWithFloats(
-      blocks,
+    const metrics = measureBlocksWithFloats(
+      nodes,
       [300, 300, 140, 140, 140, 140],
       bandAwareMeasure(
         {
@@ -759,7 +762,7 @@ describe('floating exclusion flow scopes', () => {
       bottomY: 85,
     });
 
-    const layout = layOutPages(blocks, measures, {
+    const layout = layOutPages(nodes, metrics, {
       pageSize: { w: 400, h: 120 },
       margins: { top: 10, right: 50, bottom: 10, left: 50 },
       finalPageSize: { w: 600, h: 220 },
@@ -771,11 +774,11 @@ describe('floating exclusion flow scopes', () => {
     expect(pageGeometryFromPage(layout.pages[0])).toEqual(initialGeometry);
     expect(pageGeometryFromPage(layout.pages[1])).toEqual(laterGeometry);
     expect(
-      layout.pages[0].fragments.find((fragment) => fragment.blockId === 'second-column-anchor')
+      layout.pages[0].fragments.find((fragment) => fragment.nodeId === 'second-column-anchor')
         ?.columnIndex
     ).toBe(1);
     expect(
-      layout.pages[1].fragments.find((fragment) => fragment.blockId === 'next-page-anchor')
+      layout.pages[1].fragments.find((fragment) => fragment.nodeId === 'next-page-anchor')
         ?.columnIndex
     ).toBe(0);
   });
@@ -795,7 +798,7 @@ describe('floating exclusion flow scopes', () => {
         horizontal: { relativeTo: 'margin', align: 'left' },
       },
     };
-    const blocks: FlowBlock[] = [
+    const nodes: ContentNode[] = [
       paragraph('earlier'),
       {
         kind: 'sectionBreak',
@@ -809,7 +812,7 @@ describe('floating exclusion flow scopes', () => {
     const finalCalls = new Map<string, FinalCall>();
 
     measureBlocksWithFloats(
-      blocks,
+      nodes,
       [300, 300, 800, 800],
       recordingMeasure({}, finalCalls),
       initialGeometry,
@@ -837,7 +840,7 @@ describe('floating exclusion flow scopes', () => {
   });
 
   test('mixed-width sections resolve each float against its own width', () => {
-    const blocks: FlowBlock[] = [
+    const nodes: ContentNode[] = [
       paragraph('narrow-float', [floatingImage(220)]),
       {
         kind: 'sectionBreak',
@@ -850,7 +853,7 @@ describe('floating exclusion flow scopes', () => {
     const finalCalls = new Map<string, FinalCall>();
 
     measureBlocksWithFloats(
-      blocks,
+      nodes,
       [300, 300, 600],
       recordingMeasure({}, finalCalls),
       initialGeometry

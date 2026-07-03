@@ -1,19 +1,57 @@
 import type {
-  FootnoteBlockFragment,
+  FootnoteNodeFragment,
   FootnoteContent,
   FootnoteFragment,
 } from '../pagination-model/types';
 import { buildTableRowBreakInfo } from '../pagination-model/tableRowBreak';
 import { fitTableRows } from '../pagination-model/tableLayout';
 
+export interface FootnoteParagraphPosition {
+  runIndex: number;
+  charOffset: number;
+}
+
 export interface FootnoteSliceCursor {
-  blockIndex: number;
+  nodeIndex: number;
+  /**
+   * Page-local line index for an initial paragraph cursor, or row index for a
+   * table cursor. Once a paragraph has started, `paragraphPosition` is the
+   * width-independent source of truth and this value is only a cached hint.
+   */
   unitIndex: number;
   unitOffset?: number;
+  /** Stable continuation address in the paragraph's run stream. */
+  paragraphPosition?: FootnoteParagraphPosition;
 }
 
 function measureLineHeight(line: { lineHeight: number; floatSkipBefore?: number }): number {
   return line.lineHeight + (line.floatSkipBefore ?? 0);
+}
+
+function compareParagraphPositions(
+  left: FootnoteParagraphPosition,
+  right: FootnoteParagraphPosition
+): number {
+  return left.runIndex - right.runIndex || left.charOffset - right.charOffset;
+}
+
+/**
+ * Find the first measured line with content after `position`. A binary search
+ * keeps continuation lookup logarithmic even for very long footnotes.
+ */
+function lineIndexForPosition(
+  lines: Array<{ toRun: number; toChar: number }>,
+  position: FootnoteParagraphPosition
+): number {
+  let low = 0;
+  let high = lines.length;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    const lineEnd = { runIndex: lines[mid].toRun, charOffset: lines[mid].toChar };
+    if (compareParagraphPositions(lineEnd, position) <= 0) low = mid + 1;
+    else high = mid;
+  }
+  return low;
 }
 
 /**
@@ -27,30 +65,41 @@ export function takeFootnoteSlice(
   columnIndex: number,
   allowOversizedFirstUnit = false
 ): { fragment?: FootnoteFragment; cursor: FootnoteSliceCursor; done: boolean } {
-  const cursor = { ...cursorIn };
-  const blocks: FootnoteBlockFragment[] = [];
+  const cursor: FootnoteSliceCursor = { ...cursorIn };
+  const nodes: FootnoteNodeFragment[] = [];
   let used = 0;
 
-  while (cursor.blockIndex < content.blocks.length) {
-    const blockIndex = cursor.blockIndex;
-    const block = content.blocks[blockIndex];
-    const measure = content.measures[blockIndex];
+  while (cursor.nodeIndex < content.nodes.length) {
+    const nodeIndex = cursor.nodeIndex;
+    const block = content.nodes[nodeIndex];
+    const measure = content.metrics[nodeIndex];
     if (!block || !measure) {
-      cursor.blockIndex++;
+      cursor.nodeIndex++;
       cursor.unitIndex = 0;
       cursor.unitOffset = 0;
+      cursor.paragraphPosition = undefined;
       continue;
     }
 
     if (block.kind === 'paragraph' && measure.kind === 'paragraph') {
-      const fromLine = cursor.unitIndex;
+      const fromLine = cursor.paragraphPosition
+        ? lineIndexForPosition(measure.lines, cursor.paragraphPosition)
+        : cursor.unitIndex;
       if (fromLine >= measure.lines.length) {
-        cursor.blockIndex++;
+        cursor.nodeIndex++;
         cursor.unitIndex = 0;
         cursor.unitOffset = 0;
+        cursor.paragraphPosition = undefined;
         continue;
       }
 
+      const firstLine = measure.lines[fromLine];
+      const contentFrom =
+        cursor.paragraphPosition ??
+        ({
+          runIndex: firstLine.fromRun,
+          charOffset: firstLine.fromChar,
+        } satisfies FootnoteParagraphPosition);
       const spacingBefore = fromLine === 0 ? (block.attrs?.spacing?.before ?? 0) : 0;
       const lineTotal = measure.lines.reduce((sum, line) => sum + measureLineHeight(line), 0);
       const spacingAfter = Math.max(
@@ -78,23 +127,34 @@ export function takeFootnoteSlice(
       }
 
       if (toLine === fromLine) break;
-      blocks.push({
+      const lastLine = measure.lines[toLine - 1];
+      const contentTo: FootnoteParagraphPosition = {
+        runIndex: lastLine.toRun,
+        charOffset: lastLine.toChar,
+      };
+      nodes.push({
         kind: 'paragraph',
-        blockIndex,
+        nodeIndex,
         y: used + spacingBefore,
         height: lineHeight,
         fromLine,
         toLine,
+        fromRun: contentFrom.runIndex,
+        fromChar: contentFrom.charOffset,
+        toRun: contentTo.runIndex,
+        toChar: contentTo.charOffset,
       });
       const finished = toLine === measure.lines.length;
       used += spacingBefore + lineHeight + (finished ? spacingAfter : 0);
       if (!finished) {
         cursor.unitIndex = toLine;
+        cursor.paragraphPosition = contentTo;
         break;
       }
-      cursor.blockIndex++;
+      cursor.nodeIndex++;
       cursor.unitIndex = 0;
       cursor.unitOffset = 0;
+      cursor.paragraphPosition = undefined;
       continue;
     }
 
@@ -102,9 +162,10 @@ export function takeFootnoteSlice(
       const fromRow = cursor.unitIndex;
       const fromOffset = cursor.unitOffset ?? 0;
       if (fromRow >= measure.rows.length) {
-        cursor.blockIndex++;
+        cursor.nodeIndex++;
         cursor.unitIndex = 0;
         cursor.unitOffset = 0;
+        cursor.paragraphPosition = undefined;
         continue;
       }
       const rowsHeight = measure.rows.reduce((sum, row) => sum + row.height, 0);
@@ -135,9 +196,9 @@ export function takeFootnoteSlice(
       }
       const finished = rowSlice.nextRow >= measure.rows.length;
       const height = rowSlice.consumed + (finished ? trailing : 0);
-      blocks.push({
+      nodes.push({
         kind: 'table',
-        blockIndex,
+        nodeIndex,
         y: used,
         height,
         fromRow,
@@ -151,9 +212,10 @@ export function takeFootnoteSlice(
         cursor.unitOffset = rowSlice.nextOffset;
         break;
       }
-      cursor.blockIndex++;
+      cursor.nodeIndex++;
       cursor.unitIndex = 0;
       cursor.unitOffset = 0;
+      cursor.paragraphPosition = undefined;
       continue;
     }
 
@@ -164,33 +226,35 @@ export function takeFootnoteSlice(
       if (used + measure.height > capacity && (used > 0 || !allowOversizedFirstUnit)) {
         break;
       }
-      blocks.push({
+      nodes.push({
         kind: block.kind,
-        blockIndex,
+        nodeIndex,
         y: used,
         height: measure.height,
       });
       used += measure.height;
-      cursor.blockIndex++;
+      cursor.nodeIndex++;
       cursor.unitIndex = 0;
       cursor.unitOffset = 0;
+      cursor.paragraphPosition = undefined;
       if (used > capacity) break;
       continue;
     }
 
-    // Break/section blocks occupy no footnote height.
-    cursor.blockIndex++;
+    // Break/section nodes occupy no footnote height.
+    cursor.nodeIndex++;
     cursor.unitIndex = 0;
     cursor.unitOffset = 0;
+    cursor.paragraphPosition = undefined;
   }
 
-  const done = cursor.blockIndex >= content.blocks.length;
-  if (blocks.length === 0) return { cursor, done };
+  const done = cursor.nodeIndex >= content.nodes.length;
+  if (nodes.length === 0) return { cursor, done };
   return {
     fragment: {
       footnoteId: content.id,
       displayNumber: content.displayNumber,
-      blocks,
+      nodes,
       height: used,
       ...(columnIndex > 0 ? { columnIndex } : {}),
     },

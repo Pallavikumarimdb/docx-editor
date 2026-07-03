@@ -20,7 +20,7 @@ function inlineImage(index: number): ImageRun {
 }
 
 describe('zero-left hanging indent parity', () => {
-  test('measures and paints only the first line with the negative hanging offset', () => {
+  test('metrics and paints only the first line with the negative hanging offset', () => {
     const measuredBlock: ParagraphBlock = {
       kind: 'paragraph',
       id: 'hanging',
@@ -50,7 +50,7 @@ describe('zero-left hanging indent parity', () => {
     const paintedMeasure = paragraphLayout(paintedBlock, 50);
     const fragment: ParagraphFragment = {
       kind: 'paragraph',
-      blockId: paintedBlock.id,
+      nodeId: paintedBlock.id,
       x: 0,
       y: 0,
       width: 50,

@@ -14,14 +14,14 @@ test('paints only a continuation slice in its planned column', () => {
   const content: FootnoteContent = {
     id: 9,
     displayNumber: 3,
-    blocks: [
+    nodes: [
       {
         kind: 'paragraph',
         id: 'footnote-paragraph',
         runs: [{ kind: 'text', text: 'abc' }],
       },
     ],
-    measures: [
+    metrics: [
       {
         kind: 'paragraph',
         lines: [0, 1, 2].map((fromChar) => ({
@@ -46,10 +46,10 @@ test('paints only a continuation slice in its planned column', () => {
     columnIndex: 1,
     continuesFromPrev: true,
     continuesOnNext: true,
-    blocks: [
+    nodes: [
       {
         kind: 'paragraph',
-        blockIndex: 0,
+        nodeIndex: 0,
         y: 0,
         height: 40,
         fromLine: 1,
@@ -81,4 +81,66 @@ test('paints only a continuation slice in its planned column', () => {
   expect(painted?.querySelector<HTMLElement>('[data-from-line]')?.dataset.fromLine).toBe('1');
   expect(painted?.querySelector<HTMLElement>('[data-to-line]')?.dataset.toLine).toBe('2');
   expect(calculateFootnoteAreaRenderHeight(items, 2)).toBe(52);
+});
+
+test('trims a rewrapped continuation line to its planned character start', () => {
+  const content: FootnoteContent = {
+    id: 9,
+    displayNumber: 3,
+    nodes: [
+      {
+        kind: 'paragraph',
+        id: 'footnote-paragraph',
+        runs: [{ kind: 'text', text: 'abcdefghij' }],
+      },
+    ],
+    metrics: [
+      {
+        kind: 'paragraph',
+        lines: [
+          {
+            fromRun: 0,
+            fromChar: 0,
+            toRun: 0,
+            toChar: 10,
+            width: 100,
+            ascent: 30,
+            descent: 10,
+            lineHeight: 40,
+          },
+        ],
+        totalHeight: 40,
+      },
+    ],
+    height: 40,
+  };
+  const fragment: FootnoteFragment = {
+    footnoteId: 9,
+    displayNumber: 3,
+    height: 40,
+    continuesFromPrev: true,
+    nodes: [
+      {
+        kind: 'paragraph',
+        nodeIndex: 0,
+        y: 0,
+        height: 40,
+        fromLine: 0,
+        toLine: 1,
+        fromRun: 0,
+        fromChar: 3,
+        toRun: 0,
+        toChar: 10,
+      },
+    ],
+  };
+
+  const area = renderFootnoteArea(
+    [{ displayNumber: '3', text: 'abcdefghij', content, fragment }],
+    200,
+    { pageNumber: 2, totalPages: 2, section: 'body' },
+    document
+  );
+
+  expect(area.querySelector('.layout-line')?.textContent).toBe('defghij');
 });

@@ -18,7 +18,7 @@ function paragraph(id: string, lineCount = 1, attrs: ParagraphBlock['attrs'] = {
   };
 }
 
-function metrics(...heights: number[]): ParagraphMetrics {
+function paragraphMetrics(...heights: number[]): ParagraphMetrics {
   return {
     kind: 'paragraph',
     totalHeight: heights.reduce((sum, height) => sum + height, 0),
@@ -39,9 +39,9 @@ function metrics(...heights: number[]): ParagraphMetrics {
 
 function fragmentsFor(widowControl?: boolean): ParagraphFragment[] {
   const targetAttrs = widowControl === undefined ? {} : { widowControl };
-  const blocks = [paragraph('filler'), paragraph('target', 4, targetAttrs)];
-  const measures = [metrics(50), metrics(10, 10, 10, 10)];
-  const layout = layOutPages(blocks, measures, {
+  const nodes = [paragraph('filler'), paragraph('target', 4, targetAttrs)];
+  const metrics = [paragraphMetrics(50), paragraphMetrics(10, 10, 10, 10)];
+  const layout = layOutPages(nodes, metrics, {
     pageSize: { w: 100, h: 100 },
     margins: { top: 10, right: 10, bottom: 10, left: 10 },
   });
@@ -50,7 +50,7 @@ function fragmentsFor(widowControl?: boolean): ParagraphFragment[] {
     .flatMap((page) => page.fragments)
     .filter(
       (fragment): fragment is ParagraphFragment =>
-        fragment.kind === 'paragraph' && fragment.blockId === 'target'
+        fragment.kind === 'paragraph' && fragment.nodeId === 'target'
     );
 }
 
@@ -73,13 +73,13 @@ describe('paragraph widow control', () => {
 });
 
 describe('keepLines leading-gap fit', () => {
-  const options = {
+  const config = {
     pageSize: { w: 100, h: 100 },
     margins: { top: 0, right: 0, bottom: 0, left: 0 },
   };
 
   test('moves the whole paragraph when lines fit but the collapsed gap does not', () => {
-    const blocks = [
+    const nodes = [
       paragraph('previous', 1, { spacing: { after: 10 }, widowControl: false }),
       paragraph('kept', 3, {
         keepLines: true,
@@ -88,13 +88,13 @@ describe('keepLines leading-gap fit', () => {
       }),
     ];
 
-    const layout = layOutPages(blocks, [metrics(70), metrics(10, 10, 10)], options);
+    const layout = layOutPages(nodes, [paragraphMetrics(70), paragraphMetrics(10, 10, 10)], config);
 
     expect(layout.pages).toHaveLength(2);
-    expect(layout.pages[0].fragments.map((fragment) => fragment.blockId)).toEqual(['previous']);
+    expect(layout.pages[0].fragments.map((fragment) => fragment.nodeId)).toEqual(['previous']);
     expect(layout.pages[1].fragments).toHaveLength(1);
     expect(layout.pages[1].fragments[0]).toMatchObject({
-      blockId: 'kept',
+      nodeId: 'kept',
       y: 20,
       height: 30,
       fromLine: 0,
@@ -103,7 +103,7 @@ describe('keepLines leading-gap fit', () => {
   });
 
   test('keeps the paragraph on the current page at an exact gap-inclusive fit', () => {
-    const blocks = [
+    const nodes = [
       paragraph('previous', 1, { spacing: { after: 10 }, widowControl: false }),
       paragraph('kept', 3, {
         keepLines: true,
@@ -112,11 +112,11 @@ describe('keepLines leading-gap fit', () => {
       }),
     ];
 
-    const layout = layOutPages(blocks, [metrics(50), metrics(10, 10, 10)], options);
+    const layout = layOutPages(nodes, [paragraphMetrics(50), paragraphMetrics(10, 10, 10)], config);
 
     expect(layout.pages).toHaveLength(1);
     expect(layout.pages[0].fragments[1]).toMatchObject({
-      blockId: 'kept',
+      nodeId: 'kept',
       y: 70,
       height: 30,
       fromLine: 0,
@@ -140,7 +140,7 @@ describe('odd/even section starts', () => {
       sectionIndex: number;
       sectionPageNumber: number;
     }> = [];
-    const options = {
+    const config = {
       pageSize: { w: 100, h: 100 },
       margins: oldMargins,
       finalPageSize: { w: 120, h: 120 },
@@ -159,8 +159,8 @@ describe('odd/even section starts', () => {
 
     const layout = layOutPages(
       [paragraph('old-section'), sectionBreak, paragraph('new-section')],
-      [metrics(20), { kind: 'sectionBreak' }, metrics(20)],
-      options
+      [paragraphMetrics(20), { kind: 'sectionBreak' }, paragraphMetrics(20)],
+      config
     );
 
     expect(pageStarts).toEqual([
@@ -171,6 +171,6 @@ describe('odd/even section starts', () => {
     expect(layout.pages.map((page) => page.size.w)).toEqual([100, 100, 120]);
     expect(layout.pages.map((page) => page.margins.left)).toEqual([10, 10, 20]);
     expect(layout.pages[1].fragments).toHaveLength(0);
-    expect(layout.pages[2].fragments.map((fragment) => fragment.blockId)).toEqual(['new-section']);
+    expect(layout.pages[2].fragments.map((fragment) => fragment.nodeId)).toEqual(['new-section']);
   });
 });

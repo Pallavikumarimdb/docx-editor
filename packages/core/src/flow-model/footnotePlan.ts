@@ -15,7 +15,7 @@ export interface FootnotePaginationPlan {
 interface FootnoteRefLocationLike {
   footnoteId: number;
   pmPos: number;
-  tableBlockId?: string | number;
+  tableNodeId?: string | number;
   rowIndex?: number;
 }
 
@@ -75,12 +75,12 @@ export function footnotePlansEqual(a: FootnotePaginationPlan, b: FootnotePaginat
         left.continuesFromPrev !== right.continuesFromPrev ||
         left.continuesOnNext !== right.continuesOnNext ||
         left.columnIndex !== right.columnIndex ||
-        left.blocks.length !== right.blocks.length
+        left.nodes.length !== right.nodes.length
       ) {
         return false;
       }
-      for (let j = 0; j < left.blocks.length; j++) {
-        if (JSON.stringify(left.blocks[j]) !== JSON.stringify(right.blocks[j])) return false;
+      for (let j = 0; j < left.nodes.length; j++) {
+        if (JSON.stringify(left.nodes[j]) !== JSON.stringify(right.nodes[j])) return false;
       }
     }
   }
@@ -101,10 +101,10 @@ export function addDeferredStartReservationFloors(
     for (const ref of footnoteRefs) {
       if (!deferredIds.includes(ref.footnoteId)) continue;
       const fragment = page.fragments.find((candidate) => {
-        if (ref.tableBlockId != null && ref.rowIndex != null) {
+        if (ref.tableNodeId != null && ref.rowIndex != null) {
           return (
             candidate.kind === 'table' &&
-            String(candidate.blockId) === String(ref.tableBlockId) &&
+            String(candidate.nodeId) === String(ref.tableNodeId) &&
             ref.rowIndex >= candidate.fromRow &&
             ref.rowIndex < candidate.toRow
           );

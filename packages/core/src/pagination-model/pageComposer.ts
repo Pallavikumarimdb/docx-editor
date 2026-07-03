@@ -109,7 +109,7 @@ export function layOutPages(
       case 'sectionBreak': {
         sectionIndex++;
         const next = schedule.configs[sectionIndex] ?? ctx.section;
-        const sectionEnd = schedule.breakIndices[sectionIndex] ?? blocks.length;
+        const sectionEnd = schedule.breakIndices[sectionIndex] ?? nodes.length;
         cursor = crossSectionBoundary(ctx, cursor, next, sectionIndex, i + 1, sectionEnd);
         break;
       }
@@ -145,13 +145,13 @@ export function layOutPages(
 
   // A footnote may continue after the body's final fragment. Reservations for
   // those continuation pages are already part of the fixed-point input, so
-  // materialize the pages even though there is no more body block to overflow.
-  const minimumPageCount = Math.max(1, options.minimumPageCount ?? 1);
+  // materialize the pages even though there is no more body node to overflow.
+  const minimumPageCount = Math.max(1, config.minimumPageCount ?? 1);
   while (ctx.pages.length < minimumPageCount) {
     cursor = startPage(ctx, cursor.prev);
   }
 
-  return finish(ctx, options);
+  return finish(ctx, config);
 }
 
 /**
@@ -320,8 +320,8 @@ function placeParagraph(
 
   // `w:keepLines` (§17.3.1.14) — keep the whole paragraph on one page, if it
   // can fit on one at all. Also best-effort; see the note above.
-  if (block.attrs?.keepLines) {
-    cursor = honourKeepLines(ctx, cursor, block, measure);
+  if (node.attrs?.keepLines) {
+    cursor = honourKeepLines(ctx, cursor, node, metrics);
   }
 
   let lineIndex = 0;
@@ -466,12 +466,12 @@ function applyWidowControl(
 function honourKeepLines(
   ctx: FlowContext,
   cursor: LayoutCursor,
-  block: ParagraphBlock,
-  measure: ParagraphMetrics
+  node: ParagraphBlock,
+  metrics: ParagraphMetrics
 ): LayoutCursor {
   const region = currentRegion(ctx, cursor);
-  const total = sliceHeight(measure.lines, 0, measure.lines.length);
-  const leadingGap = collapsedGap(cursor.prev, block);
+  const total = sliceHeight(metrics.lines, 0, metrics.lines.length);
+  const leadingGap = collapsedGap(cursor.prev, node);
   const effectiveTotal = leadingGap + total;
 
   if (effectiveTotal > region.bottom - region.top + FIT_TOLERANCE_PX) return cursor; // Never fits.

@@ -41,7 +41,7 @@ describe('anchored object paint parity', () => {
     const measure = paragraphLayout(block, 300);
     const fragment: ParagraphFragment = {
       kind: 'paragraph',
-      blockId: block.id,
+      nodeId: block.id,
       x: 50,
       y: 50,
       width: 300,
@@ -61,7 +61,7 @@ describe('anchored object paint parity', () => {
       { pageNumber: 1, totalPages: 1, section: 'body' },
       {
         document,
-        blockLookup: new Map([[String(block.id), { block, measure }]]),
+        nodeLookup: new Map([[String(block.id), { node: block, metrics: measure }]]),
       }
     );
 
@@ -98,7 +98,7 @@ describe('anchored object paint parity', () => {
       fragments: [
         {
           kind: 'paragraph',
-          blockId: block.id,
+          nodeId: block.id,
           x: 40,
           y: 20,
           width: 380,
@@ -114,7 +114,7 @@ describe('anchored object paint parity', () => {
       { pageNumber: 1, totalPages: 1, section: 'body' },
       {
         document,
-        blockLookup: new Map([[String(block.id), { block, measure }]]),
+        nodeLookup: new Map([[String(block.id), { node: block, metrics: measure }]]),
       }
     );
 
@@ -156,10 +156,10 @@ describe('anchored object paint parity', () => {
 
     const painted = renderHeaderFooterContent(
       {
-        blocks: [imageParagraph, textBox],
-        measures: [
+        nodes: [imageParagraph, textBox],
+        metrics: [
           { kind: 'paragraph', lines: [], totalHeight: 0 },
-          { kind: 'textBox', width: 80, height: 20, innerMeasures: [] },
+          { kind: 'textBox', width: 80, height: 20, innerMetrics: [] },
         ],
         height: 20,
       },
@@ -212,10 +212,10 @@ describe('anchored object paint parity', () => {
 
     const painted = renderHeaderFooterContent(
       {
-        blocks: [imageParagraph, textBox],
-        measures: [
+        nodes: [imageParagraph, textBox],
+        metrics: [
           { kind: 'paragraph', lines: [], totalHeight: 0 },
-          { kind: 'textBox', width: 20, height: 10, innerMeasures: [] },
+          { kind: 'textBox', width: 20, height: 10, innerMetrics: [] },
         ],
         height: 10,
       },
@@ -261,9 +261,9 @@ describe('anchored object paint parity', () => {
 
     const painted = renderHeaderFooterContent(
       {
-        blocks: [textBox, followingParagraph],
-        measures: [
-          { kind: 'textBox', width: 80, height: 20, innerMeasures: [] },
+        nodes: [textBox, followingParagraph],
+        metrics: [
+          { kind: 'textBox', width: 80, height: 20, innerMetrics: [] },
           { kind: 'paragraph', lines: [], totalHeight: 16 },
         ],
         height: 36,
@@ -312,8 +312,8 @@ describe('anchored object paint parity', () => {
 
     const painted = renderHeaderFooterContent(
       {
-        blocks: [table, followingParagraph],
-        measures: [
+        nodes: [table, followingParagraph],
+        metrics: [
           {
             kind: 'table',
             rows: [],
@@ -368,9 +368,9 @@ describe('anchored object paint parity', () => {
       id: 'following-footer-content',
       runs: [],
     };
-    const blocks = [textBox, followingParagraph];
-    const measures = [
-      { kind: 'textBox' as const, width: 80, height: 20, innerMeasures: [] },
+    const nodes = [textBox, followingParagraph];
+    const metrics = [
+      { kind: 'textBox' as const, width: 80, height: 20, innerMetrics: [] },
       { kind: 'paragraph' as const, lines: [], totalHeight: 16 },
     ];
     const page: Page = {
@@ -379,7 +379,7 @@ describe('anchored object paint parity', () => {
       margins: { top: 40, right: 50, bottom: 70, left: 50, footer: 30 },
       fragments: [],
     };
-    const bounds = calculateHeaderFooterVisualBounds(blocks, measures, 16, {
+    const bounds = calculateHeaderFooterVisualBounds(nodes, metrics, 16, {
       section: 'footer',
       pageSize: page.size,
       margins: page.margins,
@@ -392,8 +392,8 @@ describe('anchored object paint parity', () => {
         document,
         footerDistance: 30,
         footerContent: {
-          blocks,
-          measures,
+          nodes,
+          metrics,
           height: 36,
           flowHeight: 16,
           ...bounds,
@@ -462,18 +462,18 @@ describe('anchored object paint parity', () => {
       id: 'following-footer-margin-content',
       runs: [],
     };
-    const measures = [
-      { kind: 'textBox' as const, width: 20, height: 10, innerMeasures: [] },
+    const metrics = [
+      { kind: 'textBox' as const, width: 20, height: 10, innerMetrics: [] },
       { kind: 'paragraph' as const, lines: [], totalHeight: 16 },
     ];
-    const headerBlocks = [headerTextBox, headerParagraph];
-    const footerBlocks = [footerTextBox, footerParagraph];
-    const headerBounds = calculateHeaderFooterVisualBounds(headerBlocks, measures, 16, {
+    const headerNodes = [headerTextBox, headerParagraph];
+    const footerNodes = [footerTextBox, footerParagraph];
+    const headerBounds = calculateHeaderFooterVisualBounds(headerNodes, metrics, 16, {
       section: 'header',
       pageSize: page.size,
       margins,
     });
-    const footerBounds = calculateHeaderFooterVisualBounds(footerBlocks, measures, 16, {
+    const footerBounds = calculateHeaderFooterVisualBounds(footerNodes, metrics, 16, {
       section: 'footer',
       pageSize: page.size,
       margins,
@@ -487,15 +487,15 @@ describe('anchored object paint parity', () => {
         headerDistance: 20,
         footerDistance: 30,
         headerContent: {
-          blocks: headerBlocks,
-          measures,
+          nodes: headerNodes,
+          metrics,
           height: 26,
           flowHeight: 16,
           ...headerBounds,
         },
         footerContent: {
-          blocks: footerBlocks,
-          measures,
+          nodes: footerNodes,
+          metrics,
           height: 26,
           flowHeight: 16,
           ...footerBounds,

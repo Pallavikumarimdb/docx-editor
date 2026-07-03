@@ -641,7 +641,7 @@ function convertImage(node: PMNode, startPos: number, pageContentHeight?: number
 function convertTextBoxNode(
   node: PMNode,
   startPos: number,
-  opts: BuildBoxTreeOptions
+  config: BuildBoxTreeOptions
 ): TextBoxBlock {
   const attrs = node.attrs;
   const contentNodes: ParagraphBlock[] = [];
@@ -649,8 +649,8 @@ function convertTextBoxNode(
   // Convert child paragraphs inside the text box
   node.forEach((child, offset) => {
     if (child.type.name === 'paragraph') {
-      const block = convertParagraph(child, startPos + 1 + offset, opts);
-      contentNodes.push(block);
+      const contentNode = convertParagraph(child, startPos + 1 + offset, config);
+      contentNodes.push(contentNode);
     }
   });
 
@@ -696,7 +696,7 @@ export function buildBoxTree(doc: PMNode, config: BuildBoxTreeOptions = {}): Con
   // doc node so callers don't have to plumb a separate prop. Explicit
   // config still win for callers that override.
   const docDefaultTabMark = doc.attrs?.defaultTabMarkTwips as number | undefined;
-  const opts: BuildBoxTreeOptions = {
+  const normalizedConfig: BuildBoxTreeOptions = {
     ...config,
     defaultFont: config.defaultFont ?? DEFAULT_FONT,
     defaultSize: config.defaultSize ?? DEFAULT_SIZE,
@@ -713,11 +713,11 @@ export function buildBoxTree(doc: PMNode, config: BuildBoxTreeOptions = {}): Con
   };
   // Shared counter map: paragraphs in tables and text boxes update it too,
   // so list numbering stays continuous across containers.
-  if (!opts.listCounters) {
-    opts.listCounters = new Map<number, number[]>();
+  if (!normalizedConfig.listCounters) {
+    normalizedConfig.listCounters = new Map<number, number[]>();
   }
-  if (!opts.listSeenNumIds) {
-    opts.listSeenNumIds = new Set<string>();
+  if (!normalizedConfig.listSeenNumIds) {
+    normalizedConfig.listSeenNumIds = new Set<string>();
   }
 
   /**
@@ -755,10 +755,10 @@ export function buildBoxTree(doc: PMNode, config: BuildBoxTreeOptions = {}): Con
     switch (node.type.name) {
       case 'paragraph':
         {
-          const block = convertParagraph(node, pos, opts);
+          const contentNode = convertParagraph(node, pos, normalizedConfig);
           const pmAttrs = node.attrs as PMParagraphAttrs;
 
-          nodes.push(block);
+          nodes.push(contentNode);
 
           // Emit section break block if this paragraph ends a section
           const secProps = pmAttrs._sectionProperties as SectionProperties | undefined;
@@ -820,16 +820,16 @@ export function buildBoxTree(doc: PMNode, config: BuildBoxTreeOptions = {}): Con
         break;
 
       case 'table':
-        nodes.push(convertTable(node, pos, opts));
+        nodes.push(convertTable(node, pos, normalizedConfig));
         break;
 
       case 'image':
         // Standalone image block (if not inline)
-        nodes.push(convertImage(node, pos, opts.pageContentHeight));
+        nodes.push(convertImage(node, pos, normalizedConfig.pageContentHeight));
         break;
 
       case 'textBox':
-        nodes.push(convertTextBoxNode(node, pos, opts));
+        nodes.push(convertTextBoxNode(node, pos, normalizedConfig));
         break;
 
       case 'horizontalRule':

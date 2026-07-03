@@ -123,7 +123,7 @@ export function getRunCharWidths(run: Run, defaults: Partial<FontStyle> = {}): n
 }
 
 /**
- * LayoutMetrics several paragraphs at one width.
+ * Measure several paragraphs at one width.
  *
  * @public
  */

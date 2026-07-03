@@ -3,7 +3,7 @@
  *
  * Pre-scans a block list to extract exclusion zones from anchored images,
  * floating tables, and floating text boxes; estimates page/section/column
- * flow scopes; then walks the blocks calling the caller-supplied
+ * flow scopes; then walks the nodes calling the caller-supplied
  * `measureBlock` with only the zones active in that scope.
  *
  * Adapters (React, Vue) provide their own `measureBlock` so they can
@@ -18,10 +18,10 @@ import {
   isFloatingTextBoxBlock,
   isWrapNone,
   type ColumnLayout,
-  type FlowBlock,
+  type ContentNode,
   type ImageRun,
   type ImageRunPosition,
-  type Measure,
+  type LayoutMetrics,
   type MeasuredLine,
   type ParagraphBlock,
   type ParagraphMetrics,
@@ -48,7 +48,7 @@ import { measureTable } from '../measureTable';
  * A floating exclusion zone tagged with the block index that anchors it.
  */
 interface FloatingZoneWithAnchor extends FloatingImageZone {
-  anchorBlockIndex: number;
+  anchorNodeIndex: number;
   /** True when the resolver's vertical position follows the anchor paragraph. */
   isParagraphRelative?: boolean;
 }
@@ -56,7 +56,7 @@ interface FloatingZoneWithAnchor extends FloatingImageZone {
 interface FloatFlowScopes {
   initialGeometry: FloatPageGeometry | undefined;
   geometryAfterBreak: Map<number, FloatPageGeometry | undefined>;
-  baseMeasures: Measure[];
+  baseMetrics: LayoutMetrics[];
 }
 
 /**
@@ -118,12 +118,12 @@ export function measureBlocksWithFloats(
   measureBlock: MeasureBlockFn,
   pageGeometry?: FloatPageGeometry,
   finalPageGeometry?: FloatPageGeometry
-): Measure[] {
+): LayoutMetrics[] {
   const defaultWidth = Array.isArray(contentWidth) ? (contentWidth[0] ?? 0) : contentWidth;
-  const blockWidthAt = (blockIndex: number): number =>
-    Array.isArray(contentWidth) ? (contentWidth[blockIndex] ?? defaultWidth) : contentWidth;
+  const blockWidthAt = (nodeIndex: number): number =>
+    Array.isArray(contentWidth) ? (contentWidth[nodeIndex] ?? defaultWidth) : contentWidth;
   const scopes = buildFloatFlowScopes(
-    blocks,
+    nodes,
     blockWidthAt,
     measureBlock,
     pageGeometry,
@@ -137,24 +137,24 @@ export function measureBlocksWithFloats(
   let currentColumnCount = columnCountForGeometry(currentPageGeometry);
   let columnRegionTop = 0;
   let regionBottom = 0;
-  const measures: Measure[] = [];
+  const metrics: LayoutMetrics[] = [];
 
   const activateAnchoredZones = (
-    block: FlowBlock,
-    blockIndex: number,
+    block: ContentNode,
+    nodeIndex: number,
     blockWidth: number
   ): void => {
     const anchoredZones: FloatingZoneWithAnchor[] = [];
     extractFloatingZonesFromBlock(
       block,
-      blockIndex,
+      nodeIndex,
       blockWidth,
       measureBlock,
       currentPageGeometry,
       anchoredZones
     );
     for (const anchored of anchoredZones) {
-      const { anchorBlockIndex: _anchorBlockIndex, isParagraphRelative, ...zone } = anchored;
+      const { anchorNodeIndex: _anchorBlockIndex, isParagraphRelative, ...zone } = anchored;
       activeZones.push(
         isParagraphRelative
           ? {
@@ -191,8 +191,8 @@ export function measureBlocksWithFloats(
     beginPhysicalScope();
   };
 
-  const ensureRoomForPositiveFlow = (blockIndex: number): void => {
-    const baseHeight = measureFlowHeight(blocks[blockIndex], scopes.baseMeasures[blockIndex]);
+  const ensureRoomForPositiveFlow = (nodeIndex: number): void => {
+    const baseHeight = measureFlowHeight(nodes[nodeIndex], scopes.baseMetrics[nodeIndex]);
     let contentHeight = currentPageGeometry?.contentHeight ?? Number.POSITIVE_INFINITY;
     while (
       baseHeight > 0 &&
@@ -232,10 +232,10 @@ export function measureBlocksWithFloats(
     }
   };
 
-  const applySectionTransition = (blockIndex: number, block: FlowBlock): void => {
+  const applySectionTransition = (nodeIndex: number, block: ContentNode): void => {
     if (block.kind !== 'sectionBreak') return;
 
-    nextPageGeometry = scopes.geometryAfterBreak.get(blockIndex);
+    nextPageGeometry = scopes.geometryAfterBreak.get(nodeIndex);
     if (block.type === 'continuous') {
       // Composition re-columnises the remainder of this physical page at the
       // current pen. Page dimensions stay unchanged until an actual page start.
@@ -256,17 +256,17 @@ export function measureBlocksWithFloats(
     beginPhysicalScope();
   };
 
-  for (let blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
-    const block = blocks[blockIndex];
-    ensureRoomForPositiveFlow(blockIndex);
+  for (let nodeIndex = 0; nodeIndex < nodes.length; nodeIndex++) {
+    const block = nodes[nodeIndex];
+    ensureRoomForPositiveFlow(nodeIndex);
 
-    const blockWidth = blockWidthAt(blockIndex);
-    activateAnchoredZones(block, blockIndex, blockWidth);
+    const blockWidth = blockWidthAt(nodeIndex);
+    activateAnchoredZones(block, nodeIndex, blockWidth);
     activeZones = activeZones.filter((zone) => zone.bottomY > cumulativeY);
     let zones = activeZones.length > 0 ? activeZones : undefined;
     let measure =
       zones == null
-        ? scopes.baseMeasures[blockIndex]
+        ? scopes.baseMetrics[nodeIndex]
         : measureBlock(block, blockWidth, zones, cumulativeY);
     let height = measureFlowHeight(block, measure);
     let contentHeight = currentPageGeometry?.contentHeight ?? Number.POSITIVE_INFINITY;
@@ -293,7 +293,7 @@ export function measureBlocksWithFloats(
         measure = mergeParagraphContinuation(
           block,
           measure,
-          scopes.baseMeasures[blockIndex] as ParagraphMetrics,
+          scopes.baseMetrics[nodeIndex] as ParagraphMetrics,
           prefixLineCount,
           blockWidth,
           measureBlock
@@ -303,7 +303,7 @@ export function measureBlocksWithFloats(
     }
 
     // A zone can increase an atomic/keep-lines block enough to move that whole
-    // block into the next flow region. Re-evaluate only those blocks at the new scope
+    // block into the next flow region. Re-evaluate only those nodes at the new scope
     // origin. Splittable paragraphs keep their current-page lines in the zone
     // and continue without it after pagination cuts the measured line set.
     const remainingInScope = contentHeight - cumulativeY;
@@ -327,16 +327,16 @@ export function measureBlocksWithFloats(
     ) {
       advanceFlowScope();
       contentHeight = currentPageGeometry?.contentHeight ?? Number.POSITIVE_INFINITY;
-      activateAnchoredZones(block, blockIndex, blockWidth);
+      activateAnchoredZones(block, nodeIndex, blockWidth);
       activeZones = activeZones.filter((zone) => zone.bottomY > cumulativeY);
       zones = activeZones.length > 0 ? activeZones : undefined;
       measure =
         zones == null
-          ? scopes.baseMeasures[blockIndex]
+          ? scopes.baseMetrics[nodeIndex]
           : measureBlock(block, blockWidth, zones, cumulativeY);
       height = measureFlowHeight(block, measure);
     }
-    measures.push(measure);
+    metrics.push(measure);
 
     // Floating tables don't advance flow Y (their wrap zone already accounts
     // for vertical space). Every other measurable block advances the scope pen.
@@ -347,11 +347,11 @@ export function measureBlocksWithFloats(
     } else if (block.kind === 'columnBreak') {
       advanceFlowScope();
     } else {
-      applySectionTransition(blockIndex, block);
+      applySectionTransition(nodeIndex, block);
     }
   }
 
-  return measures;
+  return metrics;
 }
 
 function columnCountForGeometry(geometry: FloatPageGeometry | undefined): number {
@@ -503,26 +503,26 @@ function remapContinuationLine(
 }
 
 function buildFloatFlowScopes(
-  blocks: FlowBlock[],
-  blockWidthAt: (blockIndex: number) => number,
+  nodes: ContentNode[],
+  blockWidthAt: (nodeIndex: number) => number,
   measureBlock: MeasureBlockFn,
   initialGeometry?: FloatPageGeometry,
   finalGeometry?: FloatPageGeometry
 ): FloatFlowScopes {
-  const baseMeasures: Measure[] = [];
+  const baseMetrics: LayoutMetrics[] = [];
 
-  for (let blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
-    const block = blocks[blockIndex];
-    const measure = measureBlock(block, blockWidthAt(blockIndex));
-    baseMeasures.push(measure);
+  for (let nodeIndex = 0; nodeIndex < nodes.length; nodeIndex++) {
+    const block = nodes[nodeIndex];
+    const measure = measureBlock(block, blockWidthAt(nodeIndex));
+    baseMetrics.push(measure);
   }
 
   if (!initialGeometry) {
-    return { initialGeometry: undefined, geometryAfterBreak: new Map(), baseMeasures };
+    return { initialGeometry: undefined, geometryAfterBreak: new Map(), baseMetrics };
   }
 
   const sectionPlan = collectSectionConfigs(
-    blocks,
+    nodes,
     sectionConfigFromGeometry(initialGeometry),
     sectionConfigFromGeometry(finalGeometry ?? initialGeometry)
   );
@@ -541,11 +541,11 @@ function buildFloatFlowScopes(
   return {
     initialGeometry: sectionGeometries[0] ?? initialGeometry,
     geometryAfterBreak,
-    baseMeasures,
+    baseMetrics,
   };
 }
 
-function measureFlowHeight(block: FlowBlock, measure: Measure): number {
+function measureFlowHeight(block: ContentNode, measure: LayoutMetrics): number {
   if (block.kind === 'table' && (block as TableBlock).floating) return 0;
   if (block.kind === 'textBox' && isFloatingTextBoxBlock(block as TextBoxBlock)) return 0;
   if ('totalHeight' in measure) return measure.totalHeight;
@@ -571,8 +571,8 @@ function sectionConfigFromGeometry(geometry: FloatPageGeometry) {
  * page geometry currently receiving that block.
  */
 function extractFloatingZonesFromBlock(
-  block: FlowBlock,
-  blockIndex: number,
+  block: ContentNode,
+  nodeIndex: number,
   contentWidth: number,
   measureBlock: MeasureBlockFn,
   pageGeometry: FloatPageGeometry | undefined,
@@ -582,19 +582,19 @@ function extractFloatingZonesFromBlock(
     case 'paragraph':
       extractImageZonesFromParagraph(
         block as ParagraphBlock,
-        blockIndex,
+        nodeIndex,
         contentWidth,
         zones,
         pageGeometry
       );
       break;
     case 'table':
-      extractFloatingTableZone(block as TableBlock, blockIndex, contentWidth, measureBlock, zones);
+      extractFloatingTableZone(block as TableBlock, nodeIndex, contentWidth, measureBlock, zones);
       break;
     case 'textBox':
       extractFloatingTextBoxZone(
         block as TextBoxBlock,
-        blockIndex,
+        nodeIndex,
         contentWidth,
         zones,
         pageGeometry
@@ -676,7 +676,7 @@ function extractImageZonesFromParagraph(
         rightMargin: 0,
         topY: rawTopY - distTop,
         bottomY,
-        anchorBlockIndex: blockIndex,
+        anchorNodeIndex: nodeIndex,
         isParagraphRelative: isPositionParagraphRelative(imgRun.position),
         fullWidthBlock: true,
       });
@@ -708,7 +708,7 @@ function extractImageZonesFromParagraph(
     );
     out.push({
       ...zone,
-      anchorBlockIndex: blockIndex,
+      anchorNodeIndex: nodeIndex,
       // The shared resolver used fragmentY=0 above. Paragraph/line-relative
       // images retain their existing flow-relative behavior when activation
       // adds the anchor paragraph's cumulative Y.
@@ -822,7 +822,7 @@ function extractFloatingTextBoxZone(
       rightMargin: 0,
       topY: Math.max(0, rawTopY - distTop),
       bottomY,
-      anchorBlockIndex: blockIndex,
+      anchorNodeIndex: nodeIndex,
       isParagraphRelative: isPositionParagraphRelative(tbBlock.position),
       fullWidthBlock: true,
     });
@@ -851,7 +851,7 @@ function extractFloatingTextBoxZone(
     rightMargin,
     topY: topY - distTop,
     bottomY: bottomY + distBottom,
-    anchorBlockIndex: blockIndex,
+    anchorNodeIndex: nodeIndex,
     isParagraphRelative: isPositionParagraphRelative(tbBlock.position),
   });
 }

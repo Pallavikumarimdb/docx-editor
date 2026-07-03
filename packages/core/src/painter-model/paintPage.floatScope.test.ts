@@ -83,7 +83,7 @@ test('paints an anchored image only on its split-paragraph fragment', () => {
   const first = paintPage(
     pageWithFragment(1, {
       kind: 'paragraph',
-      blockId: 'split',
+      nodeId: 'split',
       x: 20,
       y: 20,
       width: 260,
@@ -93,12 +93,12 @@ test('paints an anchored image only on its split-paragraph fragment', () => {
       continuesOnNext: true,
     }),
     { pageNumber: 1, totalPages: 2, section: 'body' },
-    { document, blockLookup: new Map([['split', { block, measure }]]) }
+    { document, nodeLookup: new Map([['split', { node: block, metrics: measure }]]) }
   );
   const continuation = paintPage(
     pageWithFragment(2, {
       kind: 'paragraph',
-      blockId: 'split',
+      nodeId: 'split',
       x: 20,
       y: 20,
       width: 260,
@@ -108,7 +108,7 @@ test('paints an anchored image only on its split-paragraph fragment', () => {
       continuesFromPrev: true,
     }),
     { pageNumber: 2, totalPages: 2, section: 'body' },
-    { document, blockLookup: new Map([['split', { block, measure }]]) }
+    { document, nodeLookup: new Map([['split', { node: block, metrics: measure }]]) }
   );
 
   expect(first.querySelectorAll('.layout-page-floating-image')).toHaveLength(1);

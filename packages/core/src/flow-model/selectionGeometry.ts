@@ -17,19 +17,19 @@
  */
 
 import type {
-  FlowBlock,
-  Layout,
-  Measure,
+  ContentNode,
+  PageLayout,
+  LayoutMetrics,
   MeasuredLine,
   Page,
   ParagraphBlock,
   ParagraphMetrics,
   TableBlock,
   TableFragment,
-  TableMeasure,
+  TableMetrics,
 } from '../pagination-model/types';
 import { layoutCellContent } from './cellBlockLayout';
-import { pageTopOffset } from './pointerHitResolve';
+import { pageTopOffset } from './pointerTargetResolve';
 import { getPositionRect, positionToX } from './pointerToDocPos';
 import { resolveCellGrid } from './tableWidthUtils';
 
@@ -285,7 +285,7 @@ const TABLE_BOUNDARY_CARET_HEIGHT = 16;
 
 function tableCaretRect(
   block: TableBlock,
-  measure: TableMeasure,
+  measure: TableMetrics,
   fragment: TableFragment,
   pmPos: number
 ): { x: number; y: number; height: number } | null {
@@ -328,7 +328,7 @@ function tableCaretRect(
 
 function tableSelectionRects(
   block: TableBlock,
-  measure: TableMeasure,
+  measure: TableMetrics,
   fragment: TableFragment,
   from: number,
   to: number,
@@ -379,7 +379,7 @@ function tableSelectionRects(
 
 function tablePlacements(
   block: TableBlock,
-  measure: TableMeasure,
+  measure: TableMetrics,
   fragment: TableFragment
 ): TablePlacements {
   const lines: TableLinePlacement[] = [];
@@ -413,7 +413,7 @@ function tablePlacements(
 
     const padLeft = cell.padding?.left ?? DEFAULT_CELL_PADDING_X;
     const padTop = cell.padding?.top ?? DEFAULT_CELL_PADDING_Y;
-    const range = cellDocRange(cell.blocks);
+    const range = cellDocRange(cell.nodes);
     cells.push({
       x: fragment.x + cellX,
       y: fragment.y + visibleTop,
@@ -423,17 +423,17 @@ function tablePlacements(
       ...range,
     });
 
-    const content = layoutCellContent(cell.blocks, cellMeasure.blocks, padTop);
+    const content = layoutCellContent(cell.nodes, cellMeasure.metrics, padTop);
     const slack = Math.max(0, cellHeight - (cellMeasure.height ?? 0));
     const verticalOffset =
       cell.verticalAlign === 'bottom' ? slack : cell.verticalAlign === 'center' ? slack / 2 : 0;
 
-    for (let blockIndex = 0; blockIndex < cell.blocks.length; blockIndex++) {
-      const child = cell.blocks[blockIndex];
-      const childMeasure = cellMeasure.blocks[blockIndex];
+    for (let nodeIndex = 0; nodeIndex < cell.nodes.length; nodeIndex++) {
+      const child = cell.nodes[nodeIndex];
+      const childMeasure = cellMeasure.metrics[nodeIndex];
       if (child?.kind !== 'paragraph' || childMeasure?.kind !== 'paragraph') continue;
 
-      const lineTops = content.lineTops[blockIndex] ?? [];
+      const lineTops = content.lineTops[nodeIndex] ?? [];
       for (let lineIndex = 0; lineIndex < childMeasure.lines.length; lineIndex++) {
         const line = childMeasure.lines[lineIndex];
         const lineTop = cellTop + verticalOffset + (lineTops[lineIndex] ?? 0);
@@ -475,7 +475,7 @@ function tablePlacements(
   return { lines, cells };
 }
 
-function tableRowTops(measure: TableMeasure): number[] {
+function tableRowTops(measure: TableMetrics): number[] {
   const tops = [0];
   for (const row of measure.rows) tops.push(tops[tops.length - 1]! + row.height);
   return tops;
@@ -495,10 +495,10 @@ function columnSpanWidth(widths: readonly number[], columnIndex: number, colSpan
   return width;
 }
 
-function cellDocRange(blocks: readonly FlowBlock[]): { docFrom?: number; docTo?: number } {
+function cellDocRange(nodes: readonly ContentNode[]): { docFrom?: number; docTo?: number } {
   let docFrom: number | undefined;
   let docTo: number | undefined;
-  for (const block of blocks) {
+  for (const block of nodes) {
     if (block.docFrom !== undefined) docFrom = Math.min(docFrom ?? block.docFrom, block.docFrom);
     if (block.docTo !== undefined) docTo = Math.max(docTo ?? block.docTo, block.docTo);
   }

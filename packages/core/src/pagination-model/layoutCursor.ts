@@ -105,7 +105,7 @@ export interface FlowContext {
   sectionPageCounts: Map<number, number>;
 }
 
-interface InternalLayoutOptions extends LayoutOptions {
+interface InternalLayoutConfig extends LayoutConfig {
   resolvePageMargins?: (args: {
     base: PageMargins;
     pageNumber: number;
@@ -219,14 +219,14 @@ export function startPage(ctx: FlowContext, prev: ContentNode | null = null): La
   const number = ctx.pages.length + 1;
   const sectionPageNumber = (ctx.sectionPageCounts.get(ctx.sectionIndex) ?? 0) + 1;
   ctx.sectionPageCounts.set(ctx.sectionIndex, sectionPageNumber);
-  const internalOptions = ctx.options as InternalLayoutOptions;
+  const internalConfig = ctx.config as InternalLayoutConfig;
   const margins =
-    internalOptions.resolvePageMargins?.({
+    internalConfig.resolvePageMargins?.({
       base: ctx.section.margins,
       pageNumber: number,
       sectionIndex: ctx.sectionIndex,
       sectionPageNumber,
-    }) ?? effectiveMargins(ctx.section.margins, number, ctx.options);
+    }) ?? effectiveMargins(ctx.section.margins, number, ctx.config);
   const page: PageDraft = {
     number,
     size: ctx.section.pageSize,
@@ -236,7 +236,7 @@ export function startPage(ctx: FlowContext, prev: ContentNode | null = null): La
     footnoteReservedHeight: ctx.config.footnoteReservedHeights?.get(number),
   };
   ctx.pages.push(page);
-  internalOptions.onPageStart?.({
+  internalConfig.onPageStart?.({
     pageNumber: number,
     sectionIndex: ctx.sectionIndex,
     sectionPageNumber,

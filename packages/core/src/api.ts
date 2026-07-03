@@ -28,11 +28,11 @@ import {
 import {
   DEFAULT_TEXTBOX_MARGINS,
   DEFAULT_TEXTBOX_WIDTH,
-  assertExhaustiveFlowBlock,
-  type FlowBlock,
-  type Measure,
+  assertExhaustiveContentNode,
+  type ContentNode,
+  type LayoutMetrics,
 } from './pagination-model';
-import { indexBlocksById, paintPages, type RenderPageOptions } from './painter-model';
+import { indexNodesById, paintPages, type RenderPageOptions } from './painter-model';
 import { getCaretPositionFromDom, readSelectionGeometry } from './flow-model/resolveDomPosition';
 
 /** The independent ProseMirror position space that owns a painted box. */
@@ -112,13 +112,13 @@ export function renderDocument(document: OoxmlDocument, root: HTMLElement): Rend
     getHfPmDoc: () => null,
   });
 
-  const blockLookup = indexBlocksById(result.blocks, result.measures);
+  const nodeLookup = indexNodesById(result.nodes, result.metrics);
   paintPages(result.layout.pages, root, {
     document: root.ownerDocument,
     pageGap,
     showShadow: true,
     pageBackground: 'var(--doc-page-bg, #ffffff)',
-    blockLookup,
+    nodeLookup,
     headerContent: result.headerContentForRender,
     footerContent: result.footerContentForRender,
     firstPageHeaderContent: result.firstPageHeaderForRender,
@@ -165,13 +165,13 @@ function snapshotRenderedDocument(root: HTMLElement): RenderedDocument {
 }
 
 function measureBlocks(
-  blocks: FlowBlock[],
+  nodes: ContentNode[],
   contentWidth: number | number[],
   pageGeometry?: Parameters<typeof measureBlocksWithFloats>[3],
   finalPageGeometry?: Parameters<typeof measureBlocksWithFloats>[4]
-): Measure[] {
+): LayoutMetrics[] {
   return measureBlocksWithFloats(
-    blocks,
+    nodes,
     contentWidth,
     measureBlock,
     pageGeometry,
@@ -180,11 +180,11 @@ function measureBlocks(
 }
 
 function measureBlock(
-  block: FlowBlock,
+  block: ContentNode,
   contentWidth: number,
   floatingZones?: FloatingImageZone[],
   cumulativeY?: number
-): Measure {
+): LayoutMetrics {
   switch (block.kind) {
     case 'paragraph':
       return paragraphLayout(block, contentWidth, {
@@ -199,15 +199,13 @@ function measureBlock(
       const margins = block.margins ?? DEFAULT_TEXTBOX_MARGINS;
       const width = block.width ?? DEFAULT_TEXTBOX_WIDTH;
       const innerWidth = width - margins.left - margins.right;
-      const innerMeasures = block.content.map((paragraph) =>
-        paragraphLayout(paragraph, innerWidth)
-      );
-      const contentHeight = innerMeasures.reduce((sum, measure) => sum + measure.totalHeight, 0);
+      const innerMetrics = block.content.map((paragraph) => paragraphLayout(paragraph, innerWidth));
+      const contentHeight = innerMetrics.reduce((sum, measure) => sum + measure.totalHeight, 0);
       return {
         kind: 'textBox',
         width,
         height: block.height ?? contentHeight + margins.top + margins.bottom,
-        innerMeasures,
+        innerMetrics,
       };
     }
     case 'pageBreak':
@@ -217,7 +215,7 @@ function measureBlock(
     case 'sectionBreak':
       return { kind: 'sectionBreak' };
     default:
-      return assertExhaustiveFlowBlock(block, 'api renderDocument measureBlock');
+      return assertExhaustiveContentNode(block, 'api renderDocument measureBlock');
   }
 }
 

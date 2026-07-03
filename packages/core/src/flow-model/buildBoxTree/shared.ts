@@ -63,18 +63,18 @@ export function constrainImageToPage(
   return { width: Math.round(width * scale), height: pageContentHeight };
 }
 
-let blockIdCounter = 0;
+let nodeIdCounter = 0;
 
 /**
  * Generate a unique block ID.
  */
 export function allocBoxId(): string {
-  return `block-${++blockIdCounter}`;
+  return `block-${++nodeIdCounter}`;
 }
 
 /**
  * Reset the block ID counter (useful for testing).
  */
 export function resetBoxIds(): void {
-  blockIdCounter = 0;
+  nodeIdCounter = 0;
 }

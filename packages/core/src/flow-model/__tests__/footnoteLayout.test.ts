@@ -12,18 +12,18 @@ import { takeFootnoteSlice } from '../footnoteSlices';
 import { layOutPages } from '../../pagination-model';
 import type {
   FootnoteContent,
-  LayoutOptions,
+  LayoutConfig,
   MeasuredLine,
   Page,
   ParagraphBlock,
   ParagraphMetrics,
   SectionMarkerBlock,
   TableBlock,
-  TableMeasure,
+  TableMetrics,
 } from '../../pagination-model/types';
 import type { Footnote } from '../../types/document';
 
-const layoutOpts: LayoutOptions = {
+const layoutConfig: LayoutConfig = {
   pageSize: { w: 200, h: 140 },
   margins: { top: 10, right: 10, bottom: 10, left: 10 },
 };
@@ -62,15 +62,47 @@ function paragraph(id: string, docFrom: number, footnoteRefId?: number): Paragra
 function paragraphMeasure(count: number, lineHeight = 40): ParagraphMetrics {
   return {
     kind: 'paragraph',
-    lines: Array.from({ length: count }, () => line(lineHeight)),
+    lines: Array.from({ length: count }, (_, index) => ({
+      ...line(lineHeight),
+      fromChar: index,
+      toChar: index + 1,
+    })),
     totalHeight: count * lineHeight,
+  };
+}
+
+function textParagraph(id: string, text: string): ParagraphBlock {
+  return {
+    kind: 'paragraph',
+    id,
+    runs: [{ kind: 'text', text }],
+  };
+}
+
+function wrappedParagraphMeasure(
+  textLength: number,
+  charsPerLine: number,
+  lineHeight: number
+): ParagraphMetrics {
+  const lines = Array.from({ length: Math.ceil(textLength / charsPerLine) }, (_, index) => {
+    const fromChar = index * charsPerLine;
+    return {
+      ...line(lineHeight),
+      fromChar,
+      toChar: Math.min(textLength, fromChar + charsPerLine),
+    };
+  });
+  return {
+    kind: 'paragraph',
+    lines,
+    totalHeight: lines.length * lineHeight,
   };
 }
 
 function bodyFixture() {
   const block = paragraph('body', 1, 7);
   const measure = paragraphMeasure(1, 20);
-  const initialLayout = layOutPages([block], [measure], layoutOpts);
+  const initialLayout = layOutPages([block], [measure], layoutConfig);
   const refs: FootnoteRefLocation[] = [{ footnoteId: 7, pmPos: 1 }];
   return { block, measure, initialLayout, refs };
 }
@@ -81,15 +113,15 @@ describe('footnote continuation planning', () => {
     const content: FootnoteContent = {
       id: 7,
       displayNumber: 1,
-      blocks: [paragraph('footnote-p', 100)],
-      measures: [paragraphMeasure(7)],
+      nodes: [paragraph('footnote-p', 100)],
+      metrics: [paragraphMeasure(7)],
       height: 280,
     };
 
     const result = stabilizeFootnoteLayout({
-      blocks: [block],
-      measures: [measure],
-      layoutOpts,
+      nodes: [block],
+      metrics: [measure],
+      layoutConfig,
       footnoteRefs: refs,
       footnoteContentMap: new Map([[7, content]]),
       initialLayout,
@@ -100,18 +132,71 @@ describe('footnote continuation planning', () => {
     expect(result.layout.pages[0].footnoteFragments?.[0]).toMatchObject({
       footnoteId: 7,
       continuesOnNext: true,
-      blocks: [{ kind: 'paragraph', fromLine: 0, toLine: 2 }],
+      nodes: [{ kind: 'paragraph', fromLine: 0, toLine: 2 }],
     });
     expect(result.layout.pages[1].footnoteFragments?.[0]).toMatchObject({
       continuesFromPrev: true,
       continuesOnNext: true,
-      blocks: [{ kind: 'paragraph', fromLine: 2, toLine: 4 }],
+      nodes: [{ kind: 'paragraph', fromLine: 2, toLine: 4 }],
     });
     expect(result.layout.pages[3].footnoteFragments?.[0]).toMatchObject({
       continuesFromPrev: true,
-      blocks: [{ kind: 'paragraph', fromLine: 6, toLine: 7 }],
+      nodes: [{ kind: 'paragraph', fromLine: 6, toLine: 7 }],
     });
     expect(result.layout.pages[3].footnoteFragments?.[0].continuesOnNext).toBeUndefined();
+  });
+
+  test('remaps a continuation cursor from 10-character lines to 5-character lines', () => {
+    const text = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN';
+    const block = textParagraph('remeasured-footnote', text);
+    const wideContent: FootnoteContent = {
+      id: 7,
+      displayNumber: 1,
+      nodes: [block],
+      metrics: [wrappedParagraphMeasure(text.length, 10, 10)],
+      height: 40,
+    };
+    const narrowContent: FootnoteContent = {
+      ...wideContent,
+      metrics: [wrappedParagraphMeasure(text.length, 5, 10)],
+      height: 80,
+    };
+
+    const wideSlice = takeFootnoteSlice(wideContent, { nodeIndex: 0, unitIndex: 0 }, 20, 0, true);
+    expect(wideSlice.fragment?.nodes[0]).toMatchObject({
+      kind: 'paragraph',
+      fromLine: 0,
+      toLine: 2,
+      fromRun: 0,
+      fromChar: 0,
+      toRun: 0,
+      toChar: 20,
+    });
+    expect(wideSlice.cursor.paragraphPosition).toEqual({ runIndex: 0, charOffset: 20 });
+
+    const narrowSlice = takeFootnoteSlice(
+      narrowContent,
+      wideSlice.cursor,
+      Number.POSITIVE_INFINITY,
+      0,
+      true
+    );
+    expect(narrowSlice.fragment?.nodes[0]).toMatchObject({
+      kind: 'paragraph',
+      fromLine: 4,
+      toLine: 8,
+      fromRun: 0,
+      fromChar: 20,
+      toRun: 0,
+      toChar: 40,
+    });
+    const ranges = [wideSlice.fragment, narrowSlice.fragment].map((fragment) => {
+      const slice = fragment?.nodes[0];
+      if (!slice || slice.kind !== 'paragraph') return '';
+      return text.slice(slice.fromChar, slice.toChar);
+    });
+    expect(ranges.join('')).toBe(text);
+    expect(narrowSlice.done).toBe(true);
   });
 
   test('slices tables only between complete rows', () => {
@@ -121,14 +206,14 @@ describe('footnote continuation planning', () => {
       id: 'footnote-table',
       rows: Array.from({ length: 5 }, (_, row) => ({
         id: `row-${row}`,
-        cells: [{ id: `cell-${row}`, blocks: [] }],
+        cells: [{ id: `cell-${row}`, nodes: [] }],
       })),
     };
-    const tableMeasure: TableMeasure = {
+    const tableMeasure: TableMetrics = {
       kind: 'table',
       rows: Array.from({ length: 5 }, () => ({
         height: 45,
-        cells: [{ blocks: [], width: 180 }],
+        cells: [{ metrics: [], width: 180 }],
       })),
       columnWidths: [180],
       totalWidth: 180,
@@ -137,21 +222,21 @@ describe('footnote continuation planning', () => {
     const content: FootnoteContent = {
       id: 7,
       displayNumber: 1,
-      blocks: [table],
-      measures: [tableMeasure],
+      nodes: [table],
+      metrics: [tableMeasure],
       height: 225,
     };
 
     const result = stabilizeFootnoteLayout({
-      blocks: [block],
-      measures: [measure],
-      layoutOpts,
+      nodes: [block],
+      metrics: [measure],
+      layoutConfig,
       footnoteRefs: refs,
       footnoteContentMap: new Map([[7, content]]),
       initialLayout,
     });
 
-    expect(result.layout.pages.map((page) => page.footnoteFragments?.[0]?.blocks[0])).toEqual([
+    expect(result.layout.pages.map((page) => page.footnoteFragments?.[0]?.nodes[0])).toEqual([
       expect.objectContaining({ kind: 'table', fromRow: 0, toRow: 2 }),
       expect.objectContaining({ kind: 'table', fromRow: 2, toRow: 4 }),
       expect.objectContaining({ kind: 'table', fromRow: 4, toRow: 5 }),
@@ -164,14 +249,14 @@ describe('footnote continuation planning', () => {
     const table: TableBlock = {
       kind: 'table',
       id: 'long-row-table',
-      rows: [{ id: 'row', cells: [{ id: 'cell', blocks: [cellParagraph] }] }],
+      rows: [{ id: 'row', cells: [{ id: 'cell', nodes: [cellParagraph] }] }],
     };
-    const tableMeasure: TableMeasure = {
+    const tableMeasure: TableMetrics = {
       kind: 'table',
       rows: [
         {
           height: 200,
-          cells: [{ blocks: [cellMeasure], width: 180, height: 200 }],
+          cells: [{ metrics: [cellMeasure], width: 180, height: 200 }],
         },
       ],
       columnWidths: [180],
@@ -181,32 +266,32 @@ describe('footnote continuation planning', () => {
     const content: FootnoteContent = {
       id: 7,
       displayNumber: 1,
-      blocks: [table],
-      measures: [tableMeasure],
+      nodes: [table],
+      metrics: [tableMeasure],
       height: 200,
     };
 
-    const first = takeFootnoteSlice(content, { blockIndex: 0, unitIndex: 0 }, 90, 0, true);
-    expect(first.fragment?.blocks[0]).toMatchObject({
+    const first = takeFootnoteSlice(content, { nodeIndex: 0, unitIndex: 0 }, 90, 0, true);
+    expect(first.fragment?.nodes[0]).toMatchObject({
       kind: 'table',
       height: 80,
       fromRow: 0,
       toRow: 1,
       bottomClip: 120,
     });
-    expect(first.cursor).toEqual({ blockIndex: 0, unitIndex: 0, unitOffset: 80 });
+    expect(first.cursor).toEqual({ nodeIndex: 0, unitIndex: 0, unitOffset: 80 });
 
     const second = takeFootnoteSlice(content, first.cursor, 90, 0, true);
-    expect(second.fragment?.blocks[0]).toMatchObject({
+    expect(second.fragment?.nodes[0]).toMatchObject({
       kind: 'table',
       height: 80,
       topClip: 80,
       bottomClip: 40,
     });
-    expect(second.cursor).toEqual({ blockIndex: 0, unitIndex: 0, unitOffset: 160 });
+    expect(second.cursor).toEqual({ nodeIndex: 0, unitIndex: 0, unitOffset: 160 });
 
     const last = takeFootnoteSlice(content, second.cursor, 90, 0, true);
-    expect(last.fragment?.blocks[0]).toMatchObject({
+    expect(last.fragment?.nodes[0]).toMatchObject({
       kind: 'table',
       height: 40,
       topClip: 160,
@@ -217,7 +302,7 @@ describe('footnote continuation planning', () => {
   test('materializes a requested minimum page count', () => {
     const block = paragraph('body', 1);
     const layout = layOutPages([block], [paragraphMeasure(1, 20)], {
-      ...layoutOpts,
+      ...layoutConfig,
       minimumPageCount: 4,
     });
 
@@ -230,14 +315,14 @@ describe('footnote continuation planning', () => {
     const content: FootnoteContent = {
       id: 7,
       displayNumber: 1,
-      blocks: [paragraph('footnote-p', 100)],
-      measures: [paragraphMeasure(5)],
+      nodes: [paragraph('footnote-p', 100)],
+      metrics: [paragraphMeasure(5)],
       height: 200,
     };
     const args = {
-      blocks: [block],
-      measures: [measure],
-      layoutOpts,
+      nodes: [block],
+      metrics: [measure],
+      layoutConfig,
       footnoteRefs: refs,
       footnoteContentMap: new Map([[7, content]]),
       initialLayout,
@@ -262,17 +347,17 @@ describe('footnote continuation planning', () => {
   });
 
   test('resolves footnote columns independently for each physical page', () => {
-    const blocks = [paragraph('page-one', 1, 1), paragraph('page-two', 11, 2)];
-    const measures = [paragraphMeasure(1, 80), paragraphMeasure(1, 80)];
-    const initialLayout = layOutPages(blocks, measures, layoutOpts);
+    const nodes = [paragraph('page-one', 1, 1), paragraph('page-two', 11, 2)];
+    const metrics = [paragraphMeasure(1, 80), paragraphMeasure(1, 80)];
+    const initialLayout = layOutPages(nodes, metrics, layoutConfig);
     const contentMap = new Map<number, FootnoteContent>([
       [
         1,
         {
           id: 1,
           displayNumber: 1,
-          blocks: [paragraph('footnote-one', 101)],
-          measures: [paragraphMeasure(1, 20)],
+          nodes: [paragraph('footnote-one', 101)],
+          metrics: [paragraphMeasure(1, 20)],
           height: 20,
         },
       ],
@@ -281,16 +366,16 @@ describe('footnote continuation planning', () => {
         {
           id: 2,
           displayNumber: 2,
-          blocks: [paragraph('footnote-two', 201)],
-          measures: [paragraphMeasure(1, 20)],
+          nodes: [paragraph('footnote-two', 201)],
+          metrics: [paragraphMeasure(1, 20)],
           height: 20,
         },
       ],
     ]);
     const result = stabilizeFootnoteLayout({
-      blocks,
-      measures,
-      layoutOpts,
+      nodes,
+      metrics,
+      layoutConfig,
       footnoteRefs: [
         { footnoteId: 1, pmPos: 1 },
         { footnoteId: 2, pmPos: 11 },
@@ -304,31 +389,31 @@ describe('footnote continuation planning', () => {
   });
 
   test('moves dense reference lines until every footnote starts beside its reference', () => {
-    const blocks = Array.from({ length: 5 }, (_, index) =>
+    const nodes = Array.from({ length: 5 }, (_, index) =>
       paragraph(`body-${index + 1}`, index * 10 + 1, index + 1)
     );
-    const measures = blocks.map(() => paragraphMeasure(1, 5));
-    const initialLayout = layOutPages(blocks, measures, layoutOpts);
+    const metrics = nodes.map(() => paragraphMeasure(1, 5));
+    const initialLayout = layOutPages(nodes, metrics, layoutConfig);
     const footnoteContentMap = new Map<number, FootnoteContent>(
-      blocks.map((_, index) => {
+      nodes.map((_, index) => {
         const id = index + 1;
         return [
           id,
           {
             id,
             displayNumber: id,
-            blocks: [paragraph(`footnote-${id}`, 100 + id * 10)],
-            measures: [paragraphMeasure(1, 60)],
+            nodes: [paragraph(`footnote-${id}`, 100 + id * 10)],
+            metrics: [paragraphMeasure(1, 60)],
             height: 60,
           },
         ];
       })
     );
     const result = stabilizeFootnoteLayout({
-      blocks,
-      measures,
-      layoutOpts,
-      footnoteRefs: blocks.map((_, index) => ({
+      nodes,
+      metrics,
+      layoutConfig,
+      footnoteRefs: nodes.map((_, index) => ({
         footnoteId: index + 1,
         pmPos: index * 10 + 1,
       })),
@@ -337,9 +422,9 @@ describe('footnote continuation planning', () => {
     });
 
     expect(result.converged).toBe(true);
-    for (let id = 1; id <= blocks.length; id++) {
+    for (let id = 1; id <= nodes.length; id++) {
       const referencePage = result.layout.pages.find((page) =>
-        page.fragments.some((fragment) => fragment.blockId === `body-${id}`)
+        page.fragments.some((fragment) => fragment.nodeId === `body-${id}`)
       );
       const startPage = result.layout.pages.find((page) =>
         page.footnoteFragments?.some((fragment) => fragment.footnoteId === id)
@@ -356,50 +441,50 @@ describe('footnote continuation planning', () => {
     const sectionBreak: SectionMarkerBlock = {
       kind: 'sectionBreak',
       id: 'old-section-end',
-      pageSize: layoutOpts.pageSize,
-      margins: layoutOpts.margins,
+      pageSize: layoutConfig.pageSize,
+      margins: layoutConfig.margins,
     };
     const ref = paragraph('moved-reference', 11, 7);
-    const blocks = [paragraph('preamble', 1, 1), sectionBreak, ref];
-    const measures = [
+    const nodes = [paragraph('preamble', 1, 1), sectionBreak, ref];
+    const metrics = [
       paragraphMeasure(1, 60),
       { kind: 'sectionBreak' as const },
       paragraphMeasure(1, 20),
     ];
-    const options: LayoutOptions = {
-      ...layoutOpts,
+    const config: LayoutConfig = {
+      ...layoutConfig,
       finalPageSize: { w: 110, h: 140 },
-      finalMargins: layoutOpts.margins,
+      finalMargins: layoutConfig.margins,
       bodyBreakType: 'continuous',
     };
-    const initialLayout = layOutPages(blocks, measures, options);
+    const initialLayout = layOutPages(nodes, metrics, config);
     const wideContent: FootnoteContent = {
       id: 7,
       displayNumber: 2,
-      blocks: [paragraph('wide-note', 100)],
-      measures: [paragraphMeasure(1, 40)],
+      nodes: [paragraph('wide-note', 100)],
+      metrics: [paragraphMeasure(1, 40)],
       height: 40,
     };
     const narrowContent: FootnoteContent = {
       id: 7,
       displayNumber: 2,
-      blocks: [paragraph('narrow-note', 100)],
-      measures: [paragraphMeasure(2, 20)],
+      nodes: [paragraph('narrow-note', 100)],
+      metrics: [paragraphMeasure(2, 20)],
       height: 40,
     };
     const anchoringContent: FootnoteContent = {
       id: 1,
       displayNumber: 1,
-      blocks: [paragraph('anchoring-note', 90)],
-      measures: [paragraphMeasure(1, 40)],
+      nodes: [paragraph('anchoring-note', 90)],
+      metrics: [paragraphMeasure(1, 40)],
       height: 40,
     };
     const resolvedPageWidths: number[] = [];
 
     const result = stabilizeFootnoteLayoutWithPageContent({
-      blocks,
-      measures,
-      layoutOpts: options,
+      nodes,
+      metrics,
+      layoutConfig: config,
       footnoteRefs: [
         { footnoteId: 1, pmPos: 1 },
         { footnoteId: 7, pmPos: 11 },
@@ -415,12 +500,12 @@ describe('footnote continuation planning', () => {
     });
 
     const referencePage = result.layout.pages.find((page) =>
-      page.fragments.some((fragment) => fragment.blockId === ref.id)
+      page.fragments.some((fragment) => fragment.nodeId === ref.id)
     );
     expect(referencePage?.number).toBe(2);
     expect(referencePage?.size.w).toBe(110);
     expect(referencePage?.footnoteColumns).toBe(2);
-    expect(referencePage?.footnoteFragments?.[0]?.blocks[0]).toMatchObject({
+    expect(referencePage?.footnoteFragments?.[0]?.nodes[0]).toMatchObject({
       kind: 'paragraph',
       fromLine: 0,
       toLine: 2,
@@ -433,38 +518,40 @@ describe('footnote continuation planning', () => {
     const sectionBreak: SectionMarkerBlock = {
       kind: 'sectionBreak',
       id: 'old-section-end',
-      pageSize: layoutOpts.pageSize,
-      margins: layoutOpts.margins,
+      pageSize: layoutConfig.pageSize,
+      margins: layoutConfig.margins,
     };
     const ref = paragraph('continued-reference', 1, 7);
-    const blocks = [ref, sectionBreak];
-    const measures = [paragraphMeasure(1, 20), { kind: 'sectionBreak' as const }];
-    const options: LayoutOptions = {
-      ...layoutOpts,
+    const nodes = [ref, sectionBreak];
+    const metrics = [paragraphMeasure(1, 20), { kind: 'sectionBreak' as const }];
+    const config: LayoutConfig = {
+      ...layoutConfig,
       finalPageSize: { w: 110, h: 140 },
-      finalMargins: layoutOpts.margins,
+      finalMargins: layoutConfig.margins,
       bodyBreakType: 'continuous',
     };
-    const initialLayout = layOutPages(blocks, measures, options);
+    const initialLayout = layOutPages(nodes, metrics, config);
+    const text = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567';
+    const noteBlock = textParagraph('continued-footnote', text);
     const wideContent: FootnoteContent = {
       id: 7,
       displayNumber: 1,
-      blocks: [paragraph('wide-continuation', 100)],
-      measures: [paragraphMeasure(6, 25)],
+      nodes: [noteBlock],
+      metrics: [wrappedParagraphMeasure(text.length, 10, 25)],
       height: 150,
     };
     const narrowContent: FootnoteContent = {
       id: 7,
       displayNumber: 1,
-      blocks: [paragraph('narrow-continuation', 100)],
-      measures: [paragraphMeasure(10, 10)],
-      height: 100,
+      nodes: [noteBlock],
+      metrics: [wrappedParagraphMeasure(text.length, 5, 10)],
+      height: 120,
     };
 
     const result = stabilizeFootnoteLayoutWithPageContent({
-      blocks,
-      measures,
-      layoutOpts: options,
+      nodes,
+      metrics,
+      layoutConfig: config,
       footnoteRefs: [{ footnoteId: 7, pmPos: 1 }],
       footnoteContentMap: new Map(),
       initialLayout,
@@ -475,17 +562,40 @@ describe('footnote continuation planning', () => {
     expect(result.layout.pages[0].size.w).toBe(200);
     expect(result.layout.pages[0].footnoteFragments?.[0]).toMatchObject({
       continuesOnNext: true,
-      blocks: [{ kind: 'paragraph', fromLine: 0, toLine: 3 }],
+      nodes: [
+        {
+          kind: 'paragraph',
+          fromLine: 0,
+          toLine: 3,
+          fromChar: 0,
+          toChar: 30,
+        },
+      ],
     });
     expect(result.layout.pages[1].size.w).toBe(110);
     expect(result.layout.pages[1].footnoteFragments?.[0]).toMatchObject({
       continuesFromPrev: true,
-      blocks: [{ kind: 'paragraph', fromLine: 3, toLine: 10 }],
+      nodes: [
+        {
+          kind: 'paragraph',
+          fromLine: 6,
+          toLine: 12,
+          fromChar: 30,
+          toChar: 60,
+        },
+      ],
     });
+    const paintedText = result.layout.pages
+      .flatMap((page) => page.footnoteFragments ?? [])
+      .flatMap((fragment) => fragment.nodes)
+      .filter((slice) => slice.kind === 'paragraph')
+      .map((slice) => text.slice(slice.fromChar, slice.toChar))
+      .join('');
+    expect(paintedText).toBe(text);
   });
 });
 
-test('measures each footnote at its reference section column width', () => {
+test('metrics each footnote at its reference section column width', () => {
   const footnotes: Footnote[] = [
     { type: 'footnote', id: 1, content: [] },
     { type: 'footnote', id: 2, content: [] },
@@ -497,9 +607,9 @@ test('measures each footnote at its reference section column width', () => {
     [{ footnoteId: 1 }, { footnoteId: 2 }],
     (footnoteId) => (footnoteId === 1 ? 180 : 78),
     {
-      measureBlocks: (blocks, contentWidth) => {
+      measureBlocks: (nodes, contentWidth) => {
         measuredWidths.push(contentWidth);
-        return blocks.map(() => paragraphMeasure(1, 10));
+        return nodes.map(() => paragraphMeasure(1, 10));
       },
     }
   );
@@ -513,9 +623,9 @@ test('memoizes each footnote measurement by width', () => {
     [{ type: 'footnote', id: 1, content: [] }],
     [{ footnoteId: 1 }],
     {
-      measureBlocks: (blocks, contentWidth) => {
+      measureBlocks: (nodes, contentWidth) => {
         measuredWidths.push(contentWidth);
-        return blocks.map(() => paragraphMeasure(1, 10));
+        return nodes.map(() => paragraphMeasure(1, 10));
       },
     }
   );
@@ -556,21 +666,21 @@ test('maps a final-line table reference to its clipped row fragment', () => {
     id: 'split-row-table',
     docFrom: 1,
     docTo: 20,
-    rows: [{ id: 'split-row', cells: [{ id: 'split-cell', blocks: [cellParagraph] }] }],
+    rows: [{ id: 'split-row', cells: [{ id: 'split-cell', nodes: [cellParagraph] }] }],
   };
-  const tableMeasure: TableMeasure = {
+  const tableMeasure: TableMetrics = {
     kind: 'table',
     rows: [
       {
         height: 200,
-        cells: [{ blocks: [cellParagraphMeasure], width: 180, height: 200 }],
+        cells: [{ metrics: [cellParagraphMeasure], width: 180, height: 200 }],
       },
     ],
     columnWidths: [180],
     totalWidth: 180,
     totalHeight: 200,
   };
-  const initialLayout = layOutPages([table], [tableMeasure], layoutOpts);
+  const initialLayout = layOutPages([table], [tableMeasure], layoutConfig);
   const refs = collectFootnoteRefs([table], [tableMeasure]);
 
   expect(
@@ -593,7 +703,7 @@ test('maps a final-line table reference to its clipped row fragment', () => {
   expect(refs).toEqual([
     expect.objectContaining({
       footnoteId: 7,
-      tableBlockId: 'split-row-table',
+      tableNodeId: 'split-row-table',
       rowIndex: 0,
       rowOffset: 180,
       rowHeight: 200,
@@ -604,14 +714,14 @@ test('maps a final-line table reference to its clipped row fragment', () => {
   const footnoteContent: FootnoteContent = {
     id: 7,
     displayNumber: 1,
-    blocks: [paragraph('footnote-7', 100)],
-    measures: [paragraphMeasure(1, 20)],
+    nodes: [paragraph('footnote-7', 100)],
+    metrics: [paragraphMeasure(1, 20)],
     height: 20,
   };
   const stabilized = stabilizeFootnoteLayout({
-    blocks: [table],
-    measures: [tableMeasure],
-    layoutOpts,
+    nodes: [table],
+    metrics: [tableMeasure],
+    layoutConfig,
     footnoteRefs: refs,
     footnoteContentMap: new Map([[7, footnoteContent]]),
     initialLayout,
@@ -634,16 +744,16 @@ test('maps a nested-table reference after an outer-row split to the continuation
     rows: [
       {
         id: 'nested-row',
-        cells: [{ id: 'nested-cell', blocks: [nestedReference] }],
+        cells: [{ id: 'nested-cell', nodes: [nestedReference] }],
       },
     ],
   };
-  const nestedTableMeasure: TableMeasure = {
+  const nestedTableMeasure: TableMetrics = {
     kind: 'table',
     rows: [
       {
         height: 80,
-        cells: [{ blocks: [paragraphMeasure(1)], width: 180, height: 40 }],
+        cells: [{ metrics: [paragraphMeasure(1)], width: 180, height: 40 }],
       },
     ],
     columnWidths: [180],
@@ -658,18 +768,18 @@ test('maps a nested-table reference after an outer-row split to the continuation
     rows: [
       {
         id: 'outer-row',
-        cells: [{ id: 'outer-cell', blocks: [beforeNested, nestedTable] }],
+        cells: [{ id: 'outer-cell', nodes: [beforeNested, nestedTable] }],
       },
     ],
   };
-  const outerTableMeasure: TableMeasure = {
+  const outerTableMeasure: TableMetrics = {
     kind: 'table',
     rows: [
       {
         height: 160,
         cells: [
           {
-            blocks: [paragraphMeasure(2), nestedTableMeasure],
+            metrics: [paragraphMeasure(2), nestedTableMeasure],
             width: 180,
             height: 160,
           },
@@ -681,7 +791,7 @@ test('maps a nested-table reference after an outer-row split to the continuation
     totalHeight: 160,
   };
 
-  const layout = layOutPages([outerTable], [outerTableMeasure], layoutOpts);
+  const layout = layOutPages([outerTable], [outerTableMeasure], layoutConfig);
   const refs = collectFootnoteRefs([outerTable], [outerTableMeasure]);
 
   expect(
@@ -696,7 +806,7 @@ test('maps a nested-table reference after an outer-row split to the continuation
   expect(refs).toEqual([
     expect.objectContaining({
       footnoteId: 7,
-      tableBlockId: 'outer-split-table',
+      tableNodeId: 'outer-split-table',
       rowIndex: 0,
       rowOffset: 100,
       rowHeight: 160,
@@ -709,11 +819,11 @@ test('footnote page lookup indexes pages once for many references', () => {
   const rawPages: Page[] = Array.from({ length: 200 }, (_, index) => ({
     number: index + 1,
     size: { w: 200, h: 140 },
-    margins: layoutOpts.margins,
+    margins: layoutConfig.margins,
     fragments: [
       {
         kind: 'paragraph',
-        blockId: `p-${index}`,
+        nodeId: `p-${index}`,
         x: 0,
         y: 0,
         width: 180,

@@ -17,7 +17,7 @@ import type {
   FootnoteFragment,
   TextRun,
 } from '../pagination-model/types';
-import { layOutPages, type LayoutOptions } from '../pagination-model';
+import { layOutPages, type LayoutConfig } from '../pagination-model';
 import type { Footnote, StyleDefinitions, Theme } from '../types/document';
 import { footnoteToProseDoc } from '../prosemirror/conversion/toProseDoc';
 import { buildBoxTree } from './buildBoxTree';
@@ -93,8 +93,8 @@ function buildFootnotePageIndex(
   const referencedRows = new Map<string, number[]>();
 
   for (const ref of footnoteRefs) {
-    if (ref.tableBlockId == null || ref.rowIndex == null) continue;
-    const key = String(ref.tableBlockId);
+    if (ref.tableNodeId == null || ref.rowIndex == null) continue;
+    const key = String(ref.tableNodeId);
     const rows = referencedRows.get(key) ?? [];
     rows.push(ref.rowIndex);
     referencedRows.set(key, rows);
@@ -109,7 +109,7 @@ function buildFootnotePageIndex(
   for (const page of pages) {
     for (const fragment of page.fragments) {
       if (fragment.kind === 'table') {
-        const key = String(fragment.blockId);
+        const key = String(fragment.nodeId);
         const rows = referencedRows.get(key);
         if (!rows) continue;
         let low = 0;
@@ -174,12 +174,12 @@ function pageForPmPos(index: FootnotePageIndex, pmPos: number): number | undefin
 
 function pageForTableRow(
   index: FootnotePageIndex,
-  tableBlockId: BlockId,
+  tableNodeId: NodeId,
   rowIndex: number,
   rowOffset?: number,
   rowHeight?: number
 ): number | undefined {
-  const slices = index.tableRows.get(String(tableBlockId))?.get(rowIndex);
+  const slices = index.tableRows.get(String(tableNodeId))?.get(rowIndex);
   if (!slices?.length) return undefined;
   if (rowOffset == null || rowHeight == null) return slices[0].pageNumber;
 
@@ -222,8 +222,8 @@ export function mapFootnotesToPages(
 
   for (const ref of footnoteRefs) {
     const pageNumber =
-      ref.tableBlockId != null && ref.rowIndex != null
-        ? pageForTableRow(index, ref.tableBlockId, ref.rowIndex, ref.rowOffset, ref.rowHeight)
+      ref.tableNodeId != null && ref.rowIndex != null
+        ? pageForTableRow(index, ref.tableNodeId, ref.rowIndex, ref.rowOffset, ref.rowHeight)
         : pageForPmPos(index, ref.pmPos);
     if (pageNumber != null) assign(pageNumber, ref.footnoteId);
   }
@@ -400,7 +400,7 @@ export function convertFootnoteToContent(
 export function createWidthSpecificFootnoteContentResolver(
   footnotes: Footnote[],
   footnoteRefs: Array<{ footnoteId: number }>,
-  options: ConvertFootnoteOptions
+  config: ConvertFootnoteOptions
 ): (footnoteId: number, contentWidth: number) => FootnoteContent | undefined {
   const footnoteById = new Map<number, Footnote>();
   for (const footnote of footnotes) {
@@ -428,7 +428,7 @@ export function createWidthSpecificFootnoteContentResolver(
     }
     let content = contentById.get(footnoteId);
     if (!content) {
-      content = convertFootnoteToContent(footnote, displayNumber, contentWidth, options);
+      content = convertFootnoteToContent(footnote, displayNumber, contentWidth, config);
       contentById.set(footnoteId, content);
     }
     return content;
@@ -444,13 +444,13 @@ export function buildFootnoteContentMap(
   footnotes: Footnote[],
   footnoteRefs: Array<{ footnoteId: number }>,
   contentWidth: number | ((footnoteId: number) => number),
-  options: ConvertFootnoteOptions
+  config: ConvertFootnoteOptions
 ): Map<number, FootnoteContent> {
   const contentMap = new Map<number, FootnoteContent>();
   const resolveContent = createWidthSpecificFootnoteContentResolver(
     footnotes,
     footnoteRefs,
-    options
+    config
   );
   const seen = new Set<number>();
 
@@ -567,7 +567,7 @@ interface PendingFootnote {
 
 function firstSliceHeight(content: FootnoteContent): number {
   return (
-    takeFootnoteSlice(content, { blockIndex: 0, unitIndex: 0 }, 0, 0, true).fragment?.height ?? 0
+    takeFootnoteSlice(content, { nodeIndex: 0, unitIndex: 0 }, 0, 0, true).fragment?.height ?? 0
   );
 }
 
@@ -648,7 +648,7 @@ function paginateFootnoteFragments(
         for (const content of partition) {
           const taken = takeFootnoteSlice(
             content,
-            { blockIndex: 0, unitIndex: 0 },
+            { nodeIndex: 0, unitIndex: 0 },
             Number.POSITIVE_INFINITY,
             columnIndex,
             true
@@ -715,7 +715,7 @@ function paginateFootnoteFragments(
       for (const content of starts) {
         const fragmentCountBefore = pageFragments.length;
         const remainder = consume(
-          { footnoteId: content.id, cursor: { blockIndex: 0, unitIndex: 0 }, started: false },
+          { footnoteId: content.id, cursor: { nodeIndex: 0, unitIndex: 0 }, started: false },
           content,
           starterBudget
         );
@@ -819,9 +819,9 @@ function stabilizeFootnoteLayoutInternal(
   args: StabilizeFootnoteLayoutWithPageContentArgs
 ): StabilizeFootnoteLayoutResult {
   const {
-    blocks,
-    measures,
-    layoutOpts,
+    nodes,
+    metrics,
+    layoutConfig,
     footnoteRefs,
     footnoteContentMap,
     initialLayout,
@@ -852,8 +852,8 @@ function stabilizeFootnoteLayoutInternal(
   let newLayout = initialLayout;
   let converged = false;
   for (let pass = 0; pass < FOOTNOTE_REFLOW_LIMIT; pass++) {
-    newLayout = layOutPages(blocks, measures, {
-      ...layoutOpts,
+    newLayout = layOutPages(nodes, metrics, {
+      ...layoutConfig,
       footnoteReservedHeights: plan.reservedHeights,
       minimumPageCount: plan.minimumPageCount,
     });

@@ -23,8 +23,8 @@ import {
   type ColumnLayout,
   type ContentNode,
   type FootnoteContent,
-  type Layout,
-  type Measure,
+  type PageLayout,
+  type LayoutMetrics,
   type Page,
   type PageMargins,
   type SectionMarkerBlock,
@@ -74,7 +74,7 @@ export type MeasureBlocksFn = (
   contentWidth: number | number[],
   pageGeometry?: FloatPageGeometry,
   finalPageGeometry?: FloatPageGeometry
-) => Measure[];
+) => LayoutMetrics[];
 
 export interface ComputeLayoutInputs {
   state: EditorState;
@@ -183,16 +183,16 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
   const resolvedFinalMargins = document ? getMargins(lastSectionProps) : finalMargins;
   const resolvedFinalColumns = document ? getColumns(lastSectionProps) : finalColumns;
 
-  // Step 1: PM doc → flow blocks.
+  // Step 1: PM doc → flow nodes.
   const pageContentHeight = resolvedPageSize.h - resolvedMargins.top - resolvedMargins.bottom;
-  const blocks = buildBoxTree(state.doc, { theme, pageContentHeight });
+  const nodes = buildBoxTree(state.doc, { theme, pageContentHeight });
 
   // Section markers in the PM carry the authored sectPr that closes each
   // section. Rebind them to the parser's effective section list so inherited
   // HF refs plus explicit zero distances survive and every later section gets
   // its own complete geometry.
   let markerIndex = 0;
-  for (const block of blocks) {
+  for (const block of nodes) {
     if (block.kind !== 'sectionBreak') continue;
     const properties = sectionProps[markerIndex++] ?? firstSectionProps;
     const marker = block as SectionMarkerBlock;
@@ -202,9 +202,9 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
     marker.type = properties.sectionStart;
   }
 
-  // Step 2: Measure all blocks (per-section widths; full measure for float context).
+  // Step 2: Measure all nodes (per-section widths; full measure for float context).
   const blockWidths = computePerBlockWidths(
-    blocks,
+    nodes,
     {
       pageSize: resolvedPageSize,
       margins: resolvedMargins,
@@ -228,8 +228,8 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
   // and the saved DOCX keep the original floating table.
   demoteBlockLikeFloatingTables(nodes, blockWidths, contentWidth);
 
-  const measures = measureBlocks(
-    blocks,
+  const metrics = measureBlocks(
+    nodes,
     blockWidths,
     {
       ...pageGeometryFromPage({
@@ -248,14 +248,14 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
   );
 
   // Step 2.5: Footnote references.
-  const footnoteRefs = collectFootnoteRefs(blocks, measures);
+  const footnoteRefs = collectFootnoteRefs(nodes, metrics);
   const hasFootnotes = footnoteRefs.length > 0 && !!document?.package?.footnotes;
 
   // Step 2.75: Header/footer content is resolved per physical page. Conversion
   // is cached per section/rId because the same story can wrap differently when
   // later sections change page width or margins.
   const defaultTabMarkTwips = state.doc.attrs?.defaultTabMarkTwips as number | null;
-  const hfOptions = { styles, theme, measureBlocks, defaultTabMarkTwips };
+  const hfConfig = { styles, theme, measureBlocks, defaultTabMarkTwips };
   const converted = new Map<string, HeaderFooterContent | undefined>();
 
   const convertHf = (
@@ -274,8 +274,8 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
     const metrics = { section: region, pageSize: sectionPageSize, margins: sectionMargins };
     const pmDoc = getHfPmDoc(hf);
     const value = pmDoc
-      ? convertHeaderFooterPmDocToContent(pmDoc, sectionContentWidth, metrics, hfOptions)
-      : convertHeaderFooterToContent(hf, sectionContentWidth, metrics, hfOptions);
+      ? convertHeaderFooterPmDocToContent(pmDoc, sectionContentWidth, metrics, hfConfig)
+      : convertHeaderFooterToContent(hf, sectionContentWidth, metrics, hfConfig);
     converted.set(key, value);
     return value;
   };
@@ -342,14 +342,14 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
   // Watermark rides PM state as a doc attr (so it's undoable).
   const watermark = (state.doc.attrs?.watermark as Watermark | null) ?? undefined;
 
-  // Step 3: Layout onto pages (two-pass when footnotes exist).
+  // Step 3: PageLayout onto pages (two-pass when footnotes exist).
   const bodyBreakType = lastSectionProps.sectionStart as
     | 'continuous'
     | 'nextPage'
     | 'evenPage'
     | 'oddPage'
     | undefined;
-  const layoutOpts = {
+  const layoutConfig = {
     pageSize: resolvedPageSize,
     margins: resolvedMargins,
     finalPageSize: resolvedFinalPageSize,
@@ -413,7 +413,7 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
     | undefined;
 
   if (hasFootnotes) {
-    const pass1Layout = layOutPages(blocks, measures, layoutOpts);
+    const pass1Layout = layOutPages(nodes, metrics, layoutConfig);
     const footnoteLayoutForPage = (pageNumber: number, page?: Page) => {
       const physicalPageNumber = page?.number ?? pageNumber;
       const sectionIndex =
@@ -435,9 +435,9 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
     resolveFootnoteContent = (footnoteId: number, pageNumber: number, page?: Page) =>
       resolveContentAtWidth(footnoteId, footnoteLayoutForPage(pageNumber, page).columnWidth);
     const stabilized = stabilizeFootnoteLayoutWithPageContent({
-      blocks,
-      measures,
-      layoutOpts,
+      nodes,
+      metrics,
+      layoutConfig,
       footnoteRefs,
       footnoteContentMap,
       initialLayout: pass1Layout,

@@ -22,7 +22,7 @@
 import type { CellMarker, RevisionInfo } from '../types/content/trackedChange';
 import type { InlineSdtWidget } from './inlineSdtWidgets';
 import type { FootnoteFragment } from './footnoteTypes';
-export type { FootnoteBlockFragment, FootnoteFragment } from './footnoteTypes';
+export type { FootnoteNodeFragment, FootnoteFragment } from './footnoteTypes';
 
 // ============================================================================
 // Shared scalars
