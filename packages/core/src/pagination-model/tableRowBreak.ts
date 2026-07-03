@@ -23,9 +23,8 @@ export interface TableRowBreakInfo {
   /** Cumulative y of the top of each row; rowTops[rows.length] is the table height. */
   rowTops: number[];
   /**
-   * Per-row sorted, de-duplicated line-bottom offsets (relative to the row top)
-   * at which a break is clean. Always includes the row's full height as the
-   * final boundary.
+   * Per-row sorted, de-duplicated offsets (relative to the row top) at which a
+   * break is clean across every active cell.
    */
   breakOffsets: number[][];
 }
@@ -55,8 +54,9 @@ export function buildTableRowBreakInfo(node: TableBlock, metrics: TableMetrics):
   const breakOffsets: number[][] = [];
   for (let r = 0; r < rowCount; r++) {
     const rowHeight = metrics.rows[r]?.height ?? 0;
-    const offsets = new Set<number>();
-    offsets.add(rowHeight); // a row boundary is always a clean break
+    const candidates = new Set<number>();
+    candidates.add(rowHeight);
+    const unbreakableRanges: Array<{ top: number; bottom: number }> = [];
 
     for (const g of resolved) {
       if (g.rowIndex > r || g.rowIndex + g.rowSpan - 1 < r) continue;
@@ -65,16 +65,41 @@ export function buildTableRowBreakInfo(node: TableBlock, metrics: TableMetrics):
       if (!sourceCell || !measuredCell) continue;
       // OOXML/TableNormal default top padding is 0 (matches measureTable).
       const padTop = sourceCell.padding?.top ?? 0;
-      const { flatBottoms } = layoutCellContent(sourceCell.nodes, measuredCell.metrics, padTop);
+      const layout = layoutCellContent(sourceCell.nodes, measuredCell.metrics, padTop);
+      const cellBottomRow = Math.min(rowCount, g.rowIndex + g.rowSpan);
+      const cellHeight = rowTops[cellBottomRow] - rowTops[g.rowIndex];
+      const measuredHeight = measuredCell.height ?? 0;
+      const slack = Math.max(0, cellHeight - measuredHeight);
+      const verticalOffset =
+        sourceCell.verticalAlign === 'bottom'
+          ? slack
+          : sourceCell.verticalAlign === 'center'
+            ? slack / 2
+            : 0;
       // Map cell-content y (relative to the cell/region top at rowTops[startRow])
       // into this row's coordinate space (relative to rowTops[r]).
       const shift = rowTops[r] - rowTops[g.rowIndex];
-      for (const b of flatBottoms) {
-        const off = b - shift;
-        if (off > 0 && off < rowHeight) offsets.add(off);
+      for (const b of layout.flatBottoms) {
+        const off = b + verticalOffset - shift;
+        if (off > 0 && off < rowHeight) candidates.add(off);
+      }
+      for (const range of layout.unbreakableRanges) {
+        unbreakableRanges.push({
+          top: range.top + verticalOffset - shift,
+          bottom: range.bottom + verticalOffset - shift,
+        });
       }
     }
-    breakOffsets.push([...offsets].sort((a, b) => a - b));
+
+    // A line bottom from one cell is only a candidate. The same horizontal cut
+    // may still pass through a staggered line in a sibling cell (or through a
+    // line belonging to a vertically merged cell whose restart is above this
+    // row). Keep it only when every active cell is between lines there.
+    const safe = [...candidates].filter(
+      (candidate) =>
+        !unbreakableRanges.some((range) => candidate > range.top && candidate < range.bottom)
+    );
+    breakOffsets.push(safe.sort((a, b) => a - b));
   }
 
   return { rowTops, breakOffsets };

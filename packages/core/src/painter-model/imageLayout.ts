@@ -148,7 +148,7 @@ export function deriveLayoutChoice(
 }
 
 // ============================================================================
-// PageLayout option schema (config without per-framework presentation)
+// Layout option schema (config without per-framework presentation)
 // ============================================================================
 
 /**

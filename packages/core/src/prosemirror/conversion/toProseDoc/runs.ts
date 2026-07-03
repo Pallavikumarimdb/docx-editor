@@ -26,6 +26,8 @@ import type {
 } from '../../../types/document';
 import { emuToPixels } from '../../../docx/imageParser';
 import { isWrapNone } from '../../../docx/wrapTypes';
+import { sanitizeHref } from '../../../utils/sanitizeHref';
+import { sanitizeImageSrc } from '../../../utils/sanitizeImageSrc';
 import { mergeTextFormatting } from '../../../utils/textFormattingMerge';
 import type { StyleResolver } from '../../styles';
 import { textFormattingToMarks } from './marks';
@@ -367,7 +369,7 @@ function convertImage(image: Image): PMNode {
   const effectExtentRight = image.padding?.right ? emuToPixels(image.padding.right) : undefined;
 
   return schema.node('image', {
-    src: image.src || '',
+    src: sanitizeImageSrc(image.src) ?? '',
     alt: image.alt,
     title: image.title,
     width: widthPx,
@@ -386,7 +388,7 @@ function convertImage(image: Image): PMNode {
     borderColor: borderColor,
     borderKind: borderKind,
     wrapText: wrapText,
-    hlinkHref: image.hlinkHref,
+    hlinkHref: sanitizeHref(image.hlinkHref),
     cropTop: image.crop?.top,
     cropRight: image.crop?.right,
     cropBottom: image.crop?.bottom,
@@ -415,12 +417,14 @@ export function convertHyperlink(
   const nodes: PMNode[] = [];
 
   // Create link mark — internal anchors use #bookmarkName format
-  const href = hyperlink.href || (hyperlink.anchor ? `#${hyperlink.anchor}` : '');
-  const linkMark = schema.mark('hyperlink', {
-    href,
-    tooltip: hyperlink.tooltip,
-    rId: hyperlink.rId,
-  });
+  const href = sanitizeHref(hyperlink.href || (hyperlink.anchor ? `#${hyperlink.anchor}` : ''));
+  const linkMark = href
+    ? schema.mark('hyperlink', {
+        href,
+        tooltip: hyperlink.tooltip,
+        rId: hyperlink.rId,
+      })
+    : null;
 
   for (const child of hyperlink.children) {
     if (child.type === 'run') {
@@ -441,7 +445,7 @@ export function convertHyperlink(
       );
       const runMarks = textFormattingToMarks(mergedFormatting);
       // Add link mark to run marks
-      const allMarks = [...runMarks, linkMark];
+      const allMarks = linkMark ? [...runMarks, linkMark] : runMarks;
 
       // Delegate to convertRunContent so tabs, breaks, fields, footnote refs
       // etc. inside a hyperlink round-trip. (Drawings and shapes inside a

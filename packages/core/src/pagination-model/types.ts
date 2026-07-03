@@ -21,6 +21,8 @@
 
 import type { CellMarker, RevisionInfo } from '../types/content/trackedChange';
 import type { InlineSdtWidget } from './inlineSdtWidgets';
+import type { FootnoteFragment } from './footnoteTypes';
+export type { FootnoteNodeFragment, FootnoteFragment } from './footnoteTypes';
 
 // ============================================================================
 // Shared scalars
@@ -962,6 +964,8 @@ export interface Page {
   footnoteReservedHeight?: number;
   /** Footnotes whose references landed on this page, in document order. */
   footnoteIds?: number[];
+  /** Page-local slices of footnote bodies, including carried continuations. */
+  footnoteFragments?: FootnoteFragment[];
   /** `w15:footnoteColumns`, when the footnote area is laid out N-up. */
   footnoteColumns?: number;
 }
@@ -1035,6 +1039,11 @@ export interface LayoutConfig {
    * until the reservation and the page assignment agree.
    */
   footnoteReservedHeights?: Map<number, number>;
+  /**
+   * Keep composing blank body pages through this page number. Footnote
+   * continuations use this when a note outlives the body's final page.
+   */
+  minimumPageCount?: number;
   /** Painted header heights — they grow the top margin when they overflow it. */
   headerContentHeights?: HeaderFooterHeights;
   /** Painted footer heights — they grow the bottom margin when they overflow it. */

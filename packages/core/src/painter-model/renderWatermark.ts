@@ -14,6 +14,7 @@
 import type { Watermark, TextWatermark, PictureWatermark } from '../types/document';
 import type { Page } from '../pagination-model/types';
 import { resolveFontFamily } from '../utils/fontResolver';
+import { sanitizeImageSrc } from '../utils/sanitizeImageSrc';
 
 /** Class name on the watermark layer (stable for queries/tests). */
 export const WATERMARK_LAYER_CLASS = 'layout-watermark-layer';
@@ -66,10 +67,11 @@ function renderPictureWatermark(
   page: Page,
   doc: Document
 ): HTMLElement | null {
-  if (!wm.dataUrl) return null;
+  const src = sanitizeImageSrc(wm.dataUrl);
+  if (!src) return null;
 
   const img = doc.createElement('img');
-  img.src = wm.dataUrl;
+  img.src = src;
   img.alt = '';
   img.style.position = 'absolute';
   img.style.top = '50%';

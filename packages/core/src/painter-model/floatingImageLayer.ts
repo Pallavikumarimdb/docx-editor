@@ -1,4 +1,5 @@
 import { applyImageVisualAttrs, hasImageVisualAttrs } from './renderImage';
+import { sanitizeImageSrc } from '../utils/sanitizeImageSrc';
 
 /**
  * Minimum fields the floating-image painter needs. Page-level and cell-level
@@ -73,7 +74,8 @@ export function paintFloatingImagesLayer(
     if (floatImg.docTo !== undefined) container.dataset.docTo = String(floatImg.docTo);
 
     const img = doc.createElement('img');
-    img.src = floatImg.src;
+    const imageSrc = sanitizeImageSrc(floatImg.src);
+    if (imageSrc) img.src = imageSrc;
     img.style.width = `${floatImg.width}px`;
     img.style.height = `${floatImg.height}px`;
     img.style.display = 'block';

@@ -31,6 +31,12 @@ const RUN_SPAN = 'span[data-doc-from][data-doc-to]';
 const POSITIONED = '[data-doc-from][data-doc-to]';
 
 /**
+ * Footnotes are painted inside the page-content box for layout purposes, but
+ * each footnote body has its own ProseMirror document and position space.
+ */
+const NON_BODY_STORY = '.layout-footnote-area';
+
+/**
  * A paragraph with no text still paints a run, so it still has a caret. That run
  * carries no position of its own (there's no character to address), so callers
  * fall back to the enclosing paragraph's range — this is how they find it.
@@ -43,7 +49,9 @@ const EMPTY_RUN = '.layout-empty-run';
  * @public
  */
 export function collectBodySpans(root: ParentNode): HTMLElement[] {
-  return Array.from(root.querySelectorAll<HTMLElement>(`${BODY_SCOPE} ${RUN_SPAN}`));
+  return Array.from(root.querySelectorAll<HTMLElement>(`${BODY_SCOPE} ${RUN_SPAN}`)).filter(
+    isBodyPositionElement
+  );
 }
 
 /**
@@ -52,7 +60,9 @@ export function collectBodySpans(root: ParentNode): HTMLElement[] {
  * @public
  */
 export function findBodyEmptyRuns(root: ParentNode): HTMLElement[] {
-  return Array.from(root.querySelectorAll<HTMLElement>(`${BODY_SCOPE} ${EMPTY_RUN}`));
+  return Array.from(root.querySelectorAll<HTMLElement>(`${BODY_SCOPE} ${EMPTY_RUN}`)).filter(
+    isBodyPositionElement
+  );
 }
 
 /**
@@ -64,7 +74,9 @@ export function findBodyEmptyRuns(root: ParentNode): HTMLElement[] {
  * @public
  */
 export function findBodyPmAnchors(root: ParentNode): HTMLElement[] {
-  return Array.from(root.querySelectorAll<HTMLElement>(`${BODY_SCOPE} ${POSITIONED}`));
+  return Array.from(root.querySelectorAll<HTMLElement>(`${BODY_SCOPE} ${POSITIONED}`)).filter(
+    isBodyPositionElement
+  );
 }
 
 /**
@@ -84,5 +96,45 @@ export function findBodyPmAnchor(root: ParentNode, pmPos: number): HTMLElement |
   // later.
   if (!Number.isInteger(pmPos)) return null;
 
-  return root.querySelector<HTMLElement>(`${BODY_SCOPE} [data-doc-from="${pmPos}"]`);
+  return (
+    Array.from(root.querySelectorAll<HTMLElement>(`${BODY_SCOPE} [data-doc-from="${pmPos}"]`)).find(
+      isBodyPositionElement
+    ) ?? null
+  );
+}
+
+/** Whether a positioned element belongs to the body PM rather than a nested story. */
+export function isBodyPositionElement(el: HTMLElement): boolean {
+  return el.closest(NON_BODY_STORY) === null;
+}
+
+/**
+ * Painted run spans inside one exact header/footer host. Callers pass the host
+ * that was clicked, so repeated stories on other pages and colliding body PM
+ * positions are structurally unreachable.
+ *
+ * @public
+ */
+export function collectHfSpans(host: HTMLElement): HTMLElement[] {
+  if (!host.matches('.layout-page-header, .layout-page-footer')) return [];
+  return Array.from(host.querySelectorAll<HTMLElement>(RUN_SPAN));
+}
+
+/** @public */
+export function findHfEmptyRuns(host: HTMLElement): HTMLElement[] {
+  if (!host.matches('.layout-page-header, .layout-page-footer')) return [];
+  return Array.from(host.querySelectorAll<HTMLElement>(EMPTY_RUN));
+}
+
+/** @public */
+export function findHfPmAnchors(host: HTMLElement): HTMLElement[] {
+  if (!host.matches('.layout-page-header, .layout-page-footer')) return [];
+  return Array.from(host.querySelectorAll<HTMLElement>(POSITIONED));
+}
+
+/** @public */
+export function findHfPmAnchor(host: HTMLElement, pmPos: number): HTMLElement | null {
+  if (!Number.isInteger(pmPos)) return null;
+  if (!host.matches('.layout-page-header, .layout-page-footer')) return null;
+  return host.querySelector<HTMLElement>(`[data-doc-from="${pmPos}"]`);
 }

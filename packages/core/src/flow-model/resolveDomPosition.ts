@@ -21,7 +21,14 @@
  * @packageDocumentation
  */
 
-import { collectBodySpans, findBodyEmptyRuns, findBodyPmAnchors } from './collectBodySpans';
+import {
+  collectBodySpans,
+  collectHfSpans,
+  findBodyEmptyRuns,
+  findBodyPmAnchors,
+  isBodyPositionElement,
+} from './collectBodySpans';
+import { graphemeBoundaries } from './metrics/textMetrics';
 
 /**
  * A highlight rectangle, in coordinates local to the container it was measured
@@ -67,6 +74,9 @@ const FALLBACK_CARET_HEIGHT = 16;
  */
 const LINE_BAND_TOLERANCE_PX = 4;
 
+/** A caret API hit in another PM story must not fall through to body proximity. */
+const OUTSIDE_POSITION_SCOPE = Symbol('outside-position-scope');
+
 // ---------------------------------------------------------------------------
 // Point → position
 // ---------------------------------------------------------------------------
@@ -93,9 +103,28 @@ export function resolveDomPosition(
   void zoom; // Rects are already in screen space; nothing to scale.
 
   const exact = positionFromCaretApi(container, clientX, clientY);
+  if (exact === OUTSIDE_POSITION_SCOPE) return null;
   if (exact !== null) return exact;
 
   return nearestPositionOnLine(container, clientX, clientY);
+}
+
+/**
+ * Resolve a point inside one exact painted header/footer host to the matching
+ * independent HF ProseMirror position space.
+ *
+ * @public
+ */
+export function resolveHfDomPosition(
+  host: HTMLElement,
+  clientX: number,
+  clientY: number
+): number | null {
+  if (!host.matches('.layout-page-header, .layout-page-footer')) return null;
+  const exact = positionFromCaretApi(host, clientX, clientY, 'hf');
+  if (exact === OUTSIDE_POSITION_SCOPE) return null;
+  if (exact !== null) return exact;
+  return nearestPositionOnLine(host, clientX, clientY, collectHfSpans(host));
 }
 
 /**
@@ -109,13 +138,15 @@ export function resolveDomPosition(
 function positionFromCaretApi(
   container: HTMLElement,
   clientX: number,
-  clientY: number
-): number | null {
+  clientY: number,
+  scope: 'body' | 'hf' = 'body'
+): number | typeof OUTSIDE_POSITION_SCOPE | null {
   const doc = container.ownerDocument;
   const hit = caretNodeAtPoint(doc, clientX, clientY);
   if (!hit) return null;
 
-  const span = enclosingBodySpan(hit.node, container);
+  const span = enclosingPaintedSpan(hit.node, container, scope);
+  if (span === OUTSIDE_POSITION_SCOPE) return OUTSIDE_POSITION_SCOPE;
   if (!span) return null;
 
   const docFrom = numberAttr(span, 'docFrom');
@@ -165,12 +196,21 @@ function caretNodeAtPoint(
  * inside a header/footer walks up to no body span and resolves to null, which is
  * exactly what we want.
  */
-function enclosingBodySpan(node: Node, container: HTMLElement): HTMLElement | null {
+function enclosingPaintedSpan(
+  node: Node,
+  container: HTMLElement,
+  scope: 'body' | 'hf'
+): HTMLElement | typeof OUTSIDE_POSITION_SCOPE | null {
   const el = node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement;
   const span = el?.closest<HTMLElement>('span[data-doc-from][data-doc-to]');
   if (!span) return null;
-  if (!span.closest('.layout-page-content')) return null;
-  if (!container.contains(span)) return null;
+  if (scope === 'body' && (!span.closest('.layout-page-content') || !isBodyPositionElement(span))) {
+    return OUTSIDE_POSITION_SCOPE;
+  }
+  if (scope === 'hf' && !span.closest('.layout-page-header, .layout-page-footer')) {
+    return OUTSIDE_POSITION_SCOPE;
+  }
+  if (!container.contains(span)) return OUTSIDE_POSITION_SCOPE;
   return span;
 }
 
@@ -204,11 +244,12 @@ function textOffsetWithin(root: HTMLElement, node: Node, offset: number): number
 function nearestPositionOnLine(
   container: HTMLElement,
   clientX: number,
-  clientY: number
+  clientY: number,
+  spans: HTMLElement[] = collectBodySpans(container)
 ): number | null {
   let best: { pos: number; distance: number } | null = null;
 
-  for (const span of collectBodySpans(container)) {
+  for (const span of spans) {
     const rect = span.getBoundingClientRect();
     if (clientY < rect.top - LINE_BAND_TOLERANCE_PX) continue;
     if (clientY > rect.bottom + LINE_BAND_TOLERANCE_PX) continue;
@@ -228,7 +269,7 @@ function nearestPositionOnLine(
       distance = clientX - rect.right;
     } else {
       const ratio = (clientX - rect.left) / Math.max(1, rect.width);
-      pos = docFrom + Math.round(ratio * (docTo - docFrom));
+      pos = docFrom + proportionalTextOffset(span, ratio, docTo - docFrom);
       distance = 0;
     }
 
@@ -236,6 +277,31 @@ function nearestPositionOnLine(
   }
 
   return best?.pos ?? null;
+}
+
+/**
+ * Convert a horizontal box ratio to a PM offset without splitting a grapheme.
+ *
+ * Position ranges and text lengths normally share UTF-16 addressing. Painted
+ * atoms and transformed fallback text can differ, so only apply text boundaries
+ * when that invariant holds; their authored one-position ranges remain intact.
+ */
+function proportionalTextOffset(span: HTMLElement, ratio: number, rangeLength: number): number {
+  const clampedLength = Math.max(0, rangeLength);
+  const raw = Math.max(0, Math.min(clampedLength, Math.round(ratio * clampedLength)));
+  const text = span.textContent ?? '';
+  if (text.length !== clampedLength) return raw;
+
+  let nearest = 0;
+  let nearestDistance = Infinity;
+  for (const boundary of graphemeBoundaries(text)) {
+    const distance = Math.abs(boundary - raw);
+    if (distance < nearestDistance) {
+      nearest = boundary;
+      nearestDistance = distance;
+    }
+  }
+  return nearest;
 }
 
 // ---------------------------------------------------------------------------
@@ -289,16 +355,29 @@ function caretRectFor(container: HTMLElement, pmPos: number): CaretRect | null {
     if (pmPos < docFrom || pmPos > docTo) continue;
 
     const rect = glyphBoundaryRect(span, pmPos - docFrom);
-    if (rect) return { ...rect, element: span };
+    if (rect) {
+      const visible = clipRectToTableWindow(rect, span);
+      if (visible) {
+        return {
+          left: visible.left,
+          top: visible.top,
+          height: visible.height,
+          element: span,
+        };
+      }
+      continue;
+    }
 
     // The span is painted but has no measurable text (an image run, a widget).
     // Interpolate across its box.
     const box = span.getBoundingClientRect();
+    const visibleBox = clipRectToTableWindow(box, span);
+    if (!visibleBox) continue;
     const ratio = (pmPos - docFrom) / Math.max(1, docTo - docFrom);
     return {
-      left: box.left + box.width * ratio,
-      top: box.top,
-      height: box.height,
+      left: visibleBox.left + visibleBox.width * ratio,
+      top: visibleBox.top,
+      height: visibleBox.height,
       element: span,
     };
   }
@@ -312,12 +391,11 @@ function caretRectFor(container: HTMLElement, pmPos: number): CaretRect | null {
   //    the caret at whichever edge the position is nearer.
   const bracketing = tightestRangeContaining(container, pmPos);
   if (bracketing) {
-    const box = bracketing.el.getBoundingClientRect();
     const atEnd = pmPos >= bracketing.docTo;
     return {
-      left: atEnd ? box.right : box.left,
-      top: box.top,
-      height: box.height,
+      left: atEnd ? bracketing.rect.right : bracketing.rect.left,
+      top: bracketing.rect.top,
+      height: bracketing.rect.height,
       element: bracketing.el,
     };
   }
@@ -326,10 +404,7 @@ function caretRectFor(container: HTMLElement, pmPos: number): CaretRect | null {
 }
 
 /** The rect of the character boundary `offset` characters into `span`. */
-function glyphBoundaryRect(
-  span: HTMLElement,
-  offset: number
-): { left: number; top: number; height: number } | null {
+function glyphBoundaryRect(span: HTMLElement, offset: number): DOMRect | null {
   const doc = span.ownerDocument;
   const walker = doc.createTreeWalker(span, NodeFilter.SHOW_TEXT);
 
@@ -343,9 +418,7 @@ function glyphBoundaryRect(
         range.setStart(text, remaining);
         range.setEnd(text, remaining);
         const rect = range.getClientRects()[0] ?? range.getBoundingClientRect();
-        if (rect && rect.height > 0) {
-          return { left: rect.left, top: rect.top, height: rect.height };
-        }
+        if (rect && rect.height > 0) return rect;
       } catch {
         // A detached or re-rendered node. Fall through to the box estimate.
       }
@@ -376,7 +449,9 @@ function emptyParagraphRectAt(container: HTMLElement, pmPos: number): CaretRect 
     if (pmPos < docFrom || pmPos > docTo) continue;
 
     const box = (run.getBoundingClientRect().height > 0 ? run : para).getBoundingClientRect();
-    return { left: box.left, top: box.top, height: box.height, element: para };
+    const visible = clipRectToTableWindow(box, para);
+    if (!visible) continue;
+    return { left: visible.left, top: visible.top, height: visible.height, element: para };
   }
   return null;
 }
@@ -385,17 +460,19 @@ function emptyParagraphRectAt(container: HTMLElement, pmPos: number): CaretRect 
 function tightestRangeContaining(
   container: HTMLElement,
   pmPos: number
-): { el: HTMLElement; docFrom: number; docTo: number } | null {
-  let best: { el: HTMLElement; docFrom: number; docTo: number } | null = null;
+): { el: HTMLElement; docFrom: number; docTo: number; rect: DOMRect } | null {
+  let best: { el: HTMLElement; docFrom: number; docTo: number; rect: DOMRect } | null = null;
 
   for (const el of findBodyPmAnchors(container)) {
     const docFrom = numberAttr(el, 'docFrom');
     const docTo = numberAttr(el, 'docTo');
     if (docFrom === null || docTo === null) continue;
     if (pmPos < docFrom || pmPos > docTo) continue;
+    const rect = clipRectToTableWindow(el.getBoundingClientRect(), el);
+    if (!rect) continue;
 
     if (!best || docTo - docFrom < best.docTo - best.docFrom) {
-      best = { el, docFrom, docTo };
+      best = { el, docFrom, docTo, rect };
     }
   }
 
@@ -437,13 +514,15 @@ export function readSelectionGeometry(
     // Word paints a sliver there. Must be checked before the text path: the
     // marker does have a (zero-width) character in it.
     if (docTo === docFrom) {
-      pushRect(boxes, span.getBoundingClientRect(), span, containerRect, CARET_SLIVER_WIDTH);
+      const clipped = clipRectToTableWindow(span.getBoundingClientRect(), span);
+      if (clipped) pushRect(boxes, clipped, span, containerRect, CARET_SLIVER_WIDTH);
       continue;
     }
 
     // A tab has no glyphs to measure a sub-range against — highlight all of it.
     if (span.classList.contains('layout-run-tab')) {
-      pushRect(boxes, span.getBoundingClientRect(), span, containerRect);
+      const clipped = clipRectToTableWindow(span.getBoundingClientRect(), span);
+      if (clipped) pushRect(boxes, clipped, span, containerRect);
       continue;
     }
 
@@ -476,21 +555,24 @@ export function readSelectionGeometry(
     if (!overlaps(docFrom, docTo, from, to)) continue;
 
     const source = run.getBoundingClientRect().height > 0 ? run : para;
-    pushRect(boxes, source.getBoundingClientRect(), para, containerRect, CARET_SLIVER_WIDTH);
+    const clipped = clipRectToTableWindow(source.getBoundingClientRect(), para);
+    if (clipped) pushRect(boxes, clipped, para, containerRect, CARET_SLIVER_WIDTH);
   }
 
   return boxes;
 }
 
 /**
- * Clip a rect to the visible window of the split table it's in.
+ * Clip a rect to every visible window of the split table it's in.
  *
  * A table fragment that broke mid-row paints the *whole* row and relies on
  * `overflow: hidden` to hide the part that belongs to another page. The browser
  * still reports client rects for that hidden text, so a selection crossing the
  * break would paint a highlight through the page margin and over the next
- * fragment. The table element's own box is the window; anything outside it isn't
- * really on this page.
+ * fragment. Usually the table element's own box is the window. A continuation
+ * fragment with repeated headers has a narrower body window below those headers,
+ * stamped with `data-table-body-clip`; body content must also intersect that
+ * window while repeated-header content (its sibling) remains selectable.
  *
  * Returns `null` when the rect is entirely outside the window.
  *
@@ -500,9 +582,15 @@ export function clipRectToTableWindow(rect: DOMRect, el: HTMLElement): DOMRect |
   const table = el.closest<HTMLElement>('.layout-table');
   if (!table) return rect;
 
-  const window_ = table.getBoundingClientRect();
-  const top = Math.max(rect.top, window_.top);
-  const bottom = Math.min(rect.bottom, window_.bottom);
+  const bodyWindow = el.closest<HTMLElement>('[data-table-body-clip]');
+  const windows = bodyWindow ? [table, bodyWindow] : [table];
+  let top = rect.top;
+  let bottom = rect.bottom;
+  for (const windowEl of windows) {
+    const windowRect = windowEl.getBoundingClientRect();
+    top = Math.max(top, windowRect.top);
+    bottom = Math.min(bottom, windowRect.bottom);
+  }
   if (bottom <= top) return null;
 
   if (top === rect.top && bottom === rect.bottom) return rect;

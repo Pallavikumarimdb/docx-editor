@@ -9,6 +9,10 @@
 
 import type {
   FootnoteContent,
+  FootnoteNodeFragment,
+  FootnoteFragment,
+  MeasuredLine,
+  ParagraphMetrics,
   ParagraphFragment,
   TableFragment,
   ImageFragment,
@@ -35,10 +39,96 @@ export interface FootnoteRenderItem {
   text: string;
   /** Measured body-pipeline content used for WYSIWYG painting. */
   content?: FootnoteContent;
+  /** Page-local measured slice. Absent only for the plain-text fallback. */
+  fragment?: FootnoteFragment;
+}
+
+type ParagraphPosition = { runIndex: number; charOffset: number };
+
+function compareParagraphPositions(left: ParagraphPosition, right: ParagraphPosition): number {
+  return left.runIndex - right.runIndex || left.charOffset - right.charOffset;
+}
+
+function clampLineToContentRange(
+  line: MeasuredLine,
+  from: ParagraphPosition | undefined,
+  to: ParagraphPosition | undefined
+): MeasuredLine {
+  if (!from && !to) return line;
+
+  const clamped = {
+    ...line,
+    ...(from ? { fromRun: from.runIndex, fromChar: from.charOffset } : {}),
+    ...(to ? { toRun: to.runIndex, toChar: to.charOffset } : {}),
+  };
+  if (!line.segments) return clamped;
+
+  const rangeFrom = from ?? { runIndex: line.fromRun, charOffset: line.fromChar };
+  const rangeTo = to ?? { runIndex: line.toRun, charOffset: line.toChar };
+  const segments = line.segments
+    .filter((segment) => {
+      const segmentFrom = { runIndex: segment.fromRun, charOffset: segment.fromChar };
+      const segmentTo = { runIndex: segment.toRun, charOffset: segment.toChar };
+      return (
+        compareParagraphPositions(segmentTo, rangeFrom) > 0 &&
+        compareParagraphPositions(segmentFrom, rangeTo) < 0
+      );
+    })
+    .map((segment) => {
+      const segmentFrom = { runIndex: segment.fromRun, charOffset: segment.fromChar };
+      const segmentTo = { runIndex: segment.toRun, charOffset: segment.toChar };
+      const clampedFrom =
+        compareParagraphPositions(segmentFrom, rangeFrom) < 0 ? rangeFrom : segmentFrom;
+      const clampedTo = compareParagraphPositions(segmentTo, rangeTo) > 0 ? rangeTo : segmentTo;
+      return {
+        ...segment,
+        fromRun: clampedFrom.runIndex,
+        fromChar: clampedFrom.charOffset,
+        toRun: clampedTo.runIndex,
+        toChar: clampedTo.charOffset,
+      };
+    });
+  return { ...clamped, segments };
+}
+
+/**
+ * A continuation may begin inside a line after changing page width. Keep the
+ * new page's geometry, but trim that line to the exact run/character range the
+ * pagination plan assigned so already-painted text is not repeated.
+ */
+function paragraphMeasureForFootnoteSlice(
+  measure: ParagraphMetrics,
+  slice: Extract<FootnoteNodeFragment, { kind: 'paragraph' }>
+): ParagraphMetrics {
+  if (
+    slice.fromRun == null ||
+    slice.fromChar == null ||
+    slice.toRun == null ||
+    slice.toChar == null
+  ) {
+    return measure;
+  }
+
+  const lines = measure.lines.slice();
+  lines[slice.fromLine] = clampLineToContentRange(
+    lines[slice.fromLine],
+    { runIndex: slice.fromRun, charOffset: slice.fromChar },
+    slice.fromLine === slice.toLine - 1
+      ? { runIndex: slice.toRun, charOffset: slice.toChar }
+      : undefined
+  );
+  if (slice.toLine - 1 !== slice.fromLine) {
+    lines[slice.toLine - 1] = clampLineToContentRange(lines[slice.toLine - 1], undefined, {
+      runIndex: slice.toRun,
+      charOffset: slice.toChar,
+    });
+  }
+  return { ...measure, lines };
 }
 
 function renderMeasuredFootnoteContent(
   content: FootnoteContent,
+  footnoteFragment: FootnoteFragment | undefined,
   contentWidth: number,
   context: RenderContext,
   doc: Document
@@ -47,53 +137,94 @@ function renderMeasuredFootnoteContent(
   container.className = 'layout-footnote-content';
   container.style.position = 'relative';
   container.style.width = `${contentWidth}px`;
-  container.style.height = `${content.height}px`;
+  container.style.height = `${footnoteFragment?.height ?? content.height}px`;
+  container.dataset.footnoteId = String(content.id);
+  if (footnoteFragment?.continuesFromPrev) container.dataset.continuesFromPrev = 'true';
+  if (footnoteFragment?.continuesOnNext) container.dataset.continuesOnNext = 'true';
+  if (footnoteFragment?.columnIndex != null) {
+    container.dataset.footnoteColumn = String(footnoteFragment.columnIndex);
+  }
 
-  let cursorY = 0;
-  for (let i = 0; i < content.nodes.length; i++) {
-    const block = content.nodes[i];
-    const measure = content.metrics[i];
+  const slices: FootnoteNodeFragment[] =
+    footnoteFragment?.nodes ??
+    content.nodes.map((block, nodeIndex) => {
+      const measure = content.metrics[nodeIndex];
+      if (block.kind === 'paragraph' && measure?.kind === 'paragraph') {
+        return {
+          kind: 'paragraph' as const,
+          nodeIndex,
+          y: 0,
+          height: measure.totalHeight,
+          fromLine: 0,
+          toLine: measure.lines.length,
+        };
+      }
+      if (block.kind === 'table' && measure?.kind === 'table') {
+        return {
+          kind: 'table' as const,
+          nodeIndex,
+          y: 0,
+          height: measure.totalHeight,
+          fromRow: 0,
+          toRow: measure.rows.length,
+        };
+      }
+      return {
+        kind: block.kind === 'textBox' ? ('textBox' as const) : ('image' as const),
+        nodeIndex,
+        y: 0,
+        height: measure && 'height' in measure ? measure.height : 0,
+      };
+    });
+
+  let fallbackY = 0;
+  for (const slice of slices) {
+    const block = content.nodes[slice.nodeIndex];
+    const measure = content.metrics[slice.nodeIndex];
     if (!block || !measure) continue;
+    const sliceY = footnoteFragment ? slice.y : fallbackY;
 
-    if (block.kind === 'paragraph' && measure.kind === 'paragraph') {
-      const spacingBefore = block.attrs?.spacing?.before ?? 0;
+    if (slice.kind === 'paragraph' && block.kind === 'paragraph' && measure.kind === 'paragraph') {
       const syntheticFragment: ParagraphFragment = {
         kind: 'paragraph',
         nodeId: block.id,
         x: 0,
-        y: cursorY + spacingBefore,
+        y: sliceY,
         width: contentWidth,
-        height: measure.totalHeight,
+        height: slice.height,
         docFrom: block.docFrom,
         docTo: block.docTo,
-        fromLine: 0,
-        toLine: measure.lines.length,
+        fromLine: slice.fromLine,
+        toLine: slice.toLine,
       };
+      const sliceMeasure = paragraphMeasureForFootnoteSlice(measure, slice);
       const fragEl = paintParagraphFragment(
         syntheticFragment,
         block,
-        measure,
+        sliceMeasure,
         { ...context, section: 'body', contentWidth, positioning: 'absolute' },
         { document: doc }
       );
-      fragEl.style.top = `${cursorY + spacingBefore}px`;
+      fragEl.style.top = `${sliceY}px`;
       fragEl.style.left = '0';
       fragEl.style.width = `${contentWidth}px`;
-      fragEl.style.height = `${measure.totalHeight}px`;
+      fragEl.style.height = `${slice.height}px`;
       container.appendChild(fragEl);
-      cursorY += measure.totalHeight;
-    } else if (block.kind === 'table' && measure.kind === 'table') {
+      fallbackY += measure.totalHeight;
+    } else if (slice.kind === 'table' && block.kind === 'table' && measure.kind === 'table') {
       const syntheticFragment: TableFragment = {
         kind: 'table',
         nodeId: block.id,
         x: 0,
-        y: cursorY,
+        y: sliceY,
         width: measure.totalWidth,
-        height: measure.totalHeight,
+        height: slice.height,
         docFrom: block.docFrom,
         docTo: block.docTo,
-        fromRow: 0,
-        toRow: measure.rows.length,
+        fromRow: slice.fromRow,
+        toRow: slice.toRow,
+        topClip: slice.topClip,
+        bottomClip: slice.bottomClip,
       };
       const fragEl = paintTableFragment(
         syntheticFragment,
@@ -102,18 +233,18 @@ function renderMeasuredFootnoteContent(
         { ...context, section: 'body', contentWidth, positioning: 'absolute' },
         { document: doc }
       );
-      fragEl.style.top = `${cursorY}px`;
+      fragEl.style.top = `${sliceY}px`;
       fragEl.style.left = '0';
       container.appendChild(fragEl);
-      cursorY += measure.totalHeight;
-    } else if (block.kind === 'image' && measure.kind === 'image') {
+      fallbackY += measure.totalHeight;
+    } else if (slice.kind === 'image' && block.kind === 'image' && measure.kind === 'image') {
       const syntheticFragment: ImageFragment = {
         kind: 'image',
         nodeId: block.id,
         x: 0,
-        y: cursorY,
+        y: sliceY,
         width: measure.width,
-        height: measure.height,
+        height: slice.height,
         docFrom: block.docFrom,
         docTo: block.docTo,
       };
@@ -124,18 +255,18 @@ function renderMeasuredFootnoteContent(
         { ...context, section: 'body', contentWidth, positioning: 'absolute' },
         { document: doc }
       );
-      fragEl.style.top = `${cursorY}px`;
+      fragEl.style.top = `${sliceY}px`;
       fragEl.style.left = '0';
       container.appendChild(fragEl);
-      cursorY += measure.height;
-    } else if (block.kind === 'textBox' && measure.kind === 'textBox') {
+      fallbackY += measure.height;
+    } else if (slice.kind === 'textBox' && block.kind === 'textBox' && measure.kind === 'textBox') {
       const syntheticFragment: TextBoxFragment = {
         kind: 'textBox',
         nodeId: block.id,
         x: 0,
-        y: cursorY,
+        y: sliceY,
         width: measure.width,
-        height: measure.height,
+        height: slice.height,
         docFrom: block.docFrom,
         docTo: block.docTo,
       };
@@ -146,10 +277,10 @@ function renderMeasuredFootnoteContent(
         { ...context, section: 'body', contentWidth, positioning: 'absolute' },
         { document: doc }
       );
-      fragEl.style.top = `${cursorY}px`;
+      fragEl.style.top = `${sliceY}px`;
       fragEl.style.left = '0';
       container.appendChild(fragEl);
-      cursorY += measure.height;
+      fallbackY += measure.height;
     }
   }
 
@@ -179,6 +310,16 @@ export function calculateFootnoteAreaRenderHeight(
   footnotes: FootnoteRenderItem[],
   columns: number = 1
 ): number {
+  const sliced = footnotes.some((fn) => fn.fragment);
+  if (sliced) {
+    const heights = Array.from({ length: Math.max(1, Math.floor(columns)) }, () => 0);
+    for (const fn of footnotes) {
+      const columnIndex = Math.min(heights.length - 1, Math.max(0, fn.fragment?.columnIndex ?? 0));
+      heights[columnIndex] += fn.fragment?.height ?? fn.content?.height ?? 0;
+    }
+    return FOOTNOTE_SEPARATOR_HEIGHT + Math.max(...heights);
+  }
+
   const items = footnotes.filter((fn) => fn.content).map((fn) => ({ height: fn.content!.height }));
   if (items.length === 0) return FOOTNOTE_SEPARATOR_HEIGHT;
 
@@ -206,12 +347,20 @@ export function renderFootnoteArea(
   const container = doc.createElement('div');
   container.className = 'layout-footnote-area';
   container.style.width = `${contentWidth}px`;
+  const hasContinuation = footnotes.some((fn) => fn.fragment?.continuesFromPrev);
+  const continuesOnNext = footnotes.some((fn) => fn.fragment?.continuesOnNext);
+  if (hasContinuation) container.dataset.continuesFromPrev = 'true';
+  if (continuesOnNext) container.dataset.continuesOnNext = 'true';
 
   // Separator line (33% width, Google Docs style). Spans the full area width,
   // above the columns.
   const separator = doc.createElement('div');
   const separatorRuleHeight = 0.5;
   const separatorMargin = (FOOTNOTE_SEPARATOR_HEIGHT - separatorRuleHeight) / 2;
+  separator.className = hasContinuation
+    ? 'layout-footnote-separator layout-footnote-continuation-separator'
+    : 'layout-footnote-separator';
+  separator.dataset.separatorKind = hasContinuation ? 'continuation' : 'normal';
   separator.style.width = '33%';
   separator.style.height = `${separatorRuleHeight}px`;
   separator.style.backgroundColor = '#000';
@@ -221,7 +370,7 @@ export function renderFootnoteArea(
 
   const renderItem = (fn: FootnoteRenderItem, width: number): HTMLElement =>
     fn.content
-      ? renderMeasuredFootnoteContent(fn.content, width, context, doc)
+      ? renderMeasuredFootnoteContent(fn.content, fn.fragment, width, context, doc)
       : renderPlainFootnoteItem(fn, doc);
 
   const columnCount = Math.max(1, Math.floor(columns));
@@ -243,10 +392,17 @@ export function renderFootnoteArea(
     1,
     (contentWidth - (columnCount - 1) * FOOTNOTE_COLUMN_GAP_PX) / columnCount
   );
-  const partitions = distributeFootnotesIntoColumns(
-    footnotes.map((fn) => ({ fn, height: fn.content?.height ?? 0 })),
-    columnCount
-  );
+  const hasSlices = footnotes.some((fn) => fn.fragment);
+  const partitions = hasSlices
+    ? Array.from({ length: columnCount }, (_, columnIndex) =>
+        footnotes
+          .filter((fn) => (fn.fragment?.columnIndex ?? 0) === columnIndex)
+          .map((fn) => ({ fn, height: fn.fragment?.height ?? fn.content?.height ?? 0 }))
+      )
+    : distributeFootnotesIntoColumns(
+        footnotes.map((fn) => ({ fn, height: fn.content?.height ?? 0 })),
+        columnCount
+      );
 
   const columnsRow = doc.createElement('div');
   columnsRow.className = 'layout-footnote-columns';

@@ -223,11 +223,11 @@ export function paintParagraphFragment(
     // Track indent values for line-level application
     // For RTL paragraphs, swap left/right indentation
     if (isRtl) {
-      if (indent.left && indent.left > 0) indentRight = indent.left;
-      if (indent.right && indent.right > 0) indentLeft = indent.right;
+      indentRight = indent.left ?? 0;
+      indentLeft = indent.right ?? 0;
     } else {
-      if (indent.left && indent.left > 0) indentLeft = indent.left;
-      if (indent.right && indent.right > 0) indentRight = indent.right;
+      indentLeft = indent.left ?? 0;
+      indentRight = indent.right ?? 0;
     }
   }
 
@@ -471,7 +471,9 @@ export function paintParagraphFragment(
       if (indentLeft > 0 && hasHanging) {
         // Hanging indent: first line starts at (indentLeft - hanging)
         lineEl.style.paddingLeft = `${indentLeft}px`;
-        if (!isFlexLine) {
+        if (isFlexLine && lineEl.firstElementChild instanceof HTMLElement) {
+          lineEl.firstElementChild.style.marginLeft = `-${indent!.hanging}px`;
+        } else {
           lineEl.style.textIndent = `-${indent!.hanging}px`;
         }
       } else if (indentLeft > 0 && hasFirstLine) {
@@ -481,23 +483,35 @@ export function paintParagraphFragment(
       } else if (indentLeft > 0) {
         // Just left indent, no special first line treatment
         lineEl.style.paddingLeft = `${indentLeft}px`;
+      } else if (hasHanging) {
+        // With no left indent, Word hangs only the first line into the margin.
+        // Measurement uses the same negative start and leaves body lines at x=0.
+        if (isFlexLine && lineEl.firstElementChild instanceof HTMLElement) {
+          lineEl.firstElementChild.style.marginLeft = `-${indent!.hanging}px`;
+        } else {
+          lineEl.style.textIndent = `-${indent!.hanging}px`;
+        }
       } else if (hasFirstLine) {
         // No left indent, but has first line indent
         lineEl.style.textIndent = `${indent!.firstLine}px`;
       }
-      // No hanging without left indent (handled by firstLineOffset in measurement)
     } else {
       // Body lines (not first line)
       if (indentLeft > 0) {
         lineEl.style.paddingLeft = `${indentLeft}px`;
-      } else if (hasHanging) {
-        // Hanging indent without left indent: body lines need padding = hanging
-        lineEl.style.paddingLeft = `${indent!.hanging}px`;
       }
     }
 
     if (indentRight > 0) {
       lineEl.style.paddingRight = `${indentRight}px`;
+    } else if (indentRight < 0) {
+      const existingMargin = Number.parseFloat(lineEl.style.marginRight || '0');
+      lineEl.style.marginRight = `${existingMargin + indentRight}px`;
+    }
+
+    if (indentLeft < 0) {
+      const existingMargin = Number.parseFloat(lineEl.style.marginLeft || '0');
+      lineEl.style.marginLeft = `${existingMargin + indentLeft}px`;
     }
 
     // First-line list marker. The marker occupies a `hanging`-wide slot
@@ -525,11 +539,10 @@ export function paintParagraphFragment(
       // When the hang exceeds the left indent the marker belongs in the left
       // margin — exactly where Word puts it (a list whose direct `w:ind` has
       // `hanging` > `left`, #729). CSS padding can't be negative, so the
-      // negative portion rides on the marker's own margin-left. Gated to
-      // `indentLeft > 0`: with no left indent the body/continuation lines
-      // already sit at `hanging` (see body-line branch above), so hanging the
-      // marker into the margin there would misalign the first line.
-      if (markerStart < 0 && indentLeft > 0) {
+      // negative portion rides on the marker's own margin-left. This also
+      // handles left=0: the marker hangs into the margin while its remaining
+      // inline width leaves first-line text and continuation lines at x=0.
+      if (markerStart < 0) {
         marker.style.marginLeft = `${markerStart}px`;
       }
       lineEl.insertBefore(marker, lineEl.firstChild);

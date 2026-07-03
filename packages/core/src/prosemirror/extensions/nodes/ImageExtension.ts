@@ -7,6 +7,7 @@ import { createNodeExtension } from '../create';
 import type { ExtensionContext, ExtensionRuntime } from '../types';
 import type { ImageAttrs } from '../../schema/nodes';
 import type { WrapType } from '../../../docx/wrapTypes';
+import { sanitizeImageSrc } from '../../../utils/sanitizeImageSrc';
 
 /**
  * Anchored wrap-type targets — the OOXML wrap types except `inline`.
@@ -224,10 +225,12 @@ export const ImageExtension = createNodeExtension({
     parseDOM: [
       {
         tag: 'img[src]',
-        getAttrs(dom): ImageAttrs {
+        getAttrs(dom): ImageAttrs | false {
           const element = dom as HTMLImageElement;
+          const src = sanitizeImageSrc(element.getAttribute('src'));
+          if (!src) return false;
           return {
-            src: element.getAttribute('src') || '',
+            src,
             alt: element.getAttribute('alt') || undefined,
             title: element.getAttribute('title') || undefined,
             width: element.width || undefined,
@@ -248,10 +251,11 @@ export const ImageExtension = createNodeExtension({
     ],
     toDOM(node) {
       const attrs = node.attrs as ImageAttrs;
+      const src = sanitizeImageSrc(attrs.src);
       const domAttrs: Record<string, string> = {
-        src: attrs.src,
         class: 'docx-image',
       };
+      if (src) domAttrs.src = src;
 
       if (attrs.alt) domAttrs.alt = attrs.alt;
       if (attrs.title) domAttrs.title = attrs.title;

@@ -80,6 +80,7 @@ export function makeTableBodyClip(
 ): { bodyParent: HTMLElement; bodyOriginY: number } {
   if (headerHeight <= 0) return { bodyParent: tableEl, bodyOriginY: 0 };
   const bodyClip = doc.createElement('div');
+  bodyClip.dataset.tableBodyClip = 'true';
   bodyClip.style.position = 'absolute';
   bodyClip.style.left = '0';
   bodyClip.style.top = `${headerHeight}px`;

@@ -37,7 +37,8 @@ import {
   measureTextWidth,
   prefixAdvances,
   resolveFontStyle,
-  snapToCodePoint,
+  graphemeBoundaries,
+  nextGraphemeBoundary,
   WORD_SINGLE_LINE_RATIO,
   type FontStyle,
 } from './textMetrics';
@@ -122,7 +123,7 @@ export function getRunCharWidths(run: Run, defaults: Partial<FontStyle> = {}): n
 }
 
 /**
- * LayoutMetrics several paragraphs at one width.
+ * Measure several paragraphs at one width.
  *
  * @public
  */
@@ -723,11 +724,7 @@ function splitWordToFit(
       break;
     }
     if (end <= piece.from) {
-      const codePoint = run.text.codePointAt(piece.from);
-      end = Math.min(
-        piece.to,
-        piece.from + (codePoint !== undefined && codePoint > 0xffff ? 2 : 1)
-      );
+      end = Math.min(piece.to, nextGraphemeBoundary(run.text, piece.from));
     }
 
     const fittedWidth = measureTextWidth(run.text.slice(piece.from, end), styleFor(run, defaults));
@@ -761,22 +758,21 @@ function fittingTextEnd(
   maxWidth: number,
   style: FontStyle
 ): number {
-  let low = from + 1;
-  let high = to;
+  const boundaries = graphemeBoundaries(text).filter(
+    (boundary) => boundary > from && boundary <= to
+  );
+  let low = 0;
+  let high = boundaries.length - 1;
   let fitted = from;
   while (low <= high) {
     const mid = Math.floor((low + high) / 2);
-    const boundary = snapToCodePoint(text, mid);
-    if (boundary <= from) {
-      low = mid + 1;
-      continue;
-    }
+    const boundary = boundaries[mid];
     const width = measureTextWidth(text.slice(from, boundary), style);
     if (width <= maxWidth + WRAP_TOLERANCE_PX) {
       fitted = boundary;
-      low = Math.max(mid + 1, boundary + 1);
+      low = mid + 1;
     } else {
-      high = Math.min(mid - 1, boundary - 1);
+      high = mid - 1;
     }
   }
 

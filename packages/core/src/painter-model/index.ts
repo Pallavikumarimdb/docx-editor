@@ -43,6 +43,7 @@ import { paintFragment, FRAGMENT_CLASS_NAMES } from './paintFragment';
 import { paintTableFragment, TABLE_CLASS_NAMES } from './renderTable';
 import { paintImageFragment, IMAGE_CLASS_NAMES } from './renderImage';
 import { paintTextBoxFragment, TEXTBOX_CLASS_NAMES } from './renderTextBox';
+import { semanticDigest } from './semanticDigest';
 
 // Re-export render functions
 export {
@@ -66,6 +67,7 @@ export {
 };
 export type { RenderPagesUpdateKind };
 export type { HeaderFooterContent, RenderPageOptions, FootnoteRenderItem } from './paintPage';
+export { registerPageFurniture } from './pageFurnitureRegistry';
 
 // Anchored-object position resolution — shared with the measure pipeline so the
 // reserved float band lines up with where the painter places the object.
@@ -98,30 +100,35 @@ export type {
 } from './imageLayout';
 
 /**
- * Block lookup entry for painter
+ * Node lookup entry for painter
  */
 export interface NodeLookupEntry {
-  block: ContentNode;
-  measure: LayoutMetrics;
+  node: ContentNode;
+  metrics: LayoutMetrics;
   version?: string;
 }
 
 /**
- * Block lookup map type
+ * Node lookup map type
  */
 export type NodeLookup = Map<string, NodeLookupEntry>;
 
 /**
- * Build the painter's `block.id → { block, measure }` lookup from the parallel
- * nodes/metrics arrays. Shared by both adapters' paint step.
+ * Build the painter's `node.id → { node, metrics, version }` lookup from the
+ * parallel nodes/metrics arrays. The semantic version invalidates virtualized
+ * pages for content-only changes that preserve all layout geometry.
  */
 export function indexNodesById(nodes: ContentNode[], metrics: LayoutMetrics[]): NodeLookup {
   const lookup: NodeLookup = new Map();
   for (let i = 0; i < nodes.length; i++) {
-    const block = nodes[i];
-    const measure = metrics[i];
-    if (block && measure) {
-      lookup.set(String(block.id), { block, measure });
+    const node = nodes[i];
+    const nodeMetrics = metrics[i];
+    if (node && nodeMetrics) {
+      lookup.set(String(node.id), {
+        node,
+        metrics: nodeMetrics,
+        version: semanticDigest(node, nodeMetrics),
+      });
     }
   }
   return lookup;
@@ -173,7 +180,7 @@ export class LayoutPainter {
   }
 
   /**
-   * Set the block lookup map for rendering fragments
+   * Set the node lookup map for rendering fragments
    */
   setNodeLookup(lookup: NodeLookup): void {
     this.nodeLookup = lookup;
@@ -301,32 +308,32 @@ export class LayoutPainter {
     const lookup = this.nodeLookup.get(String(fragment.nodeId));
 
     if (fragment.kind === 'paragraph' && lookup) {
-      const block = lookup.block as ParagraphBlock;
-      const measure = lookup.measure as ParagraphMetrics;
+      const block = lookup.node as ParagraphBlock;
+      const measure = lookup.metrics as ParagraphMetrics;
       return paintParagraphFragment(fragment as ParagraphFragment, block, measure, context, {
         document: this.doc,
       });
     }
 
     if (fragment.kind === 'table' && lookup) {
-      const block = lookup.block as TableBlock;
-      const measure = lookup.measure as TableMetrics;
+      const block = lookup.node as TableBlock;
+      const measure = lookup.metrics as TableMetrics;
       return paintTableFragment(fragment as TableFragment, block, measure, context, {
         document: this.doc,
       });
     }
 
     if (fragment.kind === 'image' && lookup) {
-      const block = lookup.block as ImageBlock;
-      const measure = lookup.measure as ImageMetrics;
+      const block = lookup.node as ImageBlock;
+      const measure = lookup.metrics as ImageMetrics;
       return paintImageFragment(fragment as ImageFragment, block, measure, context, {
         document: this.doc,
       });
     }
 
     if (fragment.kind === 'textBox' && lookup) {
-      const block = lookup.block as TextBoxBlock;
-      const measure = lookup.measure as TextBoxMetrics;
+      const block = lookup.node as TextBoxBlock;
+      const measure = lookup.metrics as TextBoxMetrics;
       return paintTextBoxFragment(fragment as TextBoxFragment, block, measure, context, {
         document: this.doc,
       });

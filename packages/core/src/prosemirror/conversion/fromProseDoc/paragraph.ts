@@ -530,6 +530,9 @@ function paragraphAttrsToFormatting(attrs: ParagraphAttrs): ParagraphFormatting 
     if (attrs.pageBreakBefore !== (orig.pageBreakBefore || undefined)) {
       result.pageBreakBefore = attrs.pageBreakBefore || undefined;
     }
+    if (attrs.widowControl !== (orig.widowControl ?? undefined)) {
+      result.widowControl = attrs.widowControl ?? undefined;
+    }
     if (attrs.bidi !== (orig.bidi || undefined)) {
       result.bidi = attrs.bidi || undefined;
     }
@@ -555,6 +558,7 @@ function paragraphAttrsToFormatting(attrs: ParagraphAttrs): ParagraphFormatting 
     attrs.outlineLevel != null ||
     attrs.contextualSpacing ||
     attrs.pageBreakBefore ||
+    attrs.widowControl != null ||
     attrs.bidi;
 
   if (!hasFormatting) {
@@ -579,6 +583,7 @@ function paragraphAttrsToFormatting(attrs: ParagraphAttrs): ParagraphFormatting 
     outlineLevel: attrs.outlineLevel ?? undefined,
     contextualSpacing: attrs.contextualSpacing || undefined,
     pageBreakBefore: attrs.pageBreakBefore || undefined,
+    widowControl: attrs.widowControl ?? undefined,
     bidi: attrs.bidi || undefined,
   };
 }

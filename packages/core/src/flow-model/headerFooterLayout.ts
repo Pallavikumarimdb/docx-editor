@@ -28,8 +28,12 @@ import type {
 } from '../pagination-model/types';
 import type { HeaderFooter, StyleDefinitions, Theme } from '../types/document';
 import type { HeaderFooterContent } from '../painter-model/paintPage';
+import {
+  pageGeometryFromPage,
+  resolveAnchoredObjectVerticalTop,
+} from '../painter-model/anchoredObjectPosition';
+import { isFloatingTextBoxBlock } from '../pagination-model/textBoxFlow';
 import { headerFooterToProseDoc } from '../prosemirror/conversion/toProseDoc';
-import { emuToPixels } from '../utils/units';
 import { buildBoxTree } from './buildBoxTree';
 import type { MeasureBlocksFn } from './footnoteLayout';
 
@@ -176,40 +180,67 @@ export function resolveHeaderFooterVisualTop(
   flowHeight: number,
   metrics: HeaderFooterMetrics
 ): number {
-  const flowTop =
-    metrics.section === 'header'
-      ? (metrics.margins.header ?? 48)
-      : metrics.pageSize.h - (metrics.margins.footer ?? 48) - flowHeight;
-  const vertical = run.position?.vertical;
+  return resolveHeaderFooterPositionedTop(run, paragraphY, flowHeight, metrics);
+}
 
-  if (!vertical) {
-    return paragraphY;
+function resolveHeaderFooterPositionedTop(
+  object: Pick<ImageRun, 'height' | 'position'>,
+  paragraphY: number,
+  flowHeight: number,
+  metrics: HeaderFooterMetrics
+): number {
+  const flowTop = resolveHeaderFooterFlowTop(flowHeight, metrics);
+  const vertical = object.position?.vertical;
+  const geometry = pageGeometryFromPage({
+    size: metrics.pageSize,
+    margins: metrics.margins,
+  });
+  const paragraphContentY = flowTop + paragraphY - metrics.margins.top;
+  const resolvedContentTop = resolveAnchoredObjectVerticalTop(
+    {
+      width: 0,
+      height: object.height,
+      position: vertical
+        ? {
+            vertical: {
+              relativeTo: vertical.relativeTo,
+              posOffset: vertical.posOffset,
+              align: getPositionAlignment(vertical),
+            },
+          }
+        : undefined,
+    },
+    paragraphContentY,
+    geometry
+  );
+
+  return metrics.margins.top + resolvedContentTop - flowTop;
+}
+
+function resolveHeaderFooterFlowTop(flowHeight: number, metrics: HeaderFooterMetrics): number {
+  return metrics.section === 'header'
+    ? (metrics.margins.header ?? 48)
+    : metrics.pageSize.h - (metrics.margins.footer ?? 48) - flowHeight;
+}
+
+/**
+ * Resolve a floating table's visual top relative to the header/footer flow
+ * origin. Keep this coordinate transform aligned with
+ * `resolveHeaderFooterFloatingTablePosition`, which the painter uses.
+ */
+function resolveHeaderFooterFloatingTableTop(
+  floating: NonNullable<TableBlock['floating']>,
+  flowHeight: number,
+  metrics: HeaderFooterMetrics
+): number {
+  const flowTop = resolveHeaderFooterFlowTop(flowHeight, metrics);
+  let top = floating.tblpY ?? 0;
+  if (floating.vertAnchor === 'page') {
+    top -= flowTop;
+  } else if (floating.vertAnchor === 'margin') {
+    top += metrics.margins.top - flowTop;
   }
-
-  const align = getPositionAlignment(vertical);
-  const offsetPx = vertical.posOffset !== undefined ? emuToPixels(vertical.posOffset) : undefined;
-
-  if (vertical.relativeTo === 'page') {
-    if (offsetPx !== undefined) return offsetPx - flowTop;
-    if (align === 'top') return -flowTop;
-    if (align === 'bottom') return metrics.pageSize.h - run.height - flowTop;
-    if (align === 'center') return (metrics.pageSize.h - run.height) / 2 - flowTop;
-  }
-
-  if (vertical.relativeTo === 'margin') {
-    const marginTop = metrics.margins.top;
-    const marginHeight = metrics.pageSize.h - metrics.margins.top - metrics.margins.bottom;
-    if (offsetPx !== undefined) return marginTop + offsetPx - flowTop;
-    if (align === 'top') return marginTop - flowTop;
-    if (align === 'bottom') return marginTop + marginHeight - run.height - flowTop;
-    if (align === 'center') return marginTop + (marginHeight - run.height) / 2 - flowTop;
-  }
-
-  if (offsetPx !== undefined) {
-    return paragraphY + offsetPx;
-  }
-
-  return paragraphY;
+  return top;
 }
 
 /**
@@ -230,16 +261,19 @@ export function resolveHeaderFooterVisualTop(
 export function contributesToHeaderFooterFlowHeight(block: ContentNode): boolean {
   switch (block.kind) {
     case 'paragraph':
-    case 'table':
       return true;
+    case 'table':
+      // `<w:tblpPr>` tables are page/margin/text-positioned by the painter
+      // and do not advance its header/footer story cursor.
+      return !block.floating;
     case 'image':
       // Inline images count; page/paragraph-anchored floats do not.
       return !block.anchor?.isAnchored;
     case 'textBox':
-      // Only genuinely inline text boxes count. 'float' (square/tight/through/
-      // behind/inFront) and 'block' (topAndBottom) are positioned out of the
-      // body's flow and must not push the body margin.
-      return block.displayMode === undefined || block.displayMode === 'inline';
+      // Only genuinely inline text boxes count. Every anchored wrap mode,
+      // including topAndBottom's `displayMode: block`, is positioned out of
+      // the story flow and must not push the body margin.
+      return !isFloatingTextBoxBlock(block);
     default:
       return false; // sectionBreak / pageBreak / columnBreak
   }
@@ -262,10 +296,9 @@ export function calculateHeaderFooterVisualBounds(
 ): { visualTop: number; visualBottom: number } {
   let visualTop = 0;
   // Accumulate the real extent from the nodes below. Do NOT seed with the
-  // caller's `flowHeight` arg (it is the float-inclusive `totalHeight`): when a
-  // floating box doesn't advance the cursor, seeding with the stacked total
-  // would keep `visualBottom` artificially tall and the header container/hover
-  // highlight would read taller than the painted content (#705/#729).
+  // caller's `flowHeight`: when a floating box doesn't advance the cursor,
+  // seeding with the in-flow total would still keep `visualBottom` taller than
+  // the content actually encountered in malformed block/measure pairs.
   let visualBottom = 0;
   let cursorY = 0;
 
@@ -289,26 +322,43 @@ export function calculateHeaderFooterVisualBounds(
 
       cursorY = paragraphBottomY;
     } else if (block.kind === 'table' && measure.kind === 'table') {
-      const blockBottomY = cursorY + measure.totalHeight;
-      visualTop = Math.min(visualTop, cursorY);
+      const positioned = Boolean(block.floating);
+      const blockTopY = block.floating
+        ? resolveHeaderFooterFloatingTableTop(block.floating, flowHeight, pageMetrics)
+        : cursorY;
+      const blockBottomY = blockTopY + measure.totalHeight;
+      visualTop = Math.min(visualTop, blockTopY);
       visualBottom = Math.max(visualBottom, blockBottomY);
-      cursorY = blockBottomY;
+      // Floating tables paint at their resolved anchor without advancing the
+      // story cursor, so following paragraphs start where the table's anchor
+      // paragraph would have started.
+      if (!positioned) {
+        cursorY = blockBottomY;
+      }
     } else if (block.kind === 'image' && measure.kind === 'image') {
       const blockBottomY = cursorY + measure.height;
       visualTop = Math.min(visualTop, cursorY);
       visualBottom = Math.max(visualBottom, blockBottomY);
       cursorY = blockBottomY;
     } else if (block.kind === 'textBox' && measure.kind === 'textBox') {
-      const blockBottomY = cursorY + measure.height;
-      visualTop = Math.min(visualTop, cursorY);
+      const positioned = isFloatingTextBoxBlock(block);
+      const blockTopY = positioned
+        ? resolveHeaderFooterPositionedTop(
+            { height: measure.height, position: block.position },
+            cursorY,
+            flowHeight,
+            pageMetrics
+          )
+        : cursorY;
+      const blockBottomY = blockTopY + measure.height;
+      visualTop = Math.min(visualTop, blockTopY);
       visualBottom = Math.max(visualBottom, blockBottomY);
-      // A floating text box is positioned, not in-flow: it extends the visual
-      // bounds (so the band/container stays tall enough to show it) but does
-      // NOT advance the cursor, mirroring the painter (renderHeaderFooterContent)
-      // and floating tables. Otherwise the header container outgrows its actual
-      // content and the hover highlight reads taller than the header (#705/#729).
-      if (block.displayMode !== 'float') {
-        cursorY = blockBottomY;
+      // Anchored text boxes extend visual bounds at their resolved page/margin
+      // position but never advance the story cursor. This includes
+      // topAndBottom boxes, whose `displayMode` is `block` even though the
+      // drawing remains positioned out of flow.
+      if (!positioned) {
+        cursorY += measure.height;
       }
     }
   }
@@ -383,27 +433,27 @@ export function convertHeaderFooterPmDocToContent(
   const nodes = buildBoxTree(pmDoc, { theme: config.theme ?? undefined });
   if (nodes.length === 0) return undefined;
 
-  const nodesForMetrics = normalizeHeaderFooterMeasureBlocks(nodes);
-  const layoutMetrics = config.measureBlocks(nodesForMetrics, contentWidth);
+  const nodesForMeasure = normalizeHeaderFooterMeasureBlocks(nodes);
+  const layoutMetrics = config.measureBlocks(nodesForMeasure, contentWidth);
   let totalHeight = 0;
   let flowHeight = 0;
-  for (let i = 0; i < nodesForMetrics.length; i++) {
+  for (let i = 0; i < nodesForMeasure.length; i++) {
     const h = measureFlowHeight(layoutMetrics[i]);
     totalHeight += h;
-    if (contributesToHeaderFooterFlowHeight(nodesForMetrics[i])) flowHeight += h;
+    if (contributesToHeaderFooterFlowHeight(nodesForMeasure[i])) flowHeight += h;
   }
-  // Use `nodesForMetrics` (the normalized list the `metrics` were computed
+  // Use `nodesForMeasure` (the normalized list the `metrics` were computed
   // from), NOT the raw `nodes` — otherwise block[i] and measure[i] can desync
   // and per-block flags like `displayMode` are read off the wrong block.
   const { visualTop, visualBottom } = calculateHeaderFooterVisualBounds(
-    nodesForMetrics,
+    nodesForMeasure,
     layoutMetrics,
-    totalHeight,
+    flowHeight,
     pageMetrics
   );
 
   return {
-    nodes: nodesForMetrics,
+    nodes: nodesForMeasure,
     metrics: layoutMetrics,
     height: totalHeight,
     flowHeight,
@@ -431,6 +481,7 @@ export function convertHeaderFooterPmDocToContent(
  */
 type HfDomSnapshot = {
   host: HTMLElement;
+  rId: string | null;
   spans: HTMLElement[];
   ranged: HTMLElement[];
 };
@@ -465,7 +516,8 @@ export function invalidateHfDomCache(): void {
 
 function getHfDomSnapshot(
   section: 'header' | 'footer',
-  doc: globalThis.Document
+  doc: globalThis.Document,
+  rId: string | null
 ): HfDomSnapshot | null {
   // The same HF doc is painted on every page (shared by `r:id`), so any painted
   // instance carries the right PM coords. But the caret/selection overlay must
@@ -475,13 +527,14 @@ function getHfDomSnapshot(
   // saw no caret or highlight where they were typing (#691 footer).
   // Scoping to `.layout-page-${section}` keeps the header and footer from
   // shadowing each other (#671).
-  const hosts = doc.querySelectorAll<HTMLElement>(`.layout-page-${section}`);
+  const allHosts = Array.from(doc.querySelectorAll<HTMLElement>(`.layout-page-${section}`));
+  const hosts = rId ? allHosts.filter((candidate) => candidate.dataset.hfRId === rId) : allHosts;
   if (hosts.length === 0) return null;
   const win = doc.defaultView;
   const vpCenter = win ? win.innerHeight / 2 : 0;
   let host = hosts[0];
   let bestDist = Infinity;
-  for (const h of Array.from(hosts)) {
+  for (const h of hosts) {
     const r = h.getBoundingClientRect();
     const dist = Math.abs((r.top + r.bottom) / 2 - vpCenter);
     if (dist < bestDist) {
@@ -493,10 +546,11 @@ function getHfDomSnapshot(
   // (and it's still live). The host changes as the user scrolls between pages,
   // so a section-only cache would keep resolving against the wrong instance.
   const cached = hfDomCache[section];
-  if (cached && cached.host === host && cached.host.isConnected) return cached;
+  if (cached && cached.host === host && cached.rId === rId && cached.host.isConnected)
+    return cached;
   const spans = Array.from(host.querySelectorAll<HTMLElement>('span[data-doc-from][data-doc-to]'));
   const ranged = Array.from(host.querySelectorAll<HTMLElement>('[data-doc-from][data-doc-to]'));
-  const snapshot = { host, spans, ranged };
+  const snapshot = { host, rId, spans, ranged };
   hfDomCache[section] = snapshot;
   return snapshot;
 }
@@ -526,12 +580,13 @@ function getHfDomSnapshot(
 export function computeHfCaretRectFromView(
   view: EditorView,
   section: 'header' | 'footer',
-  doc: globalThis.Document = globalThis.document
+  doc: globalThis.Document = globalThis.document,
+  rId: string | null = null
 ): { top: number; left: number; height: number } | null {
   const sel = view.state.selection;
   if (!sel.empty) return null;
   const pmPos = sel.head;
-  const snapshot = getHfDomSnapshot(section, doc);
+  const snapshot = getHfDomSnapshot(section, doc, rId);
   if (!snapshot) return null;
   const { host, spans } = snapshot;
   for (const span of spans) {
@@ -660,7 +715,8 @@ export function computeHfCaretRectFromView(
 export function readHfSelectionGeometry(
   view: EditorView,
   section: 'header' | 'footer',
-  doc: globalThis.Document = globalThis.document
+  doc: globalThis.Document = globalThis.document,
+  rId: string | null = null
 ): Array<{ top: number; left: number; width: number; height: number }> {
   const sel = view.state.selection;
   if (sel.empty) return [];
@@ -672,7 +728,7 @@ export function readHfSelectionGeometry(
   // for the section shares the same PM coord space (only one HF doc, painted N
   // times for the N pages), so a single host's spans suffice for selection
   // rects.
-  const snapshot = getHfDomSnapshot(section, doc);
+  const snapshot = getHfDomSnapshot(section, doc, rId);
   if (!snapshot) return out;
   const { host, spans } = snapshot;
   for (const spanEl of spans) {

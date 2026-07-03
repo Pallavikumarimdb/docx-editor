@@ -59,9 +59,9 @@ export function extractCellFloatingImages(
     const block = cell.nodes[nodeIndex];
     if (block?.kind !== 'paragraph') {
       // Use actual measured height for Y tracking
-      const blockMeasure = cellMetrics.metrics[nodeIndex];
-      if (blockMeasure && blockMeasure.kind === 'table') {
-        paragraphY += (blockMeasure as TableMetrics).totalHeight ?? 0;
+      const nodeMetrics = cellMetrics.metrics[nodeIndex];
+      if (nodeMetrics && nodeMetrics.kind === 'table') {
+        paragraphY += (nodeMetrics as TableMetrics).totalHeight ?? 0;
       }
       continue;
     }
@@ -135,9 +135,9 @@ export function extractCellFloatingImages(
     }
 
     // Use actual measured height for Y tracking
-    const blockMeasure = cellMetrics.metrics[nodeIndex];
-    if (blockMeasure && blockMeasure.kind === 'paragraph') {
-      paragraphY += (blockMeasure as ParagraphMetrics).totalHeight;
+    const nodeMetrics = cellMetrics.metrics[nodeIndex];
+    if (nodeMetrics && nodeMetrics.kind === 'paragraph') {
+      paragraphY += (nodeMetrics as ParagraphMetrics).totalHeight;
     }
   }
 

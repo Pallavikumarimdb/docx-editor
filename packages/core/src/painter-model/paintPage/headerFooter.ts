@@ -20,12 +20,18 @@ import type {
   TextBoxFragment,
 } from '../../pagination-model/types';
 import { assertExhaustiveContentNode } from '../../pagination-model/types';
+import { isFloatingTextBoxBlock } from '../../pagination-model/textBoxFlow';
 import { paintParagraphFragment } from '../renderParagraph';
 import { paintTableFragment } from '../renderTable';
 import { paintImageFragment } from '../renderImage';
 import { paintTextBoxFragment } from '../renderTextBox';
-import { emuToPixels } from '../../utils/units';
+import { sanitizeImageSrc } from '../../utils/sanitizeImageSrc';
 import type { RenderContext, RenderPageOptions } from '../paintPage';
+import {
+  pageGeometryFromPage,
+  resolveAnchoredObjectPosition,
+  type AnchoredObjectPositionInput,
+} from '../anchoredObjectPosition';
 
 /**
  * Header/footer content for rendering
@@ -73,6 +79,81 @@ function getPositionAlignment(
   return position?.align ?? position?.alignment;
 }
 
+type HeaderFooterAnchorPosition = {
+  horizontal?: {
+    relativeTo?: string;
+    posOffset?: number;
+    align?: string;
+    alignment?: string;
+  };
+  vertical?: {
+    relativeTo?: string;
+    posOffset?: number;
+    align?: string;
+    alignment?: string;
+  };
+};
+
+function normalizeHeaderFooterAnchorPosition(
+  position: HeaderFooterAnchorPosition
+): AnchoredObjectPositionInput['position'] {
+  const normalizeAxis = (
+    axis:
+      | {
+          relativeTo?: string;
+          posOffset?: number;
+          align?: string;
+          alignment?: string;
+        }
+      | undefined
+  ): { relativeTo?: string; posOffset?: number; align?: string } | undefined =>
+    axis
+      ? {
+          relativeTo: axis.relativeTo,
+          posOffset: axis.posOffset,
+          align: getPositionAlignment(axis),
+        }
+      : undefined;
+
+  return {
+    horizontal: normalizeAxis(position.horizontal),
+    vertical: normalizeAxis(position.vertical),
+  };
+}
+
+/**
+ * Resolve a header/footer anchor through the same content-relative geometry
+ * used by the body painter, then translate it to the HF flow container.
+ */
+function resolveHeaderFooterAnchorPosition(
+  width: number,
+  height: number,
+  paragraphY: number,
+  position: HeaderFooterAnchorPosition,
+  layout: HeaderFooterLayoutInfo
+): { left: number; top: number } {
+  const geometry = pageGeometryFromPage({
+    size: { w: layout.pageWidth, h: layout.pageHeight },
+    margins: layout.margins,
+  });
+  const paragraphContentY = layout.flowTop + paragraphY - layout.margins.top;
+  const resolved = resolveAnchoredObjectPosition(
+    {
+      width,
+      height,
+      position: normalizeHeaderFooterAnchorPosition(position),
+    },
+    paragraphContentY,
+    layout.contentWidth,
+    geometry
+  );
+
+  return {
+    left: layout.margins.left + resolved.x - layout.flowLeft,
+    top: layout.margins.top + resolved.y - layout.flowTop,
+  };
+}
+
 function resolveHeaderFooterFloatTop(
   floatImg: {
     height: number;
@@ -83,51 +164,13 @@ function resolveHeaderFooterFloatTop(
   },
   layout: HeaderFooterLayoutInfo
 ): number {
-  const v = floatImg.position.vertical;
-  if (!v) {
-    return floatImg.paragraphY;
-  }
-
-  const align = getPositionAlignment(v);
-  const offsetPx = v.posOffset !== undefined ? emuToPixels(v.posOffset) : undefined;
-
-  if (v.relativeTo === 'page') {
-    if (offsetPx !== undefined) {
-      return offsetPx - layout.flowTop;
-    }
-    if (align === 'top') {
-      return -layout.flowTop;
-    }
-    if (align === 'bottom') {
-      return layout.pageHeight - floatImg.height - layout.flowTop;
-    }
-    if (align === 'center') {
-      return (layout.pageHeight - floatImg.height) / 2 - layout.flowTop;
-    }
-  }
-
-  if (v.relativeTo === 'margin') {
-    const marginTop = layout.margins.top;
-    const marginHeight = layout.pageHeight - layout.margins.top - layout.margins.bottom;
-    if (offsetPx !== undefined) {
-      return marginTop + offsetPx - layout.flowTop;
-    }
-    if (align === 'top') {
-      return marginTop - layout.flowTop;
-    }
-    if (align === 'bottom') {
-      return marginTop + marginHeight - floatImg.height - layout.flowTop;
-    }
-    if (align === 'center') {
-      return marginTop + (marginHeight - floatImg.height) / 2 - layout.flowTop;
-    }
-  }
-
-  if (offsetPx !== undefined) {
-    return floatImg.paragraphY + offsetPx;
-  }
-
-  return floatImg.paragraphY;
+  return resolveHeaderFooterAnchorPosition(
+    0,
+    floatImg.height,
+    floatImg.paragraphY,
+    floatImg.position,
+    layout
+  ).top;
 }
 
 /**
@@ -142,23 +185,8 @@ export function resolveHeaderFooterFloatLeft(
   h: { relativeTo?: string; posOffset?: number; align?: string; alignment?: string } | undefined,
   layout: HeaderFooterLayoutInfo
 ): string {
-  if (!h) return '0';
-  const align = getPositionAlignment(h);
-
-  if (h.relativeTo === 'page') {
-    if (h.posOffset !== undefined) return `${emuToPixels(h.posOffset) - layout.flowLeft}px`;
-    if (align === 'right') return `${layout.pageWidth - width - layout.flowLeft}px`;
-    if (align === 'center') return `${(layout.pageWidth - width) / 2 - layout.flowLeft}px`;
-    if (align === 'left') return `${-layout.flowLeft}px`;
-  }
-
-  // `relativeTo: margin` falls through here intentionally: the HF content width
-  // IS the margin box, so the content-relative branch is already margin-correct.
-  if (h.posOffset !== undefined) return `${emuToPixels(h.posOffset)}px`;
-  if (align === 'right') return `${layout.contentWidth - width}px`;
-  if (align === 'center') return `${(layout.contentWidth - width) / 2}px`;
-
-  return '0';
+  const { left } = resolveHeaderFooterAnchorPosition(width, 0, 0, { horizontal: h }, layout);
+  return left ? `${left}px` : '0';
 }
 
 function applyHeaderFooterFloatHorizontalPosition(
@@ -437,10 +465,22 @@ export function renderHeaderFooterContent(
         { ...context, positioning: 'absolute' },
         { document: doc }
       );
-      // Vertical position stays on the HF flow cursor (the anchor's positionV
-      // is not yet honored for HF text boxes); only the horizontal anchor is
-      // resolved here, which is what the reported page-centered banner needs.
-      fragEl.style.top = `${cursorY}px`;
+      // Every non-inline text box uses the same positionV resolver as floating
+      // images. This includes topAndBottom boxes (`displayMode: block`): the
+      // wrap mode affects surrounding body text, but the drawing itself remains
+      // anchored and positioned out of the header/footer story flow.
+      const positioned = isFloatingTextBoxBlock(block);
+      const textBoxTop = positioned
+        ? resolveHeaderFooterFloatTop(
+            {
+              height: measure.height,
+              paragraphY: cursorY,
+              position: block.position ?? {},
+            },
+            layout
+          )
+        : cursorY;
+      fragEl.style.top = `${textBoxTop}px`;
       // Honor the anchor's horizontal position (e.g. centered relative to the
       // page) instead of pinning the box to the left.
       fragEl.style.left = resolveHeaderFooterFloatLeft(
@@ -449,17 +489,11 @@ export function renderHeaderFooterContent(
         layout
       );
       containerEl.appendChild(fragEl);
-      // Floating text boxes (square/tight/through/behind/inFront wrap) are
-      // positioned and do NOT advance the flow — surrounding header content
-      // flows as if the box weren't there, mirroring floating tables above and
-      // matching Word: a centered banner sits beside the left/right header text
-      // instead of pushing it down. This also keeps a tall page-anchored
-      // letterhead from shoving the in-flow content past the header band
-      // (#705). Advancing for a float made the in-flow content overflow the
-      // band (which excludes floats from `flowHeight`) and overlap the body.
-      // Inline and topAndBottom boxes still stack on the cursor (they reserve
-      // in-flow vertical space).
-      if (block.displayMode !== 'float') {
+      // Positioned text boxes (square/tight/through/behind/inFront and
+      // topAndBottom) do NOT advance the flow — following HF content starts at
+      // the same story cursor. This mirrors floating tables and keeps the
+      // painter aligned with `flowHeight`, which excludes these boxes.
+      if (!positioned) {
         cursorY += measure.height;
       }
     } else if (
@@ -480,7 +514,8 @@ export function renderHeaderFooterContent(
   // Render floating images with absolute positioning
   for (const floatImg of floatingImages) {
     const img = doc.createElement('img');
-    img.src = floatImg.src;
+    const imageSrc = sanitizeImageSrc(floatImg.src);
+    if (imageSrc) img.src = imageSrc;
     img.width = floatImg.width;
     img.height = floatImg.height;
     if (floatImg.alt) img.alt = floatImg.alt;

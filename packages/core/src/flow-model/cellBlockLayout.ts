@@ -15,6 +15,8 @@
 import type { ContentNode, LayoutMetrics } from '../pagination-model/types';
 
 export interface CellContentLayout {
+  /** Per block, its top y relative to `startY`; unavailable for unmeasured nodes. */
+  blockTops: Array<number | undefined>;
   /** Per block, the top y of each line (relative to `startY`). Atomic/non-paragraph nodes → []. */
   lineTops: number[][];
   /**
@@ -22,6 +24,8 @@ export interface CellContentLayout {
    * bottom) — the clean break points for the pageComposer.
    */
   flatBottoms: number[];
+  /** Line/atomic-block ranges a horizontal page cut must never cross. */
+  unbreakableRanges: Array<{ top: number; bottom: number }>;
   /** Total stacked height incl. the last block's trailing space-after. */
   contentHeight: number;
 }
@@ -34,8 +38,10 @@ export function layoutCellContent(
   nodeMetrics: readonly LayoutMetrics[] | undefined,
   startY: number
 ): CellContentLayout {
+  const blockTops: Array<number | undefined> = [];
   const lineTops: number[][] = [];
   const flatBottoms: number[] = [];
+  const unbreakableRanges: Array<{ top: number; bottom: number }> = [];
   let y = startY;
   let prevAfter = 0;
   const n = nodeMetrics?.length ?? 0;
@@ -46,26 +52,47 @@ export function layoutCellContent(
     if (block?.kind === 'paragraph' && measure?.kind === 'paragraph') {
       const spacing = block.attrs?.spacing;
       y += Math.max(prevAfter, spacing?.before ?? 0);
+      blockTops.push(y);
       const tops: number[] = [];
       for (const line of measure.lines) {
         y += line.floatSkipBefore ?? 0;
+        const top = y;
         tops.push(y);
         y += line.lineHeight;
         flatBottoms.push(y);
+        unbreakableRanges.push({ top, bottom: y });
       }
       lineTops.push(tops);
       prevAfter = spacing?.after ?? 0;
-    } else if (measure && 'totalHeight' in measure && typeof measure.totalHeight === 'number') {
+    } else {
       // Nested table / non-paragraph: one atomic block (break only at its bottom).
-      y += prevAfter + measure.totalHeight;
+      const atomicHeight =
+        measure?.kind === 'table'
+          ? measure.totalHeight
+          : measure?.kind === 'image' || measure?.kind === 'textBox'
+            ? measure.height
+            : undefined;
+      if (atomicHeight == null) {
+        blockTops.push(undefined);
+        lineTops.push([]);
+        continue;
+      }
+      const top = y + prevAfter;
+      blockTops.push(top);
+      y += prevAfter + atomicHeight;
       lineTops.push([]);
       flatBottoms.push(y);
+      if (y > top) unbreakableRanges.push({ top, bottom: y });
       prevAfter = 0;
-    } else {
-      lineTops.push([]);
     }
   }
 
   // The painter renders the final block's trailing space-after as paddingBottom.
-  return { lineTops, flatBottoms, contentHeight: y - startY + prevAfter };
+  return {
+    blockTops,
+    lineTops,
+    flatBottoms,
+    unbreakableRanges,
+    contentHeight: y - startY + prevAfter,
+  };
 }

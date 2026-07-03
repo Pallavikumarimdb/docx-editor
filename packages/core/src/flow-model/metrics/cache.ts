@@ -166,7 +166,7 @@ export function getFontCacheSize(): number {
  *    key exists for;
  *  - the **float zones** narrowing the line band, and the paragraph's Y within
  *    them — the same paragraph wraps differently beside an image than below it.
- *    Pass them as `floatKey`; a caller that metrics with floats and omits it is
+ *    Pass them as `floatKey`; a caller that measures with floats and omits it is
  *    asking to be served the un-floated layout.
  *
  * Deliberately absent: `id`, `paraId`, doc positions, and tracked-change

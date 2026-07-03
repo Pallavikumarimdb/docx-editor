@@ -35,6 +35,9 @@ import {
 import { indexNodesById, paintPages, type RenderPageOptions } from './painter-model';
 import { getCaretPositionFromDom, readSelectionGeometry } from './flow-model/resolveDomPosition';
 
+/** The independent ProseMirror position space that owns a painted box. */
+export type RenderedRegion = 'body' | 'header' | 'footer';
+
 /** A CSS-pixel rectangle within a rendered document. */
 export interface RenderedBox {
   x: number;
@@ -42,6 +45,7 @@ export interface RenderedBox {
   width: number;
   height: number;
   pageIndex: number;
+  region: RenderedRegion;
   docFrom?: number;
   docTo?: number;
 }
@@ -126,13 +130,14 @@ export function renderDocument(document: OoxmlDocument, root: HTMLElement): Rend
     theme: document.package.theme,
     watermark: result.watermark,
     footnotesByPage: result.footnotesByPage,
+    virtualize: false,
   } as RenderPageOptions & { pageGap: number });
 
   return snapshotRenderedDocument(root);
 }
 
 function snapshotRenderedDocument(root: HTMLElement): RenderedDocument {
-  const rootRect = root.getBoundingClientRect();
+  const geometry = rootGeometry(root);
   const pages = Array.from(root.querySelectorAll<HTMLElement>('.layout-page')).map(
     (element, pageIndex): RenderedPage => {
       const boxes = Array.from(element.querySelectorAll<HTMLElement>('[data-doc-from]')).map(
@@ -141,11 +146,12 @@ function snapshotRenderedDocument(root: HTMLElement): RenderedDocument {
           const docFrom = numberData(box.dataset.docFrom);
           const docTo = numberData(box.dataset.docTo);
           return {
-            x: rect.left - rootRect.left,
-            y: rect.top - rootRect.top,
-            width: rect.width,
-            height: rect.height,
+            x: (rect.left - geometry.rect.left) / geometry.scaleX,
+            y: (rect.top - geometry.rect.top) / geometry.scaleY,
+            width: rect.width / geometry.scaleX,
+            height: rect.height / geometry.scaleY,
             pageIndex,
+            region: regionOf(box),
             ...(docFrom === undefined ? {} : { docFrom }),
             ...(docTo === undefined ? {} : { docTo }),
           };
@@ -161,9 +167,16 @@ function snapshotRenderedDocument(root: HTMLElement): RenderedDocument {
 function measureBlocks(
   nodes: ContentNode[],
   contentWidth: number | number[],
-  pageGeometry?: Parameters<typeof measureBlocksWithFloats>[3]
+  pageGeometry?: Parameters<typeof measureBlocksWithFloats>[3],
+  finalPageGeometry?: Parameters<typeof measureBlocksWithFloats>[4]
 ): LayoutMetrics[] {
-  return measureBlocksWithFloats(nodes, contentWidth, measureBlock, pageGeometry);
+  return measureBlocksWithFloats(
+    nodes,
+    contentWidth,
+    measureBlock,
+    pageGeometry,
+    finalPageGeometry
+  );
 }
 
 function measureBlock(
@@ -206,43 +219,71 @@ function measureBlock(
   }
 }
 
-/** Return the CSS-pixel caret box for a document position. */
+/**
+ * Return the root-local CSS-pixel caret box for a body document position.
+ *
+ * Header and footer positions live in separate ProseMirror documents and are
+ * deliberately not searched by this backward-compatible numeric API.
+ */
 export function caretAt(document: RenderedDocument, position: number): RenderedBox | null {
-  const rect = getCaretPositionFromDom(
-    document.root,
-    position,
-    document.root.getBoundingClientRect(),
-    1
-  );
+  const geometry = rootGeometry(document.root);
+  const rect = getCaretPositionFromDom(document.root, position, geometry.rect, geometry.scaleY);
   if (!rect) return null;
   return {
-    x: rect.x,
-    y: rect.y,
+    x: rect.x / geometry.scaleX,
+    y: rect.y / geometry.scaleY,
     width: 0,
     height: rect.height,
     pageIndex: rect.pageIndex,
+    region: 'body',
     docFrom: position,
     docTo: position,
   };
 }
 
-/** Return CSS-pixel highlight boxes for a half-open document-position range. */
+/**
+ * Return root-local CSS-pixel boxes for a half-open body position range.
+ *
+ * The result may contain boxes from multiple pages. Header/footer ranges are
+ * excluded because their numeric positions belong to independent documents.
+ */
 export function rectsFor(
   document: RenderedDocument,
   from: number,
   to: number
 ): readonly RenderedBox[] {
-  return readSelectionGeometry(document.root, from, to, document.root.getBoundingClientRect()).map(
-    (rect) => ({
-      x: rect.x,
-      y: rect.y,
-      width: rect.width,
-      height: rect.height,
-      pageIndex: rect.pageIndex,
-      docFrom: from,
-      docTo: to,
-    })
-  );
+  const geometry = rootGeometry(document.root);
+  return readSelectionGeometry(document.root, from, to, geometry.rect).map((rect) => ({
+    x: rect.x / geometry.scaleX,
+    y: rect.y / geometry.scaleY,
+    width: rect.width / geometry.scaleX,
+    height: rect.height / geometry.scaleY,
+    pageIndex: rect.pageIndex,
+    region: 'body',
+    docFrom: from,
+    docTo: to,
+  }));
+}
+
+function regionOf(element: HTMLElement): RenderedRegion {
+  if (element.closest('.layout-page-header')) return 'header';
+  if (element.closest('.layout-page-footer')) return 'footer';
+  return 'body';
+}
+
+function rootGeometry(root: HTMLElement): {
+  rect: DOMRect;
+  scaleX: number;
+  scaleY: number;
+} {
+  const rect = root.getBoundingClientRect();
+  const scaleX = root.offsetWidth > 0 ? rect.width / root.offsetWidth : 1;
+  const scaleY = root.offsetHeight > 0 ? rect.height / root.offsetHeight : scaleX;
+  return {
+    rect,
+    scaleX: Number.isFinite(scaleX) && scaleX > 0 ? scaleX : 1,
+    scaleY: Number.isFinite(scaleY) && scaleY > 0 ? scaleY : 1,
+  };
 }
 
 function numberData(value: string | undefined): number | undefined {

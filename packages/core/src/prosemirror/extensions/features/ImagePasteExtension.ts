@@ -11,6 +11,7 @@ import { createExtension } from '../create';
 import type { ExtensionRuntime } from '../types';
 import { getClipboardImageFiles } from '../../../utils/clipboard';
 import { clipboardHasRichText } from '../../../utils/clipboardRichText';
+import { sanitizeImageSrc } from '../../../utils/sanitizeImageSrc';
 
 const MAX_INLINE_IMAGE_WIDTH = 612; // ~6.375 inches at 96 DPI
 
@@ -41,7 +42,9 @@ async function insertImageFiles(view: EditorView, files: File[]): Promise<void> 
   for (const file of files) {
     let dataUrl: string;
     try {
-      dataUrl = await readFileAsDataUrl(file);
+      const safeSrc = sanitizeImageSrc(await readFileAsDataUrl(file));
+      if (!safeSrc) continue;
+      dataUrl = safeSrc;
     } catch {
       continue;
     }

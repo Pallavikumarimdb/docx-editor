@@ -93,6 +93,8 @@ export function layOutPages(
     // inheritance seed. They agree unless the document overrides geometry on
     // its opening section.
     section: schedule.configs[0] ?? initial,
+    sectionIndex: 0,
+    sectionPageCounts: new Map(),
   };
 
   // An empty document is still one page. Word shows a blank sheet, not nothing.
@@ -108,7 +110,7 @@ export function layOutPages(
         sectionIndex++;
         const next = schedule.configs[sectionIndex] ?? ctx.section;
         const sectionEnd = schedule.breakIndices[sectionIndex] ?? nodes.length;
-        cursor = crossSectionBoundary(ctx, cursor, next, i + 1, sectionEnd);
+        cursor = crossSectionBoundary(ctx, cursor, next, sectionIndex, i + 1, sectionEnd);
         break;
       }
 
@@ -139,6 +141,14 @@ export function layOutPages(
       default:
         assertExhaustiveContentNode(node, 'layOutPages');
     }
+  }
+
+  // A footnote may continue after the body's final fragment. Reservations for
+  // those continuation pages are already part of the fixed-point input, so
+  // materialize the pages even though there is no more body node to overflow.
+  const minimumPageCount = Math.max(1, config.minimumPageCount ?? 1);
+  while (ctx.pages.length < minimumPageCount) {
+    cursor = startPage(ctx, cursor.prev);
   }
 
   return finish(ctx, config);
@@ -173,13 +183,14 @@ function crossSectionBoundary(
   ctx: FlowContext,
   cursor: LayoutCursor,
   next: SectionLayoutConfig,
+  nextSectionIndex: number,
   sectionStart: number,
   sectionEnd: number
 ): LayoutCursor {
-  ctx.section = next;
-
   switch (next.startType) {
     case 'continuous': {
+      ctx.section = next;
+      ctx.sectionIndex = nextSectionIndex;
       // Re-columnise the current page from the pen down. The page keeps the size
       // it was born with — a page cannot change dimensions halfway.
       const page = ctx.pages[cursor.pageIndex];
@@ -218,6 +229,8 @@ function crossSectionBoundary(
     }
 
     case 'nextColumn':
+      ctx.section = next;
+      ctx.sectionIndex = nextSectionIndex;
       return nextColumn(ctx, cursor);
 
     case 'evenPage':
@@ -231,15 +244,35 @@ function crossSectionBoundary(
       const hasParity = (c: LayoutCursor): boolean =>
         (ctx.pages[c.pageIndex].number % 2 === 0) === wantEven;
 
-      let c = pageIsEmpty(ctx, cursor) ? cursor : startPage(ctx, cursor.prev);
-      while (!hasParity(c)) {
-        c = startPage(ctx, cursor.prev);
+      let c = cursor;
+      if (pageIsEmpty(ctx, c) && hasParity(c)) {
+        // The preceding flow already opened the correctly-numbered blank page
+        // (for example via an explicit page break). Recreate that empty draft
+        // under the new section so its margins, title-page furniture, and
+        // section-local page number are all resolved as the opening page.
+        ctx.pages.pop();
+        const previousCount = ctx.sectionPageCounts.get(ctx.sectionIndex) ?? 1;
+        ctx.sectionPageCounts.set(ctx.sectionIndex, Math.max(0, previousCount - 1));
+      } else {
+        // Any parity page inserted before the opening page belongs to the
+        // section being closed. Keep the old section active while creating it;
+        // switching first would make the filler page new-section page 1.
+        const openingPageNumber = ctx.pages.length + 1;
+        const openingHasParity = (openingPageNumber % 2 === 0) === wantEven;
+        if (!pageIsEmpty(ctx, c) && !openingHasParity) {
+          c = startPage(ctx, cursor.prev);
+        }
       }
-      return c;
+
+      ctx.section = next;
+      ctx.sectionIndex = nextSectionIndex;
+      return startPage(ctx, c.prev);
     }
 
     case 'nextPage':
     default:
+      ctx.section = next;
+      ctx.sectionIndex = nextSectionIndex;
       return startPage(ctx, cursor.prev);
   }
 }
@@ -288,7 +321,7 @@ function placeParagraph(
   // `w:keepLines` (§17.3.1.14) — keep the whole paragraph on one page, if it
   // can fit on one at all. Also best-effort; see the note above.
   if (node.attrs?.keepLines) {
-    cursor = honourKeepLines(ctx, cursor, metrics);
+    cursor = honourKeepLines(ctx, cursor, node, metrics);
   }
 
   let lineIndex = 0;
@@ -433,13 +466,16 @@ function applyWidowControl(
 function honourKeepLines(
   ctx: FlowContext,
   cursor: LayoutCursor,
+  node: ParagraphBlock,
   metrics: ParagraphMetrics
 ): LayoutCursor {
   const region = currentRegion(ctx, cursor);
   const total = sliceHeight(metrics.lines, 0, metrics.lines.length);
+  const leadingGap = collapsedGap(cursor.prev, node);
+  const effectiveTotal = leadingGap + total;
 
-  if (total > region.bottom - region.top + FIT_TOLERANCE_PX) return cursor; // Never fits.
-  if (total <= region.bottom - cursor.y + FIT_TOLERANCE_PX) return cursor; // Fits here.
+  if (effectiveTotal > region.bottom - region.top + FIT_TOLERANCE_PX) return cursor; // Never fits.
+  if (effectiveTotal <= region.bottom - cursor.y + FIT_TOLERANCE_PX) return cursor; // Fits here.
   if (regionIsEmpty(ctx, cursor)) return cursor;
 
   return overflow(ctx, cursor);

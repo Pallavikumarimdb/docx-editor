@@ -28,13 +28,15 @@ import type {
   MathEquation,
 } from '../../../types/document';
 import type { ImageAttrs } from '../../schema/nodes';
+import { sanitizeHref } from '../../../utils/sanitizeHref';
+import { sanitizeImageSrc } from '../../../utils/sanitizeImageSrc';
 import { marksToTextFormatting } from './marks';
 
 /**
  * Create a Hyperlink from a link mark
  */
 export function createHyperlink(linkMark: Mark): Hyperlink {
-  const href = linkMark.attrs.href as string;
+  const href = sanitizeHref(linkMark.attrs.href as string);
   // Internal bookmark links use the anchor property in OOXML
   if (href?.startsWith('#')) {
     return {
@@ -231,7 +233,7 @@ export function createImageRun(node: PMNode): Run {
   const image: Image = {
     type: 'image',
     rId: attrs.rId || '',
-    src: attrs.src,
+    src: sanitizeImageSrc(attrs.src) ?? '',
     alt: attrs.alt || undefined,
     title: attrs.title || undefined,
     size: {
@@ -307,8 +309,9 @@ export function createImageRun(node: PMNode): Run {
   }
 
   // Round-trip image hyperlink
-  if (attrs.hlinkHref) {
-    image.hlinkHref = attrs.hlinkHref;
+  const hlinkHref = sanitizeHref(attrs.hlinkHref);
+  if (hlinkHref) {
+    image.hlinkHref = hlinkHref;
   }
 
   // Round-trip wp:srcRect crop fractions

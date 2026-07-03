@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { convertBorderSpecToLayout } from '../flow-model/buildBoxTree/borders';
-import { styleBorder } from './renderTableBorders';
+import { makeTableBodyClip, styleBorder } from './renderTableBorders';
 
 describe('styleBorder', () => {
   beforeAll(() => GlobalRegistrator.register());
@@ -34,5 +34,17 @@ describe('styleBorder', () => {
     expect(element.style.borderLeftStyle).toBe('double');
     expect(element.style.borderLeftWidth).toBe('3px');
     expect(element.style.borderLeftColor).toBe('#123456');
+  });
+
+  test('marks the repeated-header body clipping window for selection geometry', () => {
+    const table = document.createElement('div');
+
+    const { bodyParent, bodyOriginY } = makeTableBodyClip(table, 24, 100, 300, document);
+
+    expect(bodyParent.dataset.tableBodyClip).toBe('true');
+    expect(bodyParent.style.top).toBe('24px');
+    expect(bodyParent.style.height).toBe('76px');
+    expect(bodyOriginY).toBe(24);
+    expect(table.firstElementChild).toBe(bodyParent);
   });
 });

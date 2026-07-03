@@ -72,6 +72,7 @@ export type { PositionResult } from './pointerToDocPos';
 export {
   resolveDomPosition as mouseToPosition,
   resolveDomPosition,
+  resolveHfDomPosition,
   clipRectToTableWindow,
   readSelectionGeometry,
   getCaretPositionFromDom,
@@ -157,6 +158,10 @@ export {
   findBodyEmptyRuns,
   findBodyPmAnchors,
   findBodyPmAnchor,
+  collectHfSpans,
+  findHfEmptyRuns,
+  findHfPmAnchors,
+  findHfPmAnchor,
 } from './collectBodySpans';
 
 // Per-table measurement (recursive over cell content via callback).
@@ -176,3 +181,10 @@ export {
   DEFAULT_BODY_MARGIN_PX,
   DEFAULT_HF_DISTANCE_PX,
 } from './sectionGeometry';
+
+export { resolvePageHeaderFooter } from './headerFooterResolver';
+export type {
+  HeaderFooterRegion,
+  ResolvedHeaderFooterPart,
+  ResolvedPageHeaderFooter,
+} from './headerFooterResolver';
