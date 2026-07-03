@@ -26,7 +26,9 @@ import {
   collectHfSpans,
   findBodyEmptyRuns,
   findBodyPmAnchors,
+  isBodyPositionElement,
 } from './collectBodySpans';
+import { graphemeBoundaries } from './metrics/textMetrics';
 
 /**
  * A highlight rectangle, in coordinates local to the container it was measured
@@ -72,6 +74,9 @@ const FALLBACK_CARET_HEIGHT = 16;
  */
 const LINE_BAND_TOLERANCE_PX = 4;
 
+/** A caret API hit in another PM story must not fall through to body proximity. */
+const OUTSIDE_POSITION_SCOPE = Symbol('outside-position-scope');
+
 // ---------------------------------------------------------------------------
 // Point → position
 // ---------------------------------------------------------------------------
@@ -98,6 +103,7 @@ export function resolveDomPosition(
   void zoom; // Rects are already in screen space; nothing to scale.
 
   const exact = positionFromCaretApi(container, clientX, clientY);
+  if (exact === OUTSIDE_POSITION_SCOPE) return null;
   if (exact !== null) return exact;
 
   return nearestPositionOnLine(container, clientX, clientY);
@@ -116,6 +122,7 @@ export function resolveHfDomPosition(
 ): number | null {
   if (!host.matches('.layout-page-header, .layout-page-footer')) return null;
   const exact = positionFromCaretApi(host, clientX, clientY, 'hf');
+  if (exact === OUTSIDE_POSITION_SCOPE) return null;
   if (exact !== null) return exact;
   return nearestPositionOnLine(host, clientX, clientY, collectHfSpans(host));
 }
@@ -133,12 +140,13 @@ function positionFromCaretApi(
   clientX: number,
   clientY: number,
   scope: 'body' | 'hf' = 'body'
-): number | null {
+): number | typeof OUTSIDE_POSITION_SCOPE | null {
   const doc = container.ownerDocument;
   const hit = caretNodeAtPoint(doc, clientX, clientY);
   if (!hit) return null;
 
   const span = enclosingPaintedSpan(hit.node, container, scope);
+  if (span === OUTSIDE_POSITION_SCOPE) return OUTSIDE_POSITION_SCOPE;
   if (!span) return null;
 
   const docFrom = numberAttr(span, 'docFrom');
@@ -192,15 +200,17 @@ function enclosingPaintedSpan(
   node: Node,
   container: HTMLElement,
   scope: 'body' | 'hf'
-): HTMLElement | null {
+): HTMLElement | typeof OUTSIDE_POSITION_SCOPE | null {
   const el = node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement;
   const span = el?.closest<HTMLElement>('span[data-doc-from][data-doc-to]');
   if (!span) return null;
-  if (scope === 'body' && !span.closest('.layout-page-content')) return null;
-  if (scope === 'hf' && !span.closest('.layout-page-header, .layout-page-footer')) {
-    return null;
+  if (scope === 'body' && (!span.closest('.layout-page-content') || !isBodyPositionElement(span))) {
+    return OUTSIDE_POSITION_SCOPE;
   }
-  if (!container.contains(span)) return null;
+  if (scope === 'hf' && !span.closest('.layout-page-header, .layout-page-footer')) {
+    return OUTSIDE_POSITION_SCOPE;
+  }
+  if (!container.contains(span)) return OUTSIDE_POSITION_SCOPE;
   return span;
 }
 
@@ -259,7 +269,7 @@ function nearestPositionOnLine(
       distance = clientX - rect.right;
     } else {
       const ratio = (clientX - rect.left) / Math.max(1, rect.width);
-      pos = docFrom + Math.round(ratio * (docTo - docFrom));
+      pos = docFrom + proportionalTextOffset(span, ratio, docTo - docFrom);
       distance = 0;
     }
 
@@ -267,6 +277,31 @@ function nearestPositionOnLine(
   }
 
   return best?.pos ?? null;
+}
+
+/**
+ * Convert a horizontal box ratio to a PM offset without splitting a grapheme.
+ *
+ * Position ranges and text lengths normally share UTF-16 addressing. Painted
+ * atoms and transformed fallback text can differ, so only apply text boundaries
+ * when that invariant holds; their authored one-position ranges remain intact.
+ */
+function proportionalTextOffset(span: HTMLElement, ratio: number, rangeLength: number): number {
+  const clampedLength = Math.max(0, rangeLength);
+  const raw = Math.max(0, Math.min(clampedLength, Math.round(ratio * clampedLength)));
+  const text = span.textContent ?? '';
+  if (text.length !== clampedLength) return raw;
+
+  let nearest = 0;
+  let nearestDistance = Infinity;
+  for (const boundary of graphemeBoundaries(text)) {
+    const distance = Math.abs(boundary - raw);
+    if (distance < nearestDistance) {
+      nearest = boundary;
+      nearestDistance = distance;
+    }
+  }
+  return nearest;
 }
 
 // ---------------------------------------------------------------------------
