@@ -73,7 +73,7 @@ describe('header/footer positioned text-box layout', () => {
           { kind: 'textBox', width: 80, height: 20, innerMeasures: [] },
           { kind: 'paragraph', lines: [], totalHeight: 70 },
         ],
-        90,
+        70,
         {
           section: 'header',
           pageSize: { w: 400, h: 200 },
@@ -81,5 +81,92 @@ describe('header/footer positioned text-box layout', () => {
         }
       )
     ).toEqual({ visualTop: 0, visualBottom: 80 });
+  });
+
+  test('uses the in-flow footer height for a page-relative text box', () => {
+    const textBox: TextBoxBlock = {
+      kind: 'textBox',
+      id: 'footer-page-relative',
+      width: 80,
+      height: 20,
+      content: [],
+      displayMode: 'float',
+      wrapType: 'square',
+      position: {
+        vertical: { relativeTo: 'page', posOffset: 100 * 9_525 },
+      },
+    };
+    const followingParagraph: ParagraphBlock = {
+      kind: 'paragraph',
+      id: 'following-footer-content',
+      runs: [],
+    };
+
+    expect(
+      calculateHeaderFooterVisualBounds(
+        [textBox, followingParagraph],
+        [
+          { kind: 'textBox', width: 80, height: 20, innerMeasures: [] },
+          { kind: 'paragraph', lines: [], totalHeight: 16 },
+        ],
+        16,
+        {
+          section: 'footer',
+          pageSize: { w: 400, h: 300 },
+          margins: { top: 40, right: 50, bottom: 70, left: 50, footer: 30 },
+        }
+      )
+    ).toEqual({ visualTop: -154, visualBottom: 16 });
+  });
+
+  test('resolves asymmetric top and bottom margin anchor bands', () => {
+    const followingParagraph: ParagraphBlock = {
+      kind: 'paragraph',
+      id: 'following-margin-content',
+      runs: [],
+    };
+    const makeTextBox = (id: string, relativeTo: 'topMargin' | 'bottomMargin'): TextBoxBlock => ({
+      kind: 'textBox',
+      id,
+      width: 20,
+      height: 10,
+      content: [],
+      displayMode: 'float',
+      wrapType: 'square',
+      position: {
+        vertical: { relativeTo, align: 'bottom' },
+      },
+    });
+    const measures = [
+      { kind: 'textBox' as const, width: 20, height: 10, innerMeasures: [] },
+      { kind: 'paragraph' as const, lines: [], totalHeight: 16 },
+    ];
+    const margins = { top: 40, right: 80, bottom: 70, left: 30, header: 20, footer: 30 };
+
+    expect(
+      calculateHeaderFooterVisualBounds(
+        [makeTextBox('header-top-margin', 'topMargin'), followingParagraph],
+        measures,
+        16,
+        {
+          section: 'header',
+          pageSize: { w: 500, h: 300 },
+          margins,
+        }
+      )
+    ).toEqual({ visualTop: 0, visualBottom: 20 });
+
+    expect(
+      calculateHeaderFooterVisualBounds(
+        [makeTextBox('footer-bottom-margin', 'bottomMargin'), followingParagraph],
+        measures,
+        16,
+        {
+          section: 'footer',
+          pageSize: { w: 500, h: 300 },
+          margins,
+        }
+      )
+    ).toEqual({ visualTop: 0, visualBottom: 46 });
   });
 });

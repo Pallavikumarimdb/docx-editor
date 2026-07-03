@@ -854,9 +854,10 @@ export function paintPage(
     const headerDistance = config.headerDistance ?? page.margins.header ?? defaultHeaderDistance;
     const headerContentWidth = page.size.w - page.margins.left - page.margins.right;
     const availableHeaderHeight = Math.max(page.margins.top - headerDistance, 48);
-    const headerVisualTop = config.headerContent?.visualTop ?? 0;
-    const headerVisualBottom =
-      config.headerContent?.visualBottom ?? config.headerContent?.height ?? 0;
+    const headerVisualTop = options.headerContent?.visualTop ?? 0;
+    const headerFlowHeight =
+      options.headerContent?.flowHeight ?? options.headerContent?.height ?? 0;
+    const headerVisualBottom = options.headerContent?.visualBottom ?? headerFlowHeight;
     // The interactive box height tracks the in-flow band (`flowHeight`), NOT the
     // float-inclusive `visualBottom`. A page/margin-anchored shape (e.g. a
     // full-page letterhead in a header) overflows the band visually but must not
@@ -864,11 +865,13 @@ export function paintPage(
     // swallows clicks meant for the document text (#856). Floating content still
     // renders (overflow stays visible below) and is made non-interactive in
     // normal mode via CSS so it never intercepts body clicks.
-    const headerFlowHeight = config.headerContent?.flowHeight ?? config.headerContent?.height ?? 0;
     const interactiveHeaderHeight = Math.max(headerFlowHeight - Math.min(0, headerVisualTop), 24);
     // If header content fits in the original space, clip overflow; otherwise
     // margins.top was already expanded so let content show fully.
-    const headerOverflows = headerVisualBottom > availableHeaderHeight;
+    const headerVisualHeight =
+      Math.max(headerFlowHeight, headerVisualBottom) - Math.min(0, headerVisualTop);
+    const headerOverflows = headerVisualHeight > availableHeaderHeight;
+    const headerExtendsBeyondFlow = headerVisualBottom > headerFlowHeight;
 
     const headerEl = doc.createElement('div');
     headerEl.className = PAGE_CLASS_NAMES.header;
@@ -886,8 +889,8 @@ export function paintPage(
     headerEl.style.height = `${interactiveHeaderHeight}px`;
     headerEl.style.minHeight = `${interactiveHeaderHeight}px`;
 
-    let shouldClipHeader = !headerOverflows;
-    if (config.headerContent && config.headerContent.nodes.length > 0) {
+    let shouldClipHeader = !headerOverflows && !headerExtendsBeyondFlow;
+    if (options.headerContent && options.headerContent.blocks.length > 0) {
       const layout: HeaderFooterLayoutInfo = {
         flowTop: headerDistance,
         flowLeft: page.margins.left,
@@ -923,17 +926,19 @@ export function paintPage(
     const footerDistance = config.footerDistance ?? page.margins.footer ?? defaultFooterDistance;
     const footerContentWidth = page.size.w - page.margins.left - page.margins.right;
     const availableFooterHeight = Math.max(page.margins.bottom - footerDistance, 48);
-    const footerVisualTop = config.footerContent?.visualTop ?? 0;
-    const footerVisualBottom =
-      config.footerContent?.visualBottom ?? config.footerContent?.height ?? 0;
-    const actualFooterHeight = Math.max(footerVisualBottom - footerVisualTop, 24);
-    const footerOverflows = actualFooterHeight > availableFooterHeight;
+    const footerVisualTop = options.footerContent?.visualTop ?? 0;
+    const footerFlowHeight =
+      options.footerContent?.flowHeight ?? options.footerContent?.height ?? 0;
+    const footerVisualBottom = options.footerContent?.visualBottom ?? footerFlowHeight;
+    const footerVisualHeight =
+      Math.max(footerFlowHeight, footerVisualBottom) - Math.min(0, footerVisualTop);
+    const footerOverflows = footerVisualHeight > availableFooterHeight;
+    const footerExtendsBeyondFlow = footerVisualBottom > footerFlowHeight;
     // Same as the header: the interactive box tracks the in-flow band, not a
     // floating shape's extent, so a tall anchored footer object can't cover the
     // body and swallow clicks (#856). The box stays bottom-anchored at the
     // footer line; floating content overflows upward (visible) and is made
     // non-interactive in normal mode via CSS.
-    const footerFlowHeight = config.footerContent?.flowHeight ?? config.footerContent?.height ?? 0;
     const interactiveFooterHeight = Math.max(footerFlowHeight - Math.min(0, footerVisualTop), 24);
 
     const footerEl = doc.createElement('div');
@@ -952,10 +957,10 @@ export function paintPage(
     footerEl.style.height = `${interactiveFooterHeight}px`;
     footerEl.style.minHeight = `${interactiveFooterHeight}px`;
 
-    let shouldClipFooter = !footerOverflows;
-    if (config.footerContent && config.footerContent.nodes.length > 0) {
+    let shouldClipFooter = !footerOverflows && !footerExtendsBeyondFlow;
+    if (options.footerContent && options.footerContent.blocks.length > 0) {
       const layout: HeaderFooterLayoutInfo = {
-        flowTop: page.size.h - footerDistance - (config.footerContent?.height ?? 0),
+        flowTop: page.size.h - footerDistance - footerFlowHeight,
         flowLeft: page.margins.left,
         contentWidth: footerContentWidth,
         pageWidth: page.size.w,
@@ -968,11 +973,9 @@ export function paintPage(
         config,
         layout
       );
-      // The box shrank from `actualFooterHeight` to `interactiveFooterHeight`
-      // with its bottom pinned, so its top moved down by the difference. Offset
-      // the content up by the same amount to keep it painted in place (a normal
-      // footer with no float has a zero delta, so this is a no-op there).
-      footerContentEl.style.top = `${-footerVisualTop - (actualFooterHeight - interactiveFooterHeight)}px`;
+      // Keep the content origin at the in-flow footer line even when the wrapper
+      // expands upward for visual bounds or for the 24px interaction minimum.
+      footerContentEl.style.top = `${interactiveFooterHeight - footerFlowHeight}px`;
       if (footerContentEl.querySelector('img')) {
         shouldClipFooter = false;
       }

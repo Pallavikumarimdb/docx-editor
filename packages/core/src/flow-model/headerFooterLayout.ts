@@ -28,9 +28,12 @@ import type {
 } from '../pagination-model/types';
 import type { HeaderFooter, StyleDefinitions, Theme } from '../types/document';
 import type { HeaderFooterContent } from '../painter-model/paintPage';
+import {
+  pageGeometryFromPage,
+  resolveAnchoredObjectVerticalTop,
+} from '../painter-model/anchoredObjectPosition';
 import { isFloatingTextBoxBlock } from '../pagination-model/textBoxFlow';
 import { headerFooterToProseDoc } from '../prosemirror/conversion/toProseDoc';
-import { emuToPixels } from '../utils/units';
 import { buildBoxTree } from './buildBoxTree';
 import type { MeasureBlocksFn } from './footnoteLayout';
 
@@ -191,35 +194,30 @@ function resolveHeaderFooterPositionedTop(
       ? (metrics.margins.header ?? 48)
       : metrics.pageSize.h - (metrics.margins.footer ?? 48) - flowHeight;
   const vertical = object.position?.vertical;
+  const geometry = pageGeometryFromPage({
+    size: metrics.pageSize,
+    margins: metrics.margins,
+  });
+  const paragraphContentY = flowTop + paragraphY - metrics.margins.top;
+  const resolvedContentTop = resolveAnchoredObjectVerticalTop(
+    {
+      width: 0,
+      height: object.height,
+      position: vertical
+        ? {
+            vertical: {
+              relativeTo: vertical.relativeTo,
+              posOffset: vertical.posOffset,
+              align: getPositionAlignment(vertical),
+            },
+          }
+        : undefined,
+    },
+    paragraphContentY,
+    geometry
+  );
 
-  if (!vertical) {
-    return paragraphY;
-  }
-
-  const align = getPositionAlignment(vertical);
-  const offsetPx = vertical.posOffset !== undefined ? emuToPixels(vertical.posOffset) : undefined;
-
-  if (vertical.relativeTo === 'page') {
-    if (offsetPx !== undefined) return offsetPx - flowTop;
-    if (align === 'top') return -flowTop;
-    if (align === 'bottom') return metrics.pageSize.h - object.height - flowTop;
-    if (align === 'center') return (metrics.pageSize.h - object.height) / 2 - flowTop;
-  }
-
-  if (vertical.relativeTo === 'margin') {
-    const marginTop = metrics.margins.top;
-    const marginHeight = metrics.pageSize.h - metrics.margins.top - metrics.margins.bottom;
-    if (offsetPx !== undefined) return marginTop + offsetPx - flowTop;
-    if (align === 'top') return marginTop - flowTop;
-    if (align === 'bottom') return marginTop + marginHeight - object.height - flowTop;
-    if (align === 'center') return marginTop + (marginHeight - object.height) / 2 - flowTop;
-  }
-
-  if (offsetPx !== undefined) {
-    return paragraphY + offsetPx;
-  }
-
-  return paragraphY;
+  return metrics.margins.top + resolvedContentTop - flowTop;
 }
 
 /**
@@ -271,11 +269,10 @@ export function calculateHeaderFooterVisualBounds(
   pageMetrics: HeaderFooterMetrics
 ): { visualTop: number; visualBottom: number } {
   let visualTop = 0;
-  // Accumulate the real extent from the nodes below. Do NOT seed with the
-  // caller's `flowHeight` arg (it is the float-inclusive `totalHeight`): when a
-  // floating box doesn't advance the cursor, seeding with the stacked total
-  // would keep `visualBottom` artificially tall and the header container/hover
-  // highlight would read taller than the painted content (#705/#729).
+  // Accumulate the real extent from the blocks below. Do NOT seed with the
+  // caller's `flowHeight`: when a floating box doesn't advance the cursor,
+  // seeding with the in-flow total would still keep `visualBottom` taller than
+  // the content actually encountered in malformed block/measure pairs.
   let visualBottom = 0;
   let cursorY = 0;
 
@@ -414,10 +411,10 @@ export function convertHeaderFooterPmDocToContent(
   // from), NOT the raw `nodes` — otherwise block[i] and measure[i] can desync
   // and per-block flags like `displayMode` are read off the wrong block.
   const { visualTop, visualBottom } = calculateHeaderFooterVisualBounds(
-    nodesForMetrics,
-    layoutMetrics,
-    totalHeight,
-    pageMetrics
+    blocksForMeasure,
+    measures,
+    flowHeight,
+    metrics
   );
 
   return {

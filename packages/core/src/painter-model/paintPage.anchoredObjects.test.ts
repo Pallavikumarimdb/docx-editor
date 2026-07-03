@@ -7,6 +7,7 @@ import type {
   ParagraphFragment,
   TextBoxBlock,
 } from '../pagination-model/types';
+import { calculateHeaderFooterVisualBounds } from '../flow-model/headerFooterLayout';
 import { paintPage } from './paintPage';
 import { renderHeaderFooterContent } from './paintPage/headerFooter';
 
@@ -288,5 +289,190 @@ describe('anchored object paint parity', () => {
     expect(paintedTextBox?.style.top).toBe('60px');
     expect(paintedTextBox?.style.left).toBe('110px');
     expect(followingContent?.style.top).toBe('0px');
+  });
+
+  test('keeps a page-relative footer text box at its authored page y', () => {
+    const textBox: TextBoxBlock = {
+      kind: 'textBox',
+      id: 'footer-page-relative',
+      width: 80,
+      height: 20,
+      content: [],
+      displayMode: 'float',
+      wrapType: 'square',
+      position: {
+        horizontal: { relativeTo: 'margin', align: 'left' },
+        vertical: { relativeTo: 'page', posOffset: 100 * 9_525 },
+      },
+    };
+    const followingParagraph: ParagraphBlock = {
+      kind: 'paragraph',
+      id: 'following-footer-content',
+      runs: [],
+    };
+    const blocks = [textBox, followingParagraph];
+    const measures = [
+      { kind: 'textBox' as const, width: 80, height: 20, innerMeasures: [] },
+      { kind: 'paragraph' as const, lines: [], totalHeight: 16 },
+    ];
+    const page: Page = {
+      number: 1,
+      size: { w: 400, h: 300 },
+      margins: { top: 40, right: 50, bottom: 70, left: 50, footer: 30 },
+      fragments: [],
+    };
+    const bounds = calculateHeaderFooterVisualBounds(blocks, measures, 16, {
+      section: 'footer',
+      pageSize: page.size,
+      margins: page.margins,
+    });
+
+    const painted = paintPage(
+      page,
+      { pageNumber: 1, totalPages: 1, section: 'body' },
+      {
+        document,
+        footerDistance: 30,
+        footerContent: {
+          blocks,
+          measures,
+          height: 36,
+          flowHeight: 16,
+          ...bounds,
+        },
+      }
+    );
+
+    const footer = painted.querySelector<HTMLElement>('.layout-page-footer');
+    const content = footer?.firstElementChild as HTMLElement | null;
+    const paintedTextBox = footer?.querySelector<HTMLElement>(
+      '[data-block-id="footer-page-relative"]'
+    );
+    const followingContent = footer?.querySelector<HTMLElement>(
+      '[data-block-id="following-footer-content"]'
+    );
+    const pageY =
+      parseFloat(footer?.style.top ?? '') +
+      parseFloat(content?.style.top ?? '') +
+      parseFloat(paintedTextBox?.style.top ?? '');
+    const followingPageY =
+      parseFloat(footer?.style.top ?? '') +
+      parseFloat(content?.style.top ?? '') +
+      parseFloat(followingContent?.style.top ?? '');
+
+    expect(bounds).toEqual({ visualTop: -154, visualBottom: 16 });
+    expect(pageY).toBe(100);
+    expect(followingPageY).toBe(254);
+  });
+
+  test('does not clip asymmetric top and bottom margin-relative text boxes', () => {
+    const margins = {
+      top: 40,
+      right: 80,
+      bottom: 70,
+      left: 30,
+      header: 20,
+      footer: 30,
+    };
+    const page: Page = {
+      number: 1,
+      size: { w: 500, h: 300 },
+      margins,
+      fragments: [],
+    };
+    const makeTextBox = (id: string, relativeTo: 'topMargin' | 'bottomMargin'): TextBoxBlock => ({
+      kind: 'textBox',
+      id,
+      width: 20,
+      height: 10,
+      content: [],
+      displayMode: 'float',
+      wrapType: 'square',
+      position: {
+        vertical: { relativeTo, alignment: 'bottom' },
+      },
+    });
+    const headerTextBox = makeTextBox('header-top-margin', 'topMargin');
+    const footerTextBox = makeTextBox('footer-bottom-margin', 'bottomMargin');
+    const headerParagraph: ParagraphBlock = {
+      kind: 'paragraph',
+      id: 'following-header-margin-content',
+      runs: [],
+    };
+    const footerParagraph: ParagraphBlock = {
+      kind: 'paragraph',
+      id: 'following-footer-margin-content',
+      runs: [],
+    };
+    const measures = [
+      { kind: 'textBox' as const, width: 20, height: 10, innerMeasures: [] },
+      { kind: 'paragraph' as const, lines: [], totalHeight: 16 },
+    ];
+    const headerBlocks = [headerTextBox, headerParagraph];
+    const footerBlocks = [footerTextBox, footerParagraph];
+    const headerBounds = calculateHeaderFooterVisualBounds(headerBlocks, measures, 16, {
+      section: 'header',
+      pageSize: page.size,
+      margins,
+    });
+    const footerBounds = calculateHeaderFooterVisualBounds(footerBlocks, measures, 16, {
+      section: 'footer',
+      pageSize: page.size,
+      margins,
+    });
+
+    const painted = paintPage(
+      page,
+      { pageNumber: 1, totalPages: 1, section: 'body' },
+      {
+        document,
+        headerDistance: 20,
+        footerDistance: 30,
+        headerContent: {
+          blocks: headerBlocks,
+          measures,
+          height: 26,
+          flowHeight: 16,
+          ...headerBounds,
+        },
+        footerContent: {
+          blocks: footerBlocks,
+          measures,
+          height: 26,
+          flowHeight: 16,
+          ...footerBounds,
+        },
+      }
+    );
+
+    const header = painted.querySelector<HTMLElement>('.layout-page-header');
+    const footer = painted.querySelector<HTMLElement>('.layout-page-footer');
+    const headerContent = header?.firstElementChild as HTMLElement | null;
+    const footerContent = footer?.firstElementChild as HTMLElement | null;
+    const headerBox = header?.querySelector<HTMLElement>('[data-block-id="header-top-margin"]');
+    const footerBox = footer?.querySelector<HTMLElement>('[data-block-id="footer-bottom-margin"]');
+    const followingHeader = header?.querySelector<HTMLElement>(
+      '[data-block-id="following-header-margin-content"]'
+    );
+    const followingFooter = footer?.querySelector<HTMLElement>(
+      '[data-block-id="following-footer-margin-content"]'
+    );
+    const resolvedPageY = (
+      wrapper: HTMLElement | null | undefined,
+      content: HTMLElement | null,
+      child: HTMLElement | null | undefined
+    ): number =>
+      parseFloat(wrapper?.style.top ?? '') +
+      parseFloat(content?.style.top ?? '') +
+      parseFloat(child?.style.top ?? '');
+
+    expect(headerBounds).toEqual({ visualTop: 0, visualBottom: 20 });
+    expect(footerBounds).toEqual({ visualTop: 0, visualBottom: 46 });
+    expect(resolvedPageY(header, headerContent, headerBox)).toBe(30);
+    expect(resolvedPageY(header, headerContent, followingHeader)).toBe(20);
+    expect(resolvedPageY(footer, footerContent, footerBox)).toBe(290);
+    expect(resolvedPageY(footer, footerContent, followingFooter)).toBe(254);
+    expect(header?.style.overflow).toBe('');
+    expect(footer?.style.overflow).toBe('');
   });
 });
