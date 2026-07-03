@@ -278,6 +278,85 @@ describe('floating exclusion flow scopes', () => {
     });
   });
 
+  test('top-margin topAndBottom images keep their page-relative band after preceding text', () => {
+    const image: ImageRun = {
+      kind: 'image',
+      src: 'embedded.png',
+      width: 80,
+      height: 60,
+      displayMode: 'float',
+      wrapType: 'topAndBottom',
+      position: {
+        horizontal: { relativeTo: 'margin', align: 'center' },
+        vertical: { relativeTo: 'topMargin', align: 'top' },
+      },
+    };
+    const geometry: FloatPageGeometry = {
+      pageWidth: 400,
+      pageHeight: 300,
+      marginLeft: 40,
+      marginRight: 60,
+      marginTop: 30,
+      marginBottom: 70,
+      contentWidth: 300,
+      contentHeight: 200,
+    };
+    const blocks: FlowBlock[] = [paragraph('preceding-text'), paragraph('image-anchor', [image])];
+    const finalCalls = new Map<string, FinalCall>();
+
+    measureBlocksWithFloats(
+      blocks,
+      300,
+      recordingMeasure({ 'preceding-text': 20 }, finalCalls),
+      geometry
+    );
+
+    expect(finalCalls.get('image-anchor')).toMatchObject({
+      cumulativeY: 20,
+      zones: [{ topY: -30, bottomY: 30, fullWidthBlock: true }],
+    });
+  });
+
+  test('bottom-margin topAndBottom images keep their page-relative band after preceding text', () => {
+    const image: ImageRun = {
+      kind: 'image',
+      src: 'embedded.png',
+      width: 80,
+      height: 20,
+      displayMode: 'float',
+      wrapType: 'topAndBottom',
+      distBottom: 5,
+      position: {
+        horizontal: { relativeTo: 'margin', align: 'center' },
+        vertical: { relativeTo: 'bottomMargin', align: 'top' },
+      },
+    };
+    const geometry: FloatPageGeometry = {
+      pageWidth: 400,
+      pageHeight: 300,
+      marginLeft: 40,
+      marginRight: 60,
+      marginTop: 30,
+      marginBottom: 70,
+      contentWidth: 300,
+      contentHeight: 200,
+    };
+    const blocks: FlowBlock[] = [paragraph('preceding-text'), paragraph('image-anchor', [image])];
+    const finalCalls = new Map<string, FinalCall>();
+
+    measureBlocksWithFloats(
+      blocks,
+      300,
+      recordingMeasure({ 'preceding-text': 40 }, finalCalls),
+      geometry
+    );
+
+    expect(finalCalls.get('image-anchor')).toMatchObject({
+      cumulativeY: 40,
+      zones: [{ topY: 200, bottomY: 225, fullWidthBlock: true }],
+    });
+  });
+
   test('keeps float wrapping only on the current-page part of a split paragraph', () => {
     const blocks: FlowBlock[] = [
       paragraph('split-paragraph', [floatingImage(0), { kind: 'text', text: 'abcdefgh' }]),

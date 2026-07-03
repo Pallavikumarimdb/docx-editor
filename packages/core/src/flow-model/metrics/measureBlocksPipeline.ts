@@ -43,9 +43,9 @@ import { measureTable } from '../measureTable';
  * A floating exclusion zone tagged with the block index that anchors it.
  */
 interface FloatingZoneWithAnchor extends FloatingImageZone {
-  anchorNodeIndex: number;
-  /** True for floats positioned relative to page/margin (not paragraph). */
-  isMarginRelative?: boolean;
+  anchorBlockIndex: number;
+  /** True when the resolver's vertical position follows the anchor paragraph. */
+  isParagraphRelative?: boolean;
 }
 
 interface FloatFlowScopes {
@@ -139,15 +139,15 @@ export function measureBlocksWithFloats(
       anchoredZones
     );
     for (const anchored of anchoredZones) {
-      const { anchorBlockIndex: _anchorBlockIndex, isMarginRelative, ...zone } = anchored;
+      const { anchorBlockIndex: _anchorBlockIndex, isParagraphRelative, ...zone } = anchored;
       activeZones.push(
-        isMarginRelative
-          ? zone
-          : {
+        isParagraphRelative
+          ? {
               ...zone,
               topY: zone.topY + cumulativeY,
               bottomY: zone.bottomY + cumulativeY,
             }
+          : zone
       );
     }
   };
@@ -563,14 +563,13 @@ function computeAnchoredMargins(
 }
 
 /**
- * True when an OOXML position anchors vertically against the page or
- * margin (not the surrounding paragraph). Margin/page-relative zones
- * apply globally across nodes instead of attaching to one anchor
- * paragraph.
+ * True when the shared anchor resolver uses the paragraph fragment Y as its
+ * vertical origin. All other modes already resolve into page content-area
+ * coordinates and must not receive the flow pen a second time.
  */
-function isPositionMarginRelative(position: ImageRunPosition | undefined): boolean {
+function isPositionParagraphRelative(position: ImageRunPosition | undefined): boolean {
   const rel = position?.vertical?.relativeTo;
-  return rel === 'margin' || rel === 'page';
+  return rel == null || rel === 'paragraph' || rel === 'line';
 }
 
 function extractImageZonesFromParagraph(
@@ -599,7 +598,7 @@ function extractImageZonesFromParagraph(
         topY: rawTopY - distTop,
         bottomY,
         anchorBlockIndex: blockIndex,
-        isMarginRelative: isPositionMarginRelative(imgRun.position),
+        isParagraphRelative: isPositionParagraphRelative(imgRun.position),
         fullWidthBlock: true,
       });
       continue;
@@ -631,8 +630,8 @@ function extractImageZonesFromParagraph(
         rightMargin,
         topY: topY - distTop,
         bottomY: bottomY + distBottom,
-        anchorNodeIndex: nodeIndex,
-        isMarginRelative: isPositionMarginRelative(imgRun.position),
+        anchorBlockIndex: blockIndex,
+        isParagraphRelative: isPositionParagraphRelative(imgRun.position),
       });
     }
   }
@@ -743,8 +742,8 @@ function extractFloatingTextBoxZone(
       rightMargin: 0,
       topY: Math.max(0, rawTopY - distTop),
       bottomY,
-      anchorNodeIndex: nodeIndex,
-      isMarginRelative: isPositionMarginRelative(tbBlock.position),
+      anchorBlockIndex: blockIndex,
+      isParagraphRelative: isPositionParagraphRelative(tbBlock.position),
       fullWidthBlock: true,
     });
     return;
@@ -772,7 +771,7 @@ function extractFloatingTextBoxZone(
     rightMargin,
     topY: topY - distTop,
     bottomY: bottomY + distBottom,
-    anchorNodeIndex: nodeIndex,
-    isMarginRelative: isPositionMarginRelative(tbBlock.position),
+    anchorBlockIndex: blockIndex,
+    isParagraphRelative: isPositionParagraphRelative(tbBlock.position),
   });
 }
