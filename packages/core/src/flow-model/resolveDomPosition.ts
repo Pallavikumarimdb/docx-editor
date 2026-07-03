@@ -355,16 +355,29 @@ function caretRectFor(container: HTMLElement, pmPos: number): CaretRect | null {
     if (pmPos < docFrom || pmPos > docTo) continue;
 
     const rect = glyphBoundaryRect(span, pmPos - docFrom);
-    if (rect) return { ...rect, element: span };
+    if (rect) {
+      const visible = clipRectToTableWindow(rect, span);
+      if (visible) {
+        return {
+          left: visible.left,
+          top: visible.top,
+          height: visible.height,
+          element: span,
+        };
+      }
+      continue;
+    }
 
     // The span is painted but has no measurable text (an image run, a widget).
     // Interpolate across its box.
     const box = span.getBoundingClientRect();
+    const visibleBox = clipRectToTableWindow(box, span);
+    if (!visibleBox) continue;
     const ratio = (pmPos - docFrom) / Math.max(1, docTo - docFrom);
     return {
-      left: box.left + box.width * ratio,
-      top: box.top,
-      height: box.height,
+      left: visibleBox.left + visibleBox.width * ratio,
+      top: visibleBox.top,
+      height: visibleBox.height,
       element: span,
     };
   }
@@ -392,10 +405,7 @@ function caretRectFor(container: HTMLElement, pmPos: number): CaretRect | null {
 }
 
 /** The rect of the character boundary `offset` characters into `span`. */
-function glyphBoundaryRect(
-  span: HTMLElement,
-  offset: number
-): { left: number; top: number; height: number } | null {
+function glyphBoundaryRect(span: HTMLElement, offset: number): DOMRect | null {
   const doc = span.ownerDocument;
   const walker = doc.createTreeWalker(span, NodeFilter.SHOW_TEXT);
 
@@ -409,9 +419,7 @@ function glyphBoundaryRect(
         range.setStart(text, remaining);
         range.setEnd(text, remaining);
         const rect = range.getClientRects()[0] ?? range.getBoundingClientRect();
-        if (rect && rect.height > 0) {
-          return { left: rect.left, top: rect.top, height: rect.height };
-        }
+        if (rect && rect.height > 0) return rect;
       } catch {
         // A detached or re-rendered node. Fall through to the box estimate.
       }
