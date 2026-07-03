@@ -167,9 +167,16 @@ function snapshotRenderedDocument(root: HTMLElement): RenderedDocument {
 function measureBlocks(
   blocks: FlowBlock[],
   contentWidth: number | number[],
-  pageGeometry?: Parameters<typeof measureBlocksWithFloats>[3]
+  pageGeometry?: Parameters<typeof measureBlocksWithFloats>[3],
+  finalPageGeometry?: Parameters<typeof measureBlocksWithFloats>[4]
 ): Measure[] {
-  return measureBlocksWithFloats(blocks, contentWidth, measureBlock, pageGeometry);
+  return measureBlocksWithFloats(
+    blocks,
+    contentWidth,
+    measureBlock,
+    pageGeometry,
+    finalPageGeometry
+  );
 }
 
 function measureBlock(

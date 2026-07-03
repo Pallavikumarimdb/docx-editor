@@ -14,6 +14,7 @@
  * @public
  */
 import {
+  collectSectionConfigs,
   isFloatingTextBoxBlock,
   isWrapNone,
   type ContentNode,
@@ -29,6 +30,7 @@ import {
 } from '../../pagination-model';
 import { isTextWrappingFloatingImageRun } from '../../painter-model/floatingImageFlow';
 import {
+  pageGeometryFromPage,
   resolveAnchoredObjectVerticalTop,
   type PageGeometry,
 } from '../../painter-model/anchoredObjectPosition';
@@ -47,7 +49,8 @@ interface FloatingZoneWithAnchor extends FloatingImageZone {
 }
 
 interface FloatFlowScopes {
-  geometryByBlock: Array<FloatPageGeometry | undefined>;
+  initialGeometry: FloatPageGeometry | undefined;
+  geometryAfterBreak: Map<number, FloatPageGeometry | undefined>;
   baseMeasures: Measure[];
 }
 
@@ -89,39 +92,53 @@ export type FloatPageGeometry = PageGeometry;
  * won't line up with where the painter places the box. Build it with the
  * shared `pageGeometryFromPage` helper.
  *
+ * `finalPageGeometry` is the trailing section's geometry. Together with
+ * `pageGeometry`, it lets measurement build the exact same section schedule as
+ * page composition. In particular, a continuous section's geometry remains
+ * pending until flow advances to a new physical page.
+ *
  * @public
  */
 export function measureBlocksWithFloats(
   nodes: ContentNode[],
   contentWidth: number | number[],
   measureBlock: MeasureBlockFn,
-  pageGeometry?: FloatPageGeometry
-): LayoutMetrics[] {
+  pageGeometry?: FloatPageGeometry,
+  finalPageGeometry?: FloatPageGeometry
+): Measure[] {
   const defaultWidth = Array.isArray(contentWidth) ? (contentWidth[0] ?? 0) : contentWidth;
   const blockWidthAt = (blockIndex: number): number =>
     Array.isArray(contentWidth) ? (contentWidth[blockIndex] ?? defaultWidth) : contentWidth;
-  const scopes = buildFloatFlowScopes(blocks, blockWidthAt, measureBlock, pageGeometry);
-  const floatingZonesWithAnchors = extractFloatingZones(
+  const scopes = buildFloatFlowScopes(
     blocks,
     blockWidthAt,
     measureBlock,
-    scopes.geometryByBlock
+    pageGeometry,
+    finalPageGeometry
   );
-
-  const zonesByAnchor = new Map<number, FloatingZoneWithAnchor[]>();
-  for (const zone of floatingZonesWithAnchors) {
-    const existing = zonesByAnchor.get(zone.anchorBlockIndex) ?? [];
-    existing.push(zone);
-    zonesByAnchor.set(zone.anchorBlockIndex, existing);
-  }
-
   let cumulativeY = 0;
   let activeZones: FloatingImageZone[] = [];
   let startsNewScope = blocks.length > 0;
+  let startsNewPhysicalPage = blocks.length > 0;
+  let currentPageGeometry = scopes.initialGeometry;
+  let nextPageGeometry = scopes.initialGeometry;
   const measures: Measure[] = [];
 
-  const activateAnchoredZones = (blockIndex: number): void => {
-    for (const anchored of zonesByAnchor.get(blockIndex) ?? []) {
+  const activateAnchoredZones = (
+    block: FlowBlock,
+    blockIndex: number,
+    blockWidth: number
+  ): void => {
+    const anchoredZones: FloatingZoneWithAnchor[] = [];
+    extractFloatingZonesFromBlock(
+      block,
+      blockIndex,
+      blockWidth,
+      measureBlock,
+      currentPageGeometry,
+      anchoredZones
+    );
+    for (const anchored of anchoredZones) {
       const { anchorBlockIndex: _anchorBlockIndex, isMarginRelative, ...zone } = anchored;
       activeZones.push(
         isMarginRelative
@@ -135,25 +152,38 @@ export function measureBlocksWithFloats(
     }
   };
 
+  const resetFlowScope = (): void => {
+    cumulativeY = 0;
+    activeZones = [];
+  };
+
+  const beginPhysicalScope = (): void => {
+    resetFlowScope();
+    currentPageGeometry = nextPageGeometry;
+  };
+
   for (let blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
     const block = blocks[blockIndex];
     if (startsNewScope) {
-      cumulativeY = 0;
-      activeZones = [];
+      if (startsNewPhysicalPage) {
+        beginPhysicalScope();
+      } else {
+        resetFlowScope();
+      }
       startsNewScope = false;
+      startsNewPhysicalPage = false;
     }
 
-    activateAnchoredZones(blockIndex);
-    activeZones = activeZones.filter((zone) => zone.bottomY > cumulativeY);
     const blockWidth = blockWidthAt(blockIndex);
+    activateAnchoredZones(block, blockIndex, blockWidth);
+    activeZones = activeZones.filter((zone) => zone.bottomY > cumulativeY);
     let zones = activeZones.length > 0 ? activeZones : undefined;
     let measure =
       zones == null
         ? scopes.baseMeasures[blockIndex]
         : measureBlock(block, blockWidth, zones, cumulativeY);
     let height = measureFlowHeight(block, measure);
-    const contentHeight =
-      scopes.geometryByBlock[blockIndex]?.contentHeight ?? Number.POSITIVE_INFINITY;
+    let contentHeight = currentPageGeometry?.contentHeight ?? Number.POSITIVE_INFINITY;
 
     // A splittable paragraph can begin beside a float and continue on the next
     // physical page, where that float no longer exists. Keep the wrapped lines
@@ -209,9 +239,9 @@ export function measureBlocksWithFloats(
       Number.isFinite(contentHeight) &&
       cumulativeY + height > contentHeight
     ) {
-      cumulativeY = 0;
-      activeZones = [];
-      activateAnchoredZones(blockIndex);
+      beginPhysicalScope();
+      contentHeight = currentPageGeometry?.contentHeight ?? Number.POSITIVE_INFINITY;
+      activateAnchoredZones(block, blockIndex, blockWidth);
       activeZones = activeZones.filter((zone) => zone.bottomY > 0);
       zones = activeZones.length > 0 ? activeZones : undefined;
       measure =
@@ -226,13 +256,25 @@ export function measureBlocksWithFloats(
     // for vertical space). Every other measurable block advances the scope pen.
     cumulativeY += height;
 
+    if (block.kind === 'sectionBreak') {
+      nextPageGeometry = scopes.geometryAfterBreak.get(blockIndex);
+    }
+
+    const pageOverflowed = Number.isFinite(contentHeight) && cumulativeY >= contentHeight;
+    const sectionStartsNewScope = block.kind === 'sectionBreak' && block.type !== 'continuous';
     if (
       block.kind === 'pageBreak' ||
       block.kind === 'columnBreak' ||
-      (block.kind === 'sectionBreak' && block.type !== 'continuous') ||
-      (Number.isFinite(contentHeight) && cumulativeY >= contentHeight)
+      sectionStartsNewScope ||
+      pageOverflowed
     ) {
       startsNewScope = true;
+      startsNewPhysicalPage =
+        block.kind === 'pageBreak' ||
+        pageOverflowed ||
+        (block.kind === 'sectionBreak' &&
+          block.type !== 'continuous' &&
+          block.type !== 'nextColumn');
     }
   }
 
@@ -387,24 +429,42 @@ function buildFloatFlowScopes(
   blocks: FlowBlock[],
   blockWidthAt: (blockIndex: number) => number,
   measureBlock: MeasureBlockFn,
-  initialGeometry?: FloatPageGeometry
+  initialGeometry?: FloatPageGeometry,
+  finalGeometry?: FloatPageGeometry
 ): FloatFlowScopes {
-  const geometryByBlock: Array<FloatPageGeometry | undefined> = [];
   const baseMeasures: Measure[] = [];
-  let geometry = initialGeometry;
 
   for (let blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
     const block = blocks[blockIndex];
-    geometryByBlock.push(geometry);
     const measure = measureBlock(block, blockWidthAt(blockIndex));
     baseMeasures.push(measure);
-
-    if (block.kind === 'sectionBreak') {
-      geometry = geometryAfterSectionBreak(geometry, block, blockWidthAt(blockIndex + 1));
-    }
   }
 
-  return { geometryByBlock, baseMeasures };
+  if (!initialGeometry) {
+    return { initialGeometry: undefined, geometryAfterBreak: new Map(), baseMeasures };
+  }
+
+  const sectionPlan = collectSectionConfigs(
+    blocks,
+    sectionConfigFromGeometry(initialGeometry),
+    sectionConfigFromGeometry(finalGeometry ?? initialGeometry)
+  );
+  const sectionGeometries = sectionPlan.configs.map((config) =>
+    pageGeometryFromPage({ size: config.pageSize, margins: config.margins })
+  );
+  const geometryAfterBreak = new Map<number, FloatPageGeometry | undefined>();
+  for (let sectionIndex = 0; sectionIndex < sectionPlan.breakIndices.length; sectionIndex++) {
+    geometryAfterBreak.set(
+      sectionPlan.breakIndices[sectionIndex],
+      sectionGeometries[sectionIndex + 1] ?? sectionGeometries[sectionIndex]
+    );
+  }
+
+  return {
+    initialGeometry: sectionGeometries[0] ?? initialGeometry,
+    geometryAfterBreak,
+    baseMeasures,
+  };
 }
 
 function measureFlowHeight(block: FlowBlock, measure: Measure): number {
@@ -415,76 +475,53 @@ function measureFlowHeight(block: FlowBlock, measure: Measure): number {
   return 0;
 }
 
-function geometryAfterSectionBreak(
-  current: FloatPageGeometry | undefined,
-  marker: Extract<FlowBlock, { kind: 'sectionBreak' }>,
-  fallbackContentWidth: number
-): FloatPageGeometry | undefined {
-  const pageWidth = marker.pageSize?.w ?? current?.pageWidth;
-  const pageHeight = marker.pageSize?.h ?? current?.pageHeight;
-  const marginLeft = marker.margins?.left ?? current?.marginLeft ?? 0;
-  const marginTop = marker.margins?.top ?? current?.marginTop ?? 0;
-  const marginRight =
-    marker.margins?.right ??
-    (current ? current.pageWidth - current.marginLeft - current.contentWidth : 0);
-  const marginBottom =
-    marker.margins?.bottom ??
-    (current ? current.pageHeight - current.marginTop - current.contentHeight : 0);
-  if (pageWidth == null || pageHeight == null) return current;
+function sectionConfigFromGeometry(geometry: FloatPageGeometry) {
   return {
-    pageWidth,
-    pageHeight,
-    marginLeft,
-    marginTop,
-    contentWidth: Math.max(0, pageWidth - marginLeft - marginRight) || fallbackContentWidth,
-    contentHeight: Math.max(0, pageHeight - marginTop - marginBottom),
+    pageSize: { w: geometry.pageWidth, h: geometry.pageHeight },
+    margins: {
+      top: geometry.marginTop,
+      right: Math.max(0, geometry.pageWidth - geometry.marginLeft - geometry.contentWidth),
+      bottom: Math.max(0, geometry.pageHeight - geometry.marginTop - geometry.contentHeight),
+      left: geometry.marginLeft,
+    },
   };
 }
 
 /**
- * Extract floating exclusion zones from all nodes that anchor floats —
- * paragraph runs (images), top-level floating tables, and top-level
- * floating textboxes. Paragraph-relative zones are relative to their anchor;
- * margin/page-relative zones use the anchor section's content-area coordinates.
+ * Extract floating exclusion zones from one anchor block using the physical
+ * page geometry currently receiving that block.
  */
-function extractFloatingZones(
-  blocks: FlowBlock[],
-  blockWidthAt: (blockIndex: number) => number,
+function extractFloatingZonesFromBlock(
+  block: FlowBlock,
+  blockIndex: number,
+  contentWidth: number,
   measureBlock: MeasureBlockFn,
-  geometryByBlock: Array<FloatPageGeometry | undefined>
-): FloatingZoneWithAnchor[] {
-  const zones: FloatingZoneWithAnchor[] = [];
-
-  for (let blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
-    const block = blocks[blockIndex];
-    const contentWidth = blockWidthAt(blockIndex);
-    const pageGeometry = geometryByBlock[blockIndex];
-    switch (block.kind) {
-      case 'paragraph':
-        extractImageZonesFromParagraph(
-          block as ParagraphBlock,
-          blockIndex,
-          contentWidth,
-          zones,
-          pageGeometry
-        );
-        break;
-      case 'table':
-        extractFloatingTableZone(block as TableBlock, nodeIndex, contentWidth, measureBlock, zones);
-        break;
-      case 'textBox':
-        extractFloatingTextBoxZone(
-          block as TextBoxBlock,
-          nodeIndex,
-          contentWidth,
-          zones,
-          pageGeometry
-        );
-        break;
-    }
+  pageGeometry: FloatPageGeometry | undefined,
+  zones: FloatingZoneWithAnchor[]
+): void {
+  switch (block.kind) {
+    case 'paragraph':
+      extractImageZonesFromParagraph(
+        block as ParagraphBlock,
+        blockIndex,
+        contentWidth,
+        zones,
+        pageGeometry
+      );
+      break;
+    case 'table':
+      extractFloatingTableZone(block as TableBlock, blockIndex, contentWidth, measureBlock, zones);
+      break;
+    case 'textBox':
+      extractFloatingTextBoxZone(
+        block as TextBoxBlock,
+        blockIndex,
+        contentWidth,
+        zones,
+        pageGeometry
+      );
+      break;
   }
-
-  return zones;
 }
 
 /**

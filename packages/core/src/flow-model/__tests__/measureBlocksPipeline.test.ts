@@ -6,6 +6,11 @@ import type {
   ParagraphBlock,
   TextBoxBlock,
 } from '../../pagination-model/types';
+import { layOutPages } from '../../pagination-model/pageComposer';
+import {
+  pageGeometryFromPage,
+  resolveAnchoredObjectVerticalTop,
+} from '../../painter-model/anchoredObjectPosition';
 import type { FloatingImageZone } from '../metrics/floatingZones';
 import {
   measureBlocksWithFloats,
@@ -20,6 +25,15 @@ const initialGeometry: FloatPageGeometry = {
   marginTop: 10,
   contentWidth: 300,
   contentHeight: 100,
+};
+
+const laterGeometry: FloatPageGeometry = {
+  pageWidth: 600,
+  pageHeight: 220,
+  marginLeft: 80,
+  marginTop: 40,
+  contentWidth: 440,
+  contentHeight: 160,
 };
 
 function paragraph(id: string, runs: ParagraphBlock['runs'] = []): ParagraphBlock {
@@ -102,6 +116,85 @@ function recordingMeasure(
           totalHeight: heights[id] ?? 20,
         };
     }
+  };
+}
+
+function bandAwareMeasure(
+  heights: Record<string, number>,
+  finalCalls: Map<string, FinalCall>
+): MeasureBlockFn {
+  return (block, width, zones, cumulativeY = 0): Measure => {
+    if (zones) finalCalls.set(String(block.id), { width, zones, cumulativeY });
+
+    switch (block.kind) {
+      case 'paragraph': {
+        const lineHeight = heights[String(block.id)] ?? 10;
+        const band = zones?.find(
+          (zone) =>
+            zone.fullWidthBlock &&
+            cumulativeY + lineHeight > zone.topY &&
+            cumulativeY < zone.bottomY
+        );
+        const floatSkipBefore = band ? Math.max(0, band.bottomY - cumulativeY) : 0;
+        return {
+          kind: 'paragraph',
+          lines: [
+            {
+              fromRun: 0,
+              fromChar: 0,
+              toRun: 0,
+              toChar: 0,
+              width: 0,
+              ascent: lineHeight * 0.75,
+              descent: lineHeight * 0.25,
+              lineHeight,
+              ...(floatSkipBefore > 0 ? { floatSkipBefore } : {}),
+            },
+          ],
+          totalHeight: lineHeight + floatSkipBefore,
+        };
+      }
+      case 'textBox':
+        return {
+          kind: 'textBox',
+          width: block.width,
+          height: block.height ?? 20,
+          innerMeasures: [],
+        };
+      case 'sectionBreak':
+        return { kind: 'sectionBreak' };
+      case 'pageBreak':
+        return { kind: 'pageBreak' };
+      case 'columnBreak':
+        return { kind: 'columnBreak' };
+      case 'image':
+        return { kind: 'image', width: block.width, height: block.height };
+      case 'table':
+        return {
+          kind: 'table',
+          rows: [],
+          columnWidths: [],
+          totalWidth: width,
+          totalHeight: heights[String(block.id)] ?? 20,
+        };
+    }
+  };
+}
+
+function centeredPageBand(id: string): TextBoxBlock {
+  return {
+    kind: 'textBox',
+    id,
+    width: 100,
+    height: 20,
+    content: [],
+    displayMode: 'float',
+    wrapType: 'topAndBottom',
+    distBottom: 5,
+    position: {
+      vertical: { relativeTo: 'page', align: 'center' },
+      horizontal: { relativeTo: 'margin', align: 'left' },
+    },
   };
 }
 
@@ -256,6 +349,124 @@ describe('floating exclusion flow scopes', () => {
     });
   });
 
+  test('uses the current physical page geometry through a continuous section', () => {
+    const band = centeredPageBand('current-page-band');
+    const blocks: FlowBlock[] = [
+      paragraph('earlier'),
+      {
+        kind: 'sectionBreak',
+        id: 'continuous-section',
+        type: 'continuous',
+        pageSize: { w: 400, h: 120 },
+        margins: { top: 10, right: 50, bottom: 10, left: 50 },
+      },
+      band,
+      paragraph('same-page-text'),
+    ];
+    const finalCalls = new Map<string, FinalCall>();
+    const measures = measureBlocksWithFloats(
+      blocks,
+      [300, 300, 440, 440],
+      bandAwareMeasure({ earlier: 45, 'same-page-text': 10 }, finalCalls),
+      initialGeometry,
+      laterGeometry
+    );
+
+    const zone = finalCalls.get('same-page-text')?.zones?.[0];
+    expect(zone).toMatchObject({ topY: 40, bottomY: 65, fullWidthBlock: true });
+    expect(measures[3]).toMatchObject({
+      kind: 'paragraph',
+      lines: [{ lineHeight: 10, floatSkipBefore: 20 }],
+    });
+
+    const layout = layOutPages(blocks, measures, {
+      pageSize: { w: 400, h: 120 },
+      margins: { top: 10, right: 50, bottom: 10, left: 50 },
+      finalPageSize: { w: 600, h: 220 },
+      finalMargins: { top: 40, right: 80, bottom: 20, left: 80 },
+      bodyBreakType: 'continuous',
+    });
+    expect(layout.pages).toHaveLength(1);
+    expect(pageGeometryFromPage(layout.pages[0])).toEqual(initialGeometry);
+
+    const textFragment = layout.pages[0].fragments.find(
+      (fragment) => fragment.blockId === 'same-page-text'
+    );
+    const paintedBandTop = resolveAnchoredObjectVerticalTop(
+      { width: band.width, height: band.height ?? 0, position: band.position },
+      0,
+      pageGeometryFromPage(layout.pages[0])
+    );
+    const paintedBandBottom = paintedBandTop + (band.height ?? 0) + (band.distBottom ?? 0);
+    const textTop =
+      (textFragment?.y ?? 0) -
+      layout.pages[0].margins.top +
+      ((measures[3].kind === 'paragraph' && measures[3].lines[0]?.floatSkipBefore) || 0);
+    expect(zone).toBeDefined();
+    expect(paintedBandTop).toBe(zone!.topY);
+    expect(textTop).toBeGreaterThanOrEqual(paintedBandBottom);
+  });
+
+  test('adopts the continuous section geometry after physical-page overflow', () => {
+    const band = centeredPageBand('next-page-band');
+    const blocks: FlowBlock[] = [
+      paragraph('page-one-fill'),
+      {
+        kind: 'sectionBreak',
+        id: 'continuous-section',
+        type: 'continuous',
+        pageSize: { w: 400, h: 120 },
+        margins: { top: 10, right: 50, bottom: 10, left: 50 },
+      },
+      paragraph('overflowing'),
+      band,
+      paragraph('next-page-text'),
+    ];
+    const finalCalls = new Map<string, FinalCall>();
+    const measures = measureBlocksWithFloats(
+      blocks,
+      [300, 300, 440, 440, 440],
+      bandAwareMeasure({ 'page-one-fill': 90, overflowing: 65, 'next-page-text': 10 }, finalCalls),
+      initialGeometry,
+      laterGeometry
+    );
+
+    const zone = finalCalls.get('next-page-text')?.zones?.[0];
+    expect(zone).toMatchObject({ topY: 60, bottomY: 85, fullWidthBlock: true });
+    expect(measures[4]).toMatchObject({
+      kind: 'paragraph',
+      lines: [{ lineHeight: 10, floatSkipBefore: 20 }],
+    });
+
+    const layout = layOutPages(blocks, measures, {
+      pageSize: { w: 400, h: 120 },
+      margins: { top: 10, right: 50, bottom: 10, left: 50 },
+      finalPageSize: { w: 600, h: 220 },
+      finalMargins: { top: 40, right: 80, bottom: 20, left: 80 },
+      bodyBreakType: 'continuous',
+    });
+    expect(layout.pages).toHaveLength(2);
+    expect(pageGeometryFromPage(layout.pages[0])).toEqual(initialGeometry);
+    expect(pageGeometryFromPage(layout.pages[1])).toEqual(laterGeometry);
+
+    const textFragment = layout.pages[1].fragments.find(
+      (fragment) => fragment.blockId === 'next-page-text'
+    );
+    const paintedBandTop = resolveAnchoredObjectVerticalTop(
+      { width: band.width, height: band.height ?? 0, position: band.position },
+      0,
+      pageGeometryFromPage(layout.pages[1])
+    );
+    const paintedBandBottom = paintedBandTop + (band.height ?? 0) + (band.distBottom ?? 0);
+    const textTop =
+      (textFragment?.y ?? 0) -
+      layout.pages[1].margins.top +
+      ((measures[4].kind === 'paragraph' && measures[4].lines[0]?.floatSkipBefore) || 0);
+    expect(zone).toBeDefined();
+    expect(paintedBandTop).toBe(zone!.topY);
+    expect(textTop).toBeGreaterThanOrEqual(paintedBandBottom);
+  });
+
   test('a later-section margin band starts at its anchor with later geometry', () => {
     const textBox: TextBoxBlock = {
       kind: 'textBox',
@@ -276,8 +487,8 @@ describe('floating exclusion flow scopes', () => {
       {
         kind: 'sectionBreak',
         id: 'section',
-        pageSize: { w: 1_000, h: 220 },
-        margins: { top: 20, right: 100, bottom: 20, left: 100 },
+        pageSize: { w: 400, h: 120 },
+        margins: { top: 10, right: 50, bottom: 10, left: 50 },
       },
       textBox,
       paragraph('later-text'),
@@ -288,7 +499,15 @@ describe('floating exclusion flow scopes', () => {
       blocks,
       [300, 300, 800, 800],
       recordingMeasure({}, finalCalls),
-      initialGeometry
+      initialGeometry,
+      {
+        pageWidth: 1_000,
+        pageHeight: 220,
+        marginLeft: 100,
+        marginTop: 20,
+        contentWidth: 800,
+        contentHeight: 180,
+      }
     );
 
     expect(finalCalls.get('earlier')?.zones).toBeUndefined();

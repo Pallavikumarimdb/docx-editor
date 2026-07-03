@@ -70,8 +70,9 @@ interface PageSizePx {
 export type MeasureBlocksFn = (
   nodes: ContentNode[],
   contentWidth: number | number[],
-  pageGeometry?: FloatPageGeometry
-) => LayoutMetrics[];
+  pageGeometry?: FloatPageGeometry,
+  finalPageGeometry?: FloatPageGeometry
+) => Measure[];
 
 export interface ComputeLayoutInputs {
   state: EditorState;
@@ -227,6 +228,10 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
     pageGeometryFromPage({
       size: resolvedPageSize,
       margins: resolvedMargins,
+    }),
+    pageGeometryFromPage({
+      size: resolvedFinalPageSize,
+      margins: resolvedFinalMargins,
     })
   );
 
