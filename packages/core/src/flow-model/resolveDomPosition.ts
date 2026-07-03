@@ -391,12 +391,11 @@ function caretRectFor(container: HTMLElement, pmPos: number): CaretRect | null {
   //    the caret at whichever edge the position is nearer.
   const bracketing = tightestRangeContaining(container, pmPos);
   if (bracketing) {
-    const box = bracketing.el.getBoundingClientRect();
     const atEnd = pmPos >= bracketing.docTo;
     return {
-      left: atEnd ? box.right : box.left,
-      top: box.top,
-      height: box.height,
+      left: atEnd ? bracketing.rect.right : bracketing.rect.left,
+      top: bracketing.rect.top,
+      height: bracketing.rect.height,
       element: bracketing.el,
     };
   }
@@ -450,7 +449,9 @@ function emptyParagraphRectAt(container: HTMLElement, pmPos: number): CaretRect 
     if (pmPos < docFrom || pmPos > docTo) continue;
 
     const box = (run.getBoundingClientRect().height > 0 ? run : para).getBoundingClientRect();
-    return { left: box.left, top: box.top, height: box.height, element: para };
+    const visible = clipRectToTableWindow(box, para);
+    if (!visible) continue;
+    return { left: visible.left, top: visible.top, height: visible.height, element: para };
   }
   return null;
 }
@@ -459,17 +460,19 @@ function emptyParagraphRectAt(container: HTMLElement, pmPos: number): CaretRect 
 function tightestRangeContaining(
   container: HTMLElement,
   pmPos: number
-): { el: HTMLElement; docFrom: number; docTo: number } | null {
-  let best: { el: HTMLElement; docFrom: number; docTo: number } | null = null;
+): { el: HTMLElement; docFrom: number; docTo: number; rect: DOMRect } | null {
+  let best: { el: HTMLElement; docFrom: number; docTo: number; rect: DOMRect } | null = null;
 
   for (const el of findBodyPmAnchors(container)) {
     const docFrom = numberAttr(el, 'docFrom');
     const docTo = numberAttr(el, 'docTo');
     if (docFrom === null || docTo === null) continue;
     if (pmPos < docFrom || pmPos > docTo) continue;
+    const rect = clipRectToTableWindow(el.getBoundingClientRect(), el);
+    if (!rect) continue;
 
     if (!best || docTo - docFrom < best.docTo - best.docFrom) {
-      best = { el, docFrom, docTo };
+      best = { el, docFrom, docTo, rect };
     }
   }
 
@@ -511,13 +514,15 @@ export function readSelectionGeometry(
     // Word paints a sliver there. Must be checked before the text path: the
     // marker does have a (zero-width) character in it.
     if (docTo === docFrom) {
-      pushRect(boxes, span.getBoundingClientRect(), span, containerRect, CARET_SLIVER_WIDTH);
+      const clipped = clipRectToTableWindow(span.getBoundingClientRect(), span);
+      if (clipped) pushRect(boxes, clipped, span, containerRect, CARET_SLIVER_WIDTH);
       continue;
     }
 
     // A tab has no glyphs to measure a sub-range against — highlight all of it.
     if (span.classList.contains('layout-run-tab')) {
-      pushRect(boxes, span.getBoundingClientRect(), span, containerRect);
+      const clipped = clipRectToTableWindow(span.getBoundingClientRect(), span);
+      if (clipped) pushRect(boxes, clipped, span, containerRect);
       continue;
     }
 
@@ -550,21 +555,24 @@ export function readSelectionGeometry(
     if (!overlaps(docFrom, docTo, from, to)) continue;
 
     const source = run.getBoundingClientRect().height > 0 ? run : para;
-    pushRect(boxes, source.getBoundingClientRect(), para, containerRect, CARET_SLIVER_WIDTH);
+    const clipped = clipRectToTableWindow(source.getBoundingClientRect(), para);
+    if (clipped) pushRect(boxes, clipped, para, containerRect, CARET_SLIVER_WIDTH);
   }
 
   return boxes;
 }
 
 /**
- * Clip a rect to the visible window of the split table it's in.
+ * Clip a rect to every visible window of the split table it's in.
  *
  * A table fragment that broke mid-row paints the *whole* row and relies on
  * `overflow: hidden` to hide the part that belongs to another page. The browser
  * still reports client rects for that hidden text, so a selection crossing the
  * break would paint a highlight through the page margin and over the next
- * fragment. The table element's own box is the window; anything outside it isn't
- * really on this page.
+ * fragment. Usually the table element's own box is the window. A continuation
+ * fragment with repeated headers has a narrower body window below those headers,
+ * stamped with `data-table-body-clip`; body content must also intersect that
+ * window while repeated-header content (its sibling) remains selectable.
  *
  * Returns `null` when the rect is entirely outside the window.
  *
@@ -574,9 +582,15 @@ export function clipRectToTableWindow(rect: DOMRect, el: HTMLElement): DOMRect |
   const table = el.closest<HTMLElement>('.layout-table');
   if (!table) return rect;
 
-  const window_ = table.getBoundingClientRect();
-  const top = Math.max(rect.top, window_.top);
-  const bottom = Math.min(rect.bottom, window_.bottom);
+  const bodyWindow = el.closest<HTMLElement>('[data-table-body-clip]');
+  const windows = bodyWindow ? [table, bodyWindow] : [table];
+  let top = rect.top;
+  let bottom = rect.bottom;
+  for (const windowEl of windows) {
+    const windowRect = windowEl.getBoundingClientRect();
+    top = Math.max(top, windowRect.top);
+    bottom = Math.min(bottom, windowRect.bottom);
+  }
   if (bottom <= top) return null;
 
   if (top === rect.top && bottom === rect.bottom) return rect;

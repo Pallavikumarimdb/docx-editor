@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { collectBodySpans, findBodyPmAnchor, findBodyPmAnchors } from './collectBodySpans';
-import { resolveDomPosition } from './resolveDomPosition';
+import { clipRectToTableWindow, resolveDomPosition } from './resolveDomPosition';
 
 function rect(left: number, top: number, width: number, height: number): DOMRect {
   return {
@@ -80,4 +80,35 @@ describe('body DOM position mapping', () => {
       expect(resolveDomPosition(root, 100 + ratio * 100, 28, 1)).toBe(10 + expectedOffset);
     }
   );
+
+  test('clips topClip body copies below repeated headers while preserving header geometry', () => {
+    const table = document.createElement('div');
+    table.className = 'layout-table';
+    table.getBoundingClientRect = () => rect(10, 100, 200, 200);
+
+    const repeatedHeader = document.createElement('span');
+    repeatedHeader.dataset.repeatedHeader = 'true';
+    table.appendChild(repeatedHeader);
+
+    const bodyClip = document.createElement('div');
+    bodyClip.dataset.tableBodyClip = 'true';
+    bodyClip.getBoundingClientRect = () => rect(10, 140, 200, 160);
+    table.appendChild(bodyClip);
+
+    const invisiblePrefixCopy = document.createElement('span');
+    bodyClip.appendChild(invisiblePrefixCopy);
+
+    const headerRect = rect(20, 110, 80, 16);
+    expect(clipRectToTableWindow(headerRect, repeatedHeader)).toBe(headerRect);
+    expect(clipRectToTableWindow(rect(20, 112, 80, 16), invisiblePrefixCopy)).toBeNull();
+
+    const crossingBodyRect = clipRectToTableWindow(rect(20, 132, 80, 16), invisiblePrefixCopy);
+    expect(crossingBodyRect).toMatchObject({
+      left: 20,
+      top: 140,
+      width: 80,
+      height: 8,
+      bottom: 148,
+    });
+  });
 });
