@@ -9,8 +9,10 @@ import type {
   TableFragment,
   TableMeasure,
 } from '../pagination-model/types';
+import { resetCanvasContext } from './metrics/textMetrics';
 import { resolveFragmentHit, resolveTableCellHit } from './pointerHitResolve';
 import { pointerToDocPos, pointerToDocPosInParagraph } from './pointerToDocPos';
+import { getCaretPosition, rectsForSelection } from './selectionGeometry';
 
 function line(runIndex: number, textLength: number): MeasuredLine {
   return {
@@ -93,6 +95,7 @@ describe('layout pointer fallbacks', () => {
     const first = paragraph('cell-1', [{ text: 'First', docFrom: 3 }]);
     const second = paragraph('cell-2', [{ text: 'Second', docFrom: 8 }]);
     const visible = paragraph('cell-3', [{ text: 'Visible', docFrom: 14 }]);
+    visible.measure.lines[0]!.leftOffset = 12;
     const table: TableBlock = {
       kind: 'table',
       id: 'table',
@@ -106,6 +109,7 @@ describe('layout pointer fallbacks', () => {
             {
               id: 'cell',
               blocks: [first.block, second.block, visible.block],
+              padding: { top: 0, right: 0, bottom: 0, left: 0 },
             },
           ],
         },
@@ -136,6 +140,8 @@ describe('layout pointer fallbacks', () => {
       y: 0,
       width: 200,
       height: 20,
+      docFrom: table.docFrom,
+      docTo: table.docTo,
       fromRow: 0,
       toRow: 1,
       topClip: 40,
@@ -160,5 +166,40 @@ describe('layout pointer fallbacks', () => {
     expect(fragmentHit).not.toBeNull();
     expect(cellHit?.localY).toBe(45);
     expect(fragmentHit && pointerToDocPos(fragmentHit, cellHit)).toBe(14);
+
+    const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+    Object.defineProperty(globalThis, 'document', {
+      configurable: true,
+      value: {
+        createElement: () => ({
+          getContext: () => ({
+            font: '',
+            measureText: (text: string) => ({ width: text.length * 8 }),
+          }),
+        }),
+      },
+    });
+    resetCanvasContext();
+    try {
+      expect(getCaretPosition(layout, [table], [tableMeasure], 16)).toEqual({
+        x: 28,
+        y: 0,
+        height: 20,
+        pageIndex: 0,
+      });
+      expect(rectsForSelection(layout, [table], [tableMeasure], 14, 21)).toEqual([
+        {
+          x: 12,
+          y: 0,
+          width: 56,
+          height: 20,
+          pageIndex: 0,
+        },
+      ]);
+    } finally {
+      resetCanvasContext();
+      if (originalDocument) Object.defineProperty(globalThis, 'document', originalDocument);
+      else Reflect.deleteProperty(globalThis, 'document');
+    }
   });
 });
