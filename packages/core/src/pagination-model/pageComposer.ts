@@ -110,8 +110,7 @@ export function layOutPages(
         sectionIndex++;
         const next = schedule.configs[sectionIndex] ?? ctx.section;
         const sectionEnd = schedule.breakIndices[sectionIndex] ?? blocks.length;
-        ctx.sectionIndex = sectionIndex;
-        cursor = crossSectionBoundary(ctx, cursor, next, i + 1, sectionEnd);
+        cursor = crossSectionBoundary(ctx, cursor, next, sectionIndex, i + 1, sectionEnd);
         break;
       }
 
@@ -184,13 +183,14 @@ function crossSectionBoundary(
   ctx: FlowContext,
   cursor: LayoutCursor,
   next: SectionLayoutConfig,
+  nextSectionIndex: number,
   sectionStart: number,
   sectionEnd: number
 ): LayoutCursor {
-  ctx.section = next;
-
   switch (next.startType) {
     case 'continuous': {
+      ctx.section = next;
+      ctx.sectionIndex = nextSectionIndex;
       // Re-columnise the current page from the pen down. The page keeps the size
       // it was born with — a page cannot change dimensions halfway.
       const page = ctx.pages[cursor.pageIndex];
@@ -229,6 +229,8 @@ function crossSectionBoundary(
     }
 
     case 'nextColumn':
+      ctx.section = next;
+      ctx.sectionIndex = nextSectionIndex;
       return nextColumn(ctx, cursor);
 
     case 'evenPage':
@@ -242,15 +244,35 @@ function crossSectionBoundary(
       const hasParity = (c: LayoutCursor): boolean =>
         (ctx.pages[c.pageIndex].number % 2 === 0) === wantEven;
 
-      let c = pageIsEmpty(ctx, cursor) ? cursor : startPage(ctx, cursor.prev);
-      while (!hasParity(c)) {
-        c = startPage(ctx, cursor.prev);
+      let c = cursor;
+      if (pageIsEmpty(ctx, c) && hasParity(c)) {
+        // The preceding flow already opened the correctly-numbered blank page
+        // (for example via an explicit page break). Recreate that empty draft
+        // under the new section so its margins, title-page furniture, and
+        // section-local page number are all resolved as the opening page.
+        ctx.pages.pop();
+        const previousCount = ctx.sectionPageCounts.get(ctx.sectionIndex) ?? 1;
+        ctx.sectionPageCounts.set(ctx.sectionIndex, Math.max(0, previousCount - 1));
+      } else {
+        // Any parity page inserted before the opening page belongs to the
+        // section being closed. Keep the old section active while creating it;
+        // switching first would make the filler page new-section page 1.
+        const openingPageNumber = ctx.pages.length + 1;
+        const openingHasParity = (openingPageNumber % 2 === 0) === wantEven;
+        if (!pageIsEmpty(ctx, c) && !openingHasParity) {
+          c = startPage(ctx, cursor.prev);
+        }
       }
-      return c;
+
+      ctx.section = next;
+      ctx.sectionIndex = nextSectionIndex;
+      return startPage(ctx, c.prev);
     }
 
     case 'nextPage':
     default:
+      ctx.section = next;
+      ctx.sectionIndex = nextSectionIndex;
       return startPage(ctx, cursor.prev);
   }
 }

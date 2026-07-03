@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 
 import { layOutPages } from './pageComposer';
-import type { MeasuredLine, ParagraphBlock, ParagraphFragment, ParagraphMetrics } from './types';
+import type {
+  MeasuredLine,
+  ParagraphBlock,
+  ParagraphFragment,
+  ParagraphMetrics,
+  SectionMarkerBlock,
+} from './types';
 
 function paragraph(id: string, lineCount = 1, attrs: ParagraphBlock['attrs'] = {}): ParagraphBlock {
   return {
@@ -116,5 +122,55 @@ describe('keepLines leading-gap fit', () => {
       fromLine: 0,
       toLine: 3,
     });
+  });
+});
+
+describe('odd/even section starts', () => {
+  test('attributes parity filler pages to the section they close', () => {
+    const oldMargins = { top: 10, right: 10, bottom: 10, left: 10 };
+    const newMargins = { top: 20, right: 20, bottom: 20, left: 20 };
+    const sectionBreak: SectionMarkerBlock = {
+      kind: 'sectionBreak',
+      id: 'section-break',
+      pageSize: { w: 100, h: 100 },
+      margins: oldMargins,
+    };
+    const pageStarts: Array<{
+      pageNumber: number;
+      sectionIndex: number;
+      sectionPageNumber: number;
+    }> = [];
+    const options = {
+      pageSize: { w: 100, h: 100 },
+      margins: oldMargins,
+      finalPageSize: { w: 120, h: 120 },
+      finalMargins: newMargins,
+      bodyBreakType: 'oddPage' as const,
+      onPageStart: ({
+        pageNumber,
+        sectionIndex,
+        sectionPageNumber,
+      }: {
+        pageNumber: number;
+        sectionIndex: number;
+        sectionPageNumber: number;
+      }) => pageStarts.push({ pageNumber, sectionIndex, sectionPageNumber }),
+    };
+
+    const layout = layOutPages(
+      [paragraph('old-section'), sectionBreak, paragraph('new-section')],
+      [metrics(20), { kind: 'sectionBreak' }, metrics(20)],
+      options
+    );
+
+    expect(pageStarts).toEqual([
+      { pageNumber: 1, sectionIndex: 0, sectionPageNumber: 1 },
+      { pageNumber: 2, sectionIndex: 0, sectionPageNumber: 2 },
+      { pageNumber: 3, sectionIndex: 1, sectionPageNumber: 1 },
+    ]);
+    expect(layout.pages.map((page) => page.size.w)).toEqual([100, 100, 120]);
+    expect(layout.pages.map((page) => page.margins.left)).toEqual([10, 10, 20]);
+    expect(layout.pages[1].fragments).toHaveLength(0);
+    expect(layout.pages[2].fragments.map((fragment) => fragment.blockId)).toEqual(['new-section']);
   });
 });
