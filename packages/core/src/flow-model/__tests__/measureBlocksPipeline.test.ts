@@ -550,6 +550,83 @@ describe('floating exclusion flow scopes', () => {
     expect(textTop).toBeGreaterThanOrEqual(paintedBandBottom);
   });
 
+  test('keeps physical-page geometry through every continuous-section column', () => {
+    const centeredImage: ImageRun = {
+      kind: 'image',
+      src: 'embedded.png',
+      width: 80,
+      height: 20,
+      displayMode: 'float',
+      wrapType: 'topAndBottom',
+      distBottom: 5,
+      position: {
+        horizontal: { relativeTo: 'margin', align: 'center' },
+        vertical: { relativeTo: 'page', align: 'center' },
+      },
+    };
+    const columns = { count: 2, gap: 20, equalWidth: true };
+    const blocks: FlowBlock[] = [
+      paragraph('single-column-intro'),
+      {
+        kind: 'sectionBreak',
+        id: 'continuous-columns',
+        type: 'continuous',
+        pageSize: { w: 400, h: 120 },
+        margins: { top: 10, right: 50, bottom: 10, left: 50 },
+      },
+      paragraph('first-column-fill'),
+      paragraph('second-column-anchor', [centeredImage]),
+      paragraph('second-column-tail'),
+      paragraph('next-page-anchor', [centeredImage]),
+    ];
+    const finalCalls = new Map<string, FinalCall>();
+    const measures = measureBlocksWithFloats(
+      blocks,
+      [300, 300, 140, 140, 140, 140],
+      bandAwareMeasure(
+        {
+          'single-column-intro': 20,
+          'first-column-fill': 80,
+          'second-column-anchor': 25,
+          'second-column-tail': 10,
+          'next-page-anchor': 65,
+        },
+        finalCalls
+      ),
+      initialGeometry,
+      { ...laterGeometry, columns }
+    );
+
+    expect(finalCalls.get('second-column-anchor')?.zones?.[0]).toMatchObject({
+      topY: 40,
+      bottomY: 65,
+    });
+    expect(finalCalls.get('next-page-anchor')?.zones?.[0]).toMatchObject({
+      topY: 60,
+      bottomY: 85,
+    });
+
+    const layout = layOutPages(blocks, measures, {
+      pageSize: { w: 400, h: 120 },
+      margins: { top: 10, right: 50, bottom: 10, left: 50 },
+      finalPageSize: { w: 600, h: 220 },
+      finalMargins: { top: 40, right: 80, bottom: 20, left: 80 },
+      columns,
+      bodyBreakType: 'continuous',
+    });
+    expect(layout.pages).toHaveLength(2);
+    expect(pageGeometryFromPage(layout.pages[0])).toEqual(initialGeometry);
+    expect(pageGeometryFromPage(layout.pages[1])).toEqual(laterGeometry);
+    expect(
+      layout.pages[0].fragments.find((fragment) => fragment.blockId === 'second-column-anchor')
+        ?.columnIndex
+    ).toBe(1);
+    expect(
+      layout.pages[1].fragments.find((fragment) => fragment.blockId === 'next-page-anchor')
+        ?.columnIndex
+    ).toBe(0);
+  });
+
   test('a later-section margin band starts at its anchor with later geometry', () => {
     const textBox: TextBoxBlock = {
       kind: 'textBox',

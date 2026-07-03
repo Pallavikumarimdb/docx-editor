@@ -17,7 +17,8 @@ import {
   collectSectionConfigs,
   isFloatingTextBoxBlock,
   isWrapNone,
-  type ContentNode,
+  type ColumnLayout,
+  type FlowBlock,
   type ImageRun,
   type ImageRunPosition,
   type Measure,
@@ -78,7 +79,15 @@ export type MeasureBlockFn = (
  *
  * @public
  */
-export type FloatPageGeometry = PageGeometry;
+export type FloatPageGeometry = PageGeometry & {
+  /**
+   * Columns in force for pages created with this geometry. Keeping this beside
+   * the page dimensions lets float measurement advance through the same
+   * physical-page regions as the composer instead of treating every full
+   * column as a new page.
+   */
+  columns?: ColumnLayout;
+};
 
 /**
  * Walk `nodes` and produce one `LayoutMetrics` per block. Before measuring, this
@@ -118,10 +127,12 @@ export function measureBlocksWithFloats(
   );
   let cumulativeY = 0;
   let activeZones: FloatingImageZone[] = [];
-  let startsNewScope = blocks.length > 0;
-  let startsNewPhysicalPage = blocks.length > 0;
   let currentPageGeometry = scopes.initialGeometry;
   let nextPageGeometry = scopes.initialGeometry;
+  let currentColumnIndex = 0;
+  let currentColumnCount = columnCountForGeometry(currentPageGeometry);
+  let columnRegionTop = 0;
+  let regionBottom = 0;
   const measures: Measure[] = [];
 
   const activateAnchoredZones = (
@@ -152,27 +163,98 @@ export function measureBlocksWithFloats(
     }
   };
 
-  const resetFlowScope = (): void => {
-    cumulativeY = 0;
+  const resetFlowScope = (top = 0): void => {
+    cumulativeY = top;
     activeZones = [];
   };
 
   const beginPhysicalScope = (): void => {
     resetFlowScope();
     currentPageGeometry = nextPageGeometry;
+    currentColumnIndex = 0;
+    currentColumnCount = columnCountForGeometry(currentPageGeometry);
+    columnRegionTop = 0;
+    regionBottom = 0;
+  };
+
+  const advanceFlowScope = (): void => {
+    regionBottom = Math.max(regionBottom, cumulativeY);
+    if (currentColumnIndex + 1 < currentColumnCount) {
+      currentColumnIndex++;
+      resetFlowScope(columnRegionTop);
+      return;
+    }
+    beginPhysicalScope();
+  };
+
+  const ensureRoomForPositiveFlow = (blockIndex: number): void => {
+    const baseHeight = measureFlowHeight(blocks[blockIndex], scopes.baseMeasures[blockIndex]);
+    let contentHeight = currentPageGeometry?.contentHeight ?? Number.POSITIVE_INFINITY;
+    while (
+      baseHeight > 0 &&
+      contentHeight > 0 &&
+      Number.isFinite(contentHeight) &&
+      cumulativeY >= contentHeight
+    ) {
+      advanceFlowScope();
+      contentHeight = currentPageGeometry?.contentHeight ?? Number.POSITIVE_INFINITY;
+    }
+  };
+
+  const consumeFlowHeight = (height: number): void => {
+    let remaining = height;
+    while (remaining > 0) {
+      const contentHeight = currentPageGeometry?.contentHeight ?? Number.POSITIVE_INFINITY;
+      if (!Number.isFinite(contentHeight)) {
+        cumulativeY += remaining;
+        return;
+      }
+      if (contentHeight <= 0) {
+        // Match the composer for malformed zero-height content boxes: place the
+        // flow anyway rather than advancing through an unbounded run of pages.
+        cumulativeY += remaining;
+        return;
+      }
+
+      const available = Math.max(0, contentHeight - cumulativeY);
+      if (remaining <= available) {
+        cumulativeY += remaining;
+        regionBottom = Math.max(regionBottom, cumulativeY);
+        return;
+      }
+
+      remaining -= available;
+      advanceFlowScope();
+    }
+  };
+
+  const applySectionTransition = (blockIndex: number, block: FlowBlock): void => {
+    if (block.kind !== 'sectionBreak') return;
+
+    nextPageGeometry = scopes.geometryAfterBreak.get(blockIndex);
+    if (block.type === 'continuous') {
+      // Composition re-columnises the remainder of this physical page at the
+      // current pen. Page dimensions stay unchanged until an actual page start.
+      const resumeY = currentColumnCount > 1 ? Math.max(regionBottom, cumulativeY) : cumulativeY;
+      currentColumnIndex = 0;
+      currentColumnCount = columnCountForGeometry(nextPageGeometry);
+      columnRegionTop = resumeY;
+      cumulativeY = resumeY;
+      regionBottom = resumeY;
+      return;
+    }
+
+    if (block.type === 'nextColumn') {
+      advanceFlowScope();
+      return;
+    }
+
+    beginPhysicalScope();
   };
 
   for (let blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
     const block = blocks[blockIndex];
-    if (startsNewScope) {
-      if (startsNewPhysicalPage) {
-        beginPhysicalScope();
-      } else {
-        resetFlowScope();
-      }
-      startsNewScope = false;
-      startsNewPhysicalPage = false;
-    }
+    ensureRoomForPositiveFlow(blockIndex);
 
     const blockWidth = blockWidthAt(blockIndex);
     activateAnchoredZones(block, blockIndex, blockWidth);
@@ -185,11 +267,11 @@ export function measureBlocksWithFloats(
     let height = measureFlowHeight(block, measure);
     let contentHeight = currentPageGeometry?.contentHeight ?? Number.POSITIVE_INFINITY;
 
-    // A splittable paragraph can begin beside a float and continue on the next
-    // physical page, where that float no longer exists. Keep the wrapped lines
-    // that fit this scope, then append a fresh unwrapped continuation. Feeding
-    // the whole wrapped measure to pagination would make its continuation reuse
-    // stale line breaks even after activeZones is cleared for the next page.
+    // A splittable paragraph can begin beside a float and continue in the next
+    // flow region (column or page), where that float no longer exists. Keep the
+    // wrapped lines that fit this scope, then append a fresh unwrapped
+    // continuation. Feeding the whole wrapped measure to pagination would make
+    // its continuation reuse stale line breaks after activeZones is cleared.
     if (
       block.kind === 'paragraph' &&
       measure.kind === 'paragraph' &&
@@ -217,7 +299,7 @@ export function measureBlocksWithFloats(
     }
 
     // A zone can increase an atomic/keep-lines block enough to move that whole
-    // block onto the next page. Re-evaluate only those blocks at the new scope
+    // block into the next flow region. Re-evaluate only those blocks at the new scope
     // origin. Splittable paragraphs keep their current-page lines in the zone
     // and continue without it after pagination cuts the measured line set.
     const remainingInScope = contentHeight - cumulativeY;
@@ -239,10 +321,10 @@ export function measureBlocksWithFloats(
       Number.isFinite(contentHeight) &&
       cumulativeY + height > contentHeight
     ) {
-      beginPhysicalScope();
+      advanceFlowScope();
       contentHeight = currentPageGeometry?.contentHeight ?? Number.POSITIVE_INFINITY;
       activateAnchoredZones(block, blockIndex, blockWidth);
-      activeZones = activeZones.filter((zone) => zone.bottomY > 0);
+      activeZones = activeZones.filter((zone) => zone.bottomY > cumulativeY);
       zones = activeZones.length > 0 ? activeZones : undefined;
       measure =
         zones == null
@@ -254,31 +336,22 @@ export function measureBlocksWithFloats(
 
     // Floating tables don't advance flow Y (their wrap zone already accounts
     // for vertical space). Every other measurable block advances the scope pen.
-    cumulativeY += height;
+    consumeFlowHeight(height);
 
-    if (block.kind === 'sectionBreak') {
-      nextPageGeometry = scopes.geometryAfterBreak.get(blockIndex);
-    }
-
-    const pageOverflowed = Number.isFinite(contentHeight) && cumulativeY >= contentHeight;
-    const sectionStartsNewScope = block.kind === 'sectionBreak' && block.type !== 'continuous';
-    if (
-      block.kind === 'pageBreak' ||
-      block.kind === 'columnBreak' ||
-      sectionStartsNewScope ||
-      pageOverflowed
-    ) {
-      startsNewScope = true;
-      startsNewPhysicalPage =
-        block.kind === 'pageBreak' ||
-        pageOverflowed ||
-        (block.kind === 'sectionBreak' &&
-          block.type !== 'continuous' &&
-          block.type !== 'nextColumn');
+    if (block.kind === 'pageBreak') {
+      beginPhysicalScope();
+    } else if (block.kind === 'columnBreak') {
+      advanceFlowScope();
+    } else {
+      applySectionTransition(blockIndex, block);
     }
   }
 
   return measures;
+}
+
+function columnCountForGeometry(geometry: FloatPageGeometry | undefined): number {
+  return Math.max(1, geometry?.columns?.count ?? 1);
 }
 
 function lineFlowHeight(line: MeasuredLine): number {
@@ -449,9 +522,10 @@ function buildFloatFlowScopes(
     sectionConfigFromGeometry(initialGeometry),
     sectionConfigFromGeometry(finalGeometry ?? initialGeometry)
   );
-  const sectionGeometries = sectionPlan.configs.map((config) =>
-    pageGeometryFromPage({ size: config.pageSize, margins: config.margins })
-  );
+  const sectionGeometries = sectionPlan.configs.map((config) => ({
+    ...pageGeometryFromPage({ size: config.pageSize, margins: config.margins }),
+    ...(config.columns ? { columns: config.columns } : {}),
+  }));
   const geometryAfterBreak = new Map<number, FloatPageGeometry | undefined>();
   for (let sectionIndex = 0; sectionIndex < sectionPlan.breakIndices.length; sectionIndex++) {
     geometryAfterBreak.set(
@@ -484,6 +558,7 @@ function sectionConfigFromGeometry(geometry: FloatPageGeometry) {
       bottom: geometry.marginBottom,
       left: geometry.marginLeft,
     },
+    columns: geometry.columns,
   };
 }
 

@@ -225,14 +225,20 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
   const measures = measureBlocks(
     blocks,
     blockWidths,
-    pageGeometryFromPage({
-      size: resolvedPageSize,
-      margins: resolvedMargins,
-    }),
-    pageGeometryFromPage({
-      size: resolvedFinalPageSize,
-      margins: resolvedFinalMargins,
-    })
+    {
+      ...pageGeometryFromPage({
+        size: resolvedPageSize,
+        margins: resolvedMargins,
+      }),
+      ...(resolvedColumns ? { columns: resolvedColumns } : {}),
+    },
+    {
+      ...pageGeometryFromPage({
+        size: resolvedFinalPageSize,
+        margins: resolvedFinalMargins,
+      }),
+      ...(resolvedFinalColumns ? { columns: resolvedFinalColumns } : {}),
+    }
   );
 
   // Step 2.5: Footnote references.
