@@ -438,10 +438,21 @@ export function renderHeaderFooterContent(
         { ...context, positioning: 'absolute' },
         { document: doc }
       );
-      // Vertical position stays on the HF flow cursor (the anchor's positionV
-      // is not yet honored for HF text boxes); only the horizontal anchor is
-      // resolved here, which is what the reported page-centered banner needs.
-      fragEl.style.top = `${cursorY}px`;
+      // Floating text boxes use the same positionV resolver as floating images.
+      // Inline/block boxes remain on the HF flow cursor because they reserve
+      // vertical space in the mini-flow below.
+      const textBoxTop =
+        block.displayMode === 'float'
+          ? resolveHeaderFooterFloatTop(
+              {
+                height: measure.height,
+                paragraphY: cursorY,
+                position: block.position ?? {},
+              },
+              layout
+            )
+          : cursorY;
+      fragEl.style.top = `${textBoxTop}px`;
       // Honor the anchor's horizontal position (e.g. centered relative to the
       // page) instead of pinning the box to the left.
       fragEl.style.left = resolveHeaderFooterFloatLeft(
