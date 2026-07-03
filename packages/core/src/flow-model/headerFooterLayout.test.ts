@@ -1,7 +1,13 @@
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { EditorView } from 'prosemirror-view';
-import { computeHfCaretRectFromView, invalidateHfDomCache } from './headerFooterLayout';
+import type { ParagraphBlock, TextBoxBlock } from '../pagination-model/types';
+import {
+  calculateHeaderFooterVisualBounds,
+  computeHfCaretRectFromView,
+  contributesToHeaderFooterFlowHeight,
+  invalidateHfDomCache,
+} from './headerFooterLayout';
 
 beforeAll(() => GlobalRegistrator.register());
 afterAll(() => GlobalRegistrator.unregister());
@@ -35,5 +41,45 @@ describe('header/footer overlay story scoping', () => {
       left: 201,
       height: 20,
     });
+  });
+});
+
+describe('header/footer positioned text-box layout', () => {
+  test('keeps a page-positioned topAndBottom box out of following header flow', () => {
+    const textBox: TextBoxBlock = {
+      kind: 'textBox',
+      id: 'header-top-and-bottom',
+      width: 80,
+      height: 20,
+      content: [],
+      displayMode: 'block',
+      wrapType: 'topAndBottom',
+      position: {
+        vertical: { relativeTo: 'page', posOffset: 80 * 9_525 },
+      },
+    };
+    const followingParagraph: ParagraphBlock = {
+      kind: 'paragraph',
+      id: 'following-header-content',
+      runs: [],
+    };
+
+    expect(contributesToHeaderFooterFlowHeight(textBox)).toBe(false);
+    expect(contributesToHeaderFooterFlowHeight(followingParagraph)).toBe(true);
+    expect(
+      calculateHeaderFooterVisualBounds(
+        [textBox, followingParagraph],
+        [
+          { kind: 'textBox', width: 80, height: 20, innerMeasures: [] },
+          { kind: 'paragraph', lines: [], totalHeight: 70 },
+        ],
+        90,
+        {
+          section: 'header',
+          pageSize: { w: 400, h: 200 },
+          margins: { top: 40, right: 50, bottom: 40, left: 50, header: 20 },
+        }
+      )
+    ).toEqual({ visualTop: 0, visualBottom: 80 });
   });
 });

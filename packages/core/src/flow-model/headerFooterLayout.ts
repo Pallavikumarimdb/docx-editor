@@ -28,6 +28,7 @@ import type {
 } from '../pagination-model/types';
 import type { HeaderFooter, StyleDefinitions, Theme } from '../types/document';
 import type { HeaderFooterContent } from '../painter-model/paintPage';
+import { isFloatingTextBoxBlock } from '../pagination-model/textBoxFlow';
 import { headerFooterToProseDoc } from '../prosemirror/conversion/toProseDoc';
 import { emuToPixels } from '../utils/units';
 import { buildBoxTree } from './buildBoxTree';
@@ -176,11 +177,20 @@ export function resolveHeaderFooterVisualTop(
   flowHeight: number,
   metrics: HeaderFooterMetrics
 ): number {
+  return resolveHeaderFooterPositionedTop(run, paragraphY, flowHeight, metrics);
+}
+
+function resolveHeaderFooterPositionedTop(
+  object: Pick<ImageRun, 'height' | 'position'>,
+  paragraphY: number,
+  flowHeight: number,
+  metrics: HeaderFooterMetrics
+): number {
   const flowTop =
     metrics.section === 'header'
       ? (metrics.margins.header ?? 48)
       : metrics.pageSize.h - (metrics.margins.footer ?? 48) - flowHeight;
-  const vertical = run.position?.vertical;
+  const vertical = object.position?.vertical;
 
   if (!vertical) {
     return paragraphY;
@@ -192,8 +202,8 @@ export function resolveHeaderFooterVisualTop(
   if (vertical.relativeTo === 'page') {
     if (offsetPx !== undefined) return offsetPx - flowTop;
     if (align === 'top') return -flowTop;
-    if (align === 'bottom') return metrics.pageSize.h - run.height - flowTop;
-    if (align === 'center') return (metrics.pageSize.h - run.height) / 2 - flowTop;
+    if (align === 'bottom') return metrics.pageSize.h - object.height - flowTop;
+    if (align === 'center') return (metrics.pageSize.h - object.height) / 2 - flowTop;
   }
 
   if (vertical.relativeTo === 'margin') {
@@ -201,8 +211,8 @@ export function resolveHeaderFooterVisualTop(
     const marginHeight = metrics.pageSize.h - metrics.margins.top - metrics.margins.bottom;
     if (offsetPx !== undefined) return marginTop + offsetPx - flowTop;
     if (align === 'top') return marginTop - flowTop;
-    if (align === 'bottom') return marginTop + marginHeight - run.height - flowTop;
-    if (align === 'center') return marginTop + (marginHeight - run.height) / 2 - flowTop;
+    if (align === 'bottom') return marginTop + marginHeight - object.height - flowTop;
+    if (align === 'center') return marginTop + (marginHeight - object.height) / 2 - flowTop;
   }
 
   if (offsetPx !== undefined) {
@@ -236,10 +246,10 @@ export function contributesToHeaderFooterFlowHeight(block: ContentNode): boolean
       // Inline images count; page/paragraph-anchored floats do not.
       return !block.anchor?.isAnchored;
     case 'textBox':
-      // Only genuinely inline text boxes count. 'float' (square/tight/through/
-      // behind/inFront) and 'block' (topAndBottom) are positioned out of the
-      // body's flow and must not push the body margin.
-      return block.displayMode === undefined || block.displayMode === 'inline';
+      // Only genuinely inline text boxes count. Every anchored wrap mode,
+      // including topAndBottom's `displayMode: block`, is positioned out of
+      // the story flow and must not push the body margin.
+      return !isFloatingTextBoxBlock(block);
     default:
       return false; // sectionBreak / pageBreak / columnBreak
   }
@@ -299,16 +309,24 @@ export function calculateHeaderFooterVisualBounds(
       visualBottom = Math.max(visualBottom, blockBottomY);
       cursorY = blockBottomY;
     } else if (block.kind === 'textBox' && measure.kind === 'textBox') {
-      const blockBottomY = cursorY + measure.height;
-      visualTop = Math.min(visualTop, cursorY);
+      const positioned = isFloatingTextBoxBlock(block);
+      const blockTopY = positioned
+        ? resolveHeaderFooterPositionedTop(
+            { height: measure.height, position: block.position },
+            cursorY,
+            flowHeight,
+            metrics
+          )
+        : cursorY;
+      const blockBottomY = blockTopY + measure.height;
+      visualTop = Math.min(visualTop, blockTopY);
       visualBottom = Math.max(visualBottom, blockBottomY);
-      // A floating text box is positioned, not in-flow: it extends the visual
-      // bounds (so the band/container stays tall enough to show it) but does
-      // NOT advance the cursor, mirroring the painter (renderHeaderFooterContent)
-      // and floating tables. Otherwise the header container outgrows its actual
-      // content and the hover highlight reads taller than the header (#705/#729).
-      if (block.displayMode !== 'float') {
-        cursorY = blockBottomY;
+      // Anchored text boxes extend visual bounds at their resolved page/margin
+      // position but never advance the story cursor. This includes
+      // topAndBottom boxes, whose `displayMode` is `block` even though the
+      // drawing remains positioned out of flow.
+      if (!positioned) {
+        cursorY += measure.height;
       }
     }
   }

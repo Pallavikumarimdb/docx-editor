@@ -236,4 +236,57 @@ describe('anchored object paint parity', () => {
     expect(paintedTextBox?.style.left).toBe('410px');
     expect(paintedTextBox?.style.top).toBe('260px');
   });
+
+  test('positions topAndBottom header text boxes without advancing following content', () => {
+    const textBox: TextBoxBlock = {
+      kind: 'textBox',
+      id: 'header-top-and-bottom',
+      width: 80,
+      height: 20,
+      content: [],
+      displayMode: 'block',
+      wrapType: 'topAndBottom',
+      position: {
+        horizontal: { relativeTo: 'page', alignment: 'center' },
+        vertical: { relativeTo: 'page', posOffset: 80 * 9_525 },
+      },
+    };
+    const followingParagraph: ParagraphBlock = {
+      kind: 'paragraph',
+      id: 'following-header-content',
+      runs: [],
+    };
+
+    const painted = renderHeaderFooterContent(
+      {
+        blocks: [textBox, followingParagraph],
+        measures: [
+          { kind: 'textBox', width: 80, height: 20, innerMeasures: [] },
+          { kind: 'paragraph', lines: [], totalHeight: 16 },
+        ],
+        height: 36,
+        flowHeight: 16,
+      },
+      { pageNumber: 1, totalPages: 1, section: 'header', contentWidth: 300 },
+      { document },
+      {
+        flowTop: 20,
+        flowLeft: 50,
+        contentWidth: 300,
+        pageWidth: 400,
+        pageHeight: 200,
+        margins: { top: 40, right: 50, bottom: 40, left: 50 },
+      }
+    );
+
+    const paintedTextBox = painted.querySelector<HTMLElement>(
+      '[data-block-id="header-top-and-bottom"]'
+    );
+    const followingContent = painted.querySelector<HTMLElement>(
+      '[data-block-id="following-header-content"]'
+    );
+    expect(paintedTextBox?.style.top).toBe('60px');
+    expect(paintedTextBox?.style.left).toBe('110px');
+    expect(followingContent?.style.top).toBe('0px');
+  });
 });

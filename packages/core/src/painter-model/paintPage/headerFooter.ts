@@ -19,7 +19,8 @@ import type {
   ImageFragment,
   TextBoxFragment,
 } from '../../pagination-model/types';
-import { assertExhaustiveContentNode } from '../../pagination-model/types';
+import { assertExhaustiveFlowBlock } from '../../pagination-model/types';
+import { isFloatingTextBoxBlock } from '../../pagination-model/textBoxFlow';
 import { paintParagraphFragment } from '../renderParagraph';
 import { paintTableFragment } from '../renderTable';
 import { paintImageFragment } from '../renderImage';
@@ -464,20 +465,21 @@ export function renderHeaderFooterContent(
         { ...context, positioning: 'absolute' },
         { document: doc }
       );
-      // Floating text boxes use the same positionV resolver as floating images.
-      // Inline/block boxes remain on the HF flow cursor because they reserve
-      // vertical space in the mini-flow below.
-      const textBoxTop =
-        block.displayMode === 'float'
-          ? resolveHeaderFooterFloatTop(
-              {
-                height: measure.height,
-                paragraphY: cursorY,
-                position: block.position ?? {},
-              },
-              layout
-            )
-          : cursorY;
+      // Every non-inline text box uses the same positionV resolver as floating
+      // images. This includes topAndBottom boxes (`displayMode: block`): the
+      // wrap mode affects surrounding body text, but the drawing itself remains
+      // anchored and positioned out of the header/footer story flow.
+      const positioned = isFloatingTextBoxBlock(block);
+      const textBoxTop = positioned
+        ? resolveHeaderFooterFloatTop(
+            {
+              height: measure.height,
+              paragraphY: cursorY,
+              position: block.position ?? {},
+            },
+            layout
+          )
+        : cursorY;
       fragEl.style.top = `${textBoxTop}px`;
       // Honor the anchor's horizontal position (e.g. centered relative to the
       // page) instead of pinning the box to the left.
@@ -487,17 +489,11 @@ export function renderHeaderFooterContent(
         layout
       );
       containerEl.appendChild(fragEl);
-      // Floating text boxes (square/tight/through/behind/inFront wrap) are
-      // positioned and do NOT advance the flow — surrounding header content
-      // flows as if the box weren't there, mirroring floating tables above and
-      // matching Word: a centered banner sits beside the left/right header text
-      // instead of pushing it down. This also keeps a tall page-anchored
-      // letterhead from shoving the in-flow content past the header band
-      // (#705). Advancing for a float made the in-flow content overflow the
-      // band (which excludes floats from `flowHeight`) and overlap the body.
-      // Inline and topAndBottom boxes still stack on the cursor (they reserve
-      // in-flow vertical space).
-      if (block.displayMode !== 'float') {
+      // Positioned text boxes (square/tight/through/behind/inFront and
+      // topAndBottom) do NOT advance the flow — following HF content starts at
+      // the same story cursor. This mirrors floating tables and keeps the
+      // painter aligned with `flowHeight`, which excludes these boxes.
+      if (!positioned) {
         cursorY += measure.height;
       }
     } else if (
