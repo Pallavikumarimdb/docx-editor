@@ -5,6 +5,7 @@ import type {
   Page,
   ParagraphBlock,
   ParagraphFragment,
+  TableBlock,
   TextBoxBlock,
 } from '../pagination-model/types';
 import { calculateHeaderFooterVisualBounds } from '../flow-model/headerFooterLayout';
@@ -288,6 +289,63 @@ describe('anchored object paint parity', () => {
     );
     expect(paintedTextBox?.style.top).toBe('60px');
     expect(paintedTextBox?.style.left).toBe('110px');
+    expect(followingContent?.style.top).toBe('0px');
+  });
+
+  test('positions a floating header table without advancing following content', () => {
+    const table: TableBlock = {
+      kind: 'table',
+      id: 'floating-header-table',
+      rows: [],
+      floating: {
+        horzAnchor: 'page',
+        vertAnchor: 'page',
+        tblpX: 50,
+        tblpY: 80,
+      },
+    };
+    const followingParagraph: ParagraphBlock = {
+      kind: 'paragraph',
+      id: 'following-floating-table',
+      runs: [],
+    };
+
+    const painted = renderHeaderFooterContent(
+      {
+        blocks: [table, followingParagraph],
+        measures: [
+          {
+            kind: 'table',
+            rows: [],
+            columnWidths: [100],
+            totalWidth: 100,
+            totalHeight: 96,
+          },
+          { kind: 'paragraph', lines: [], totalHeight: 16 },
+        ],
+        height: 112,
+        flowHeight: 16,
+      },
+      { pageNumber: 1, totalPages: 1, section: 'header', contentWidth: 300 },
+      { document },
+      {
+        flowTop: 20,
+        flowLeft: 50,
+        contentWidth: 300,
+        pageWidth: 400,
+        pageHeight: 300,
+        margins: { top: 40, right: 50, bottom: 40, left: 50 },
+      }
+    );
+
+    const paintedTable = painted.querySelector<HTMLElement>(
+      '[data-block-id="floating-header-table"]'
+    );
+    const followingContent = painted.querySelector<HTMLElement>(
+      '[data-block-id="following-floating-table"]'
+    );
+    expect(paintedTable?.style.top).toBe('60px');
+    expect(paintedTable?.style.left).toBe('0px');
     expect(followingContent?.style.top).toBe('0px');
   });
 

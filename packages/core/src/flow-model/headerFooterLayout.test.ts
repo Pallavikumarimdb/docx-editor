@@ -1,11 +1,14 @@
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { EditorView } from 'prosemirror-view';
-import type { ParagraphBlock, TextBoxBlock } from '../pagination-model/types';
+import type { FlowBlock, Measure, ParagraphBlock, TextBoxBlock } from '../pagination-model/types';
+import { schema } from '../prosemirror/schema';
+import { extendMarginsForHeaderFooter } from './headerFooterMargins';
 import {
   calculateHeaderFooterVisualBounds,
   computeHfCaretRectFromView,
   contributesToHeaderFooterFlowHeight,
+  convertHeaderFooterPmDocToContent,
   invalidateHfDomCache,
 } from './headerFooterLayout';
 
@@ -168,5 +171,103 @@ describe('header/footer positioned text-box layout', () => {
         }
       )
     ).toEqual({ visualTop: 0, visualBottom: 46 });
+  });
+});
+
+describe('header/footer floating-table layout', () => {
+  test('keeps a floating table out of header and footer body-margin flow', () => {
+    const cellParagraph = schema.nodes.paragraph.create();
+    const cell = schema.nodes.tableCell.create({}, cellParagraph);
+    const row = schema.nodes.tableRow.create({}, cell);
+    const table = schema.nodes.table.create(
+      {
+        columnWidths: [1_500],
+        floating: {
+          horzAnchor: 'page',
+          vertAnchor: 'page',
+          tblpX: 0,
+          tblpY: 1_200,
+        },
+      },
+      row
+    );
+    const followingParagraph = schema.nodes.paragraph.create(
+      {},
+      schema.text('following header/footer paragraph')
+    );
+    const pmDoc = schema.nodes.doc.create({}, [table, followingParagraph]);
+    const measureBlocks = (blocks: FlowBlock[]): Measure[] =>
+      blocks.map((block) => {
+        if (block.kind === 'table') {
+          return {
+            kind: 'table',
+            rows: [],
+            columnWidths: [100],
+            totalWidth: 100,
+            totalHeight: 96,
+          };
+        }
+        if (block.kind === 'paragraph') {
+          return { kind: 'paragraph', lines: [], totalHeight: 16 };
+        }
+        throw new Error(`Unexpected header/footer block: ${block.kind}`);
+      });
+    const pageSize = { w: 400, h: 300 };
+    const margins = {
+      top: 40,
+      right: 50,
+      bottom: 40,
+      left: 50,
+      header: 20,
+      footer: 20,
+    };
+    const header = convertHeaderFooterPmDocToContent(
+      pmDoc,
+      300,
+      {
+        section: 'header',
+        pageSize,
+        margins,
+      },
+      {
+        measureBlocks,
+      }
+    );
+    const footer = convertHeaderFooterPmDocToContent(
+      pmDoc,
+      300,
+      {
+        section: 'footer',
+        pageSize,
+        margins,
+      },
+      {
+        measureBlocks,
+      }
+    );
+
+    expect(header?.blocks[0]?.kind).toBe('table');
+    expect(header?.blocks[0] && contributesToHeaderFooterFlowHeight(header.blocks[0])).toBe(false);
+    expect(header?.flowHeight).toBe(16);
+    expect(footer?.flowHeight).toBe(16);
+    // The page-positioned table contributes to visual bounds at its authored
+    // Y, while the following paragraph remains at the zero story cursor.
+    expect({ visualTop: header?.visualTop, visualBottom: header?.visualBottom }).toEqual({
+      visualTop: 0,
+      visualBottom: 156,
+    });
+    expect({ visualTop: footer?.visualTop, visualBottom: footer?.visualBottom }).toEqual({
+      visualTop: -184,
+      visualBottom: 16,
+    });
+
+    const extended = extendMarginsForHeaderFooter({
+      pageSize,
+      margins,
+      finalMargins: margins,
+      headers: [header],
+      footers: [footer],
+    });
+    expect(extended).toEqual({ margins, finalMargins: margins });
   });
 });

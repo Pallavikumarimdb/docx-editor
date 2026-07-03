@@ -189,10 +189,7 @@ function resolveHeaderFooterPositionedTop(
   flowHeight: number,
   metrics: HeaderFooterMetrics
 ): number {
-  const flowTop =
-    metrics.section === 'header'
-      ? (metrics.margins.header ?? 48)
-      : metrics.pageSize.h - (metrics.margins.footer ?? 48) - flowHeight;
+  const flowTop = resolveHeaderFooterFlowTop(flowHeight, metrics);
   const vertical = object.position?.vertical;
   const geometry = pageGeometryFromPage({
     size: metrics.pageSize,
@@ -220,6 +217,32 @@ function resolveHeaderFooterPositionedTop(
   return metrics.margins.top + resolvedContentTop - flowTop;
 }
 
+function resolveHeaderFooterFlowTop(flowHeight: number, metrics: HeaderFooterMetrics): number {
+  return metrics.section === 'header'
+    ? (metrics.margins.header ?? 48)
+    : metrics.pageSize.h - (metrics.margins.footer ?? 48) - flowHeight;
+}
+
+/**
+ * Resolve a floating table's visual top relative to the header/footer flow
+ * origin. Keep this coordinate transform aligned with
+ * `resolveHeaderFooterFloatingTablePosition`, which the painter uses.
+ */
+function resolveHeaderFooterFloatingTableTop(
+  floating: NonNullable<TableBlock['floating']>,
+  flowHeight: number,
+  metrics: HeaderFooterMetrics
+): number {
+  const flowTop = resolveHeaderFooterFlowTop(flowHeight, metrics);
+  let top = floating.tblpY ?? 0;
+  if (floating.vertAnchor === 'page') {
+    top -= flowTop;
+  } else if (floating.vertAnchor === 'margin') {
+    top += metrics.margins.top - flowTop;
+  }
+  return top;
+}
+
 /**
  * Whether a header/footer block participates in the in-flow band height that
  * pushes the body margin.
@@ -238,8 +261,11 @@ function resolveHeaderFooterPositionedTop(
 export function contributesToHeaderFooterFlowHeight(block: ContentNode): boolean {
   switch (block.kind) {
     case 'paragraph':
-    case 'table':
       return true;
+    case 'table':
+      // `<w:tblpPr>` tables are page/margin/text-positioned by the painter
+      // and do not advance its header/footer story cursor.
+      return !block.floating;
     case 'image':
       // Inline images count; page/paragraph-anchored floats do not.
       return !block.anchor?.isAnchored;
@@ -296,10 +322,19 @@ export function calculateHeaderFooterVisualBounds(
 
       cursorY = paragraphBottomY;
     } else if (block.kind === 'table' && measure.kind === 'table') {
-      const blockBottomY = cursorY + measure.totalHeight;
-      visualTop = Math.min(visualTop, cursorY);
+      const positioned = Boolean(block.floating);
+      const blockTopY = block.floating
+        ? resolveHeaderFooterFloatingTableTop(block.floating, flowHeight, metrics)
+        : cursorY;
+      const blockBottomY = blockTopY + measure.totalHeight;
+      visualTop = Math.min(visualTop, blockTopY);
       visualBottom = Math.max(visualBottom, blockBottomY);
-      cursorY = blockBottomY;
+      // Floating tables paint at their resolved anchor without advancing the
+      // story cursor, so following paragraphs start where the table's anchor
+      // paragraph would have started.
+      if (!positioned) {
+        cursorY = blockBottomY;
+      }
     } else if (block.kind === 'image' && measure.kind === 'image') {
       const blockBottomY = cursorY + measure.height;
       visualTop = Math.min(visualTop, cursorY);
