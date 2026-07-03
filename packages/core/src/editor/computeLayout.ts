@@ -231,7 +231,7 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
   );
 
   // Step 2.5: Footnote references.
-  const footnoteRefs = collectFootnoteRefs(nodes);
+  const footnoteRefs = collectFootnoteRefs(blocks, measures);
   const hasFootnotes = footnoteRefs.length > 0 && !!document?.package?.footnotes;
 
   // Step 2.75: Header/footer content is resolved per physical page. Conversion

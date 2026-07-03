@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   buildFootnoteContentMap,
+  collectFootnoteRefs,
   mapFootnotesToPages,
   stabilizeFootnoteLayout,
   type FootnoteRefLocation,
@@ -369,6 +370,101 @@ test('measures each footnote at its reference section column width', () => {
   );
 
   expect(measuredWidths).toEqual([180, 78]);
+});
+
+test('maps a final-line table reference to its clipped row fragment', () => {
+  const cellParagraph: ParagraphBlock = {
+    kind: 'paragraph',
+    id: 'split-cell-paragraph',
+    docFrom: 10,
+    docTo: 15,
+    runs: Array.from({ length: 5 }, (_, runIndex) => ({
+      kind: 'text' as const,
+      text: 'x',
+      docFrom: 10 + runIndex,
+      docTo: 11 + runIndex,
+      ...(runIndex === 4 ? { footnoteRefId: 7 } : {}),
+    })),
+  };
+  const cellParagraphMeasure: ParagraphMetrics = {
+    kind: 'paragraph',
+    lines: Array.from({ length: 5 }, (_, runIndex) => ({
+      ...line(40),
+      fromRun: runIndex,
+      toRun: runIndex,
+    })),
+    totalHeight: 200,
+  };
+  const table: TableBlock = {
+    kind: 'table',
+    id: 'split-row-table',
+    docFrom: 1,
+    docTo: 20,
+    rows: [{ id: 'split-row', cells: [{ id: 'split-cell', blocks: [cellParagraph] }] }],
+  };
+  const tableMeasure: TableMeasure = {
+    kind: 'table',
+    rows: [
+      {
+        height: 200,
+        cells: [{ blocks: [cellParagraphMeasure], width: 180, height: 200 }],
+      },
+    ],
+    columnWidths: [180],
+    totalWidth: 180,
+    totalHeight: 200,
+  };
+  const initialLayout = layOutPages([table], [tableMeasure], layoutOpts);
+  const refs = collectFootnoteRefs([table], [tableMeasure]);
+
+  expect(
+    initialLayout.pages.map((page) =>
+      page.fragments.map((fragment) =>
+        fragment.kind === 'table'
+          ? {
+              fromRow: fragment.fromRow,
+              toRow: fragment.toRow,
+              topClip: fragment.topClip,
+              bottomClip: fragment.bottomClip,
+            }
+          : fragment
+      )
+    )
+  ).toEqual([
+    [{ fromRow: 0, toRow: 1, topClip: undefined, bottomClip: 80 }],
+    [{ fromRow: 0, toRow: 1, topClip: 120, bottomClip: undefined }],
+  ]);
+  expect(refs).toEqual([
+    expect.objectContaining({
+      footnoteId: 7,
+      tableBlockId: 'split-row-table',
+      rowIndex: 0,
+      rowOffset: 180,
+      rowHeight: 200,
+    }),
+  ]);
+  expect(mapFootnotesToPages(initialLayout.pages, refs)).toEqual(new Map([[2, [7]]]));
+
+  const footnoteContent: FootnoteContent = {
+    id: 7,
+    displayNumber: 1,
+    blocks: [paragraph('footnote-7', 100)],
+    measures: [paragraphMeasure(1, 20)],
+    height: 20,
+  };
+  const stabilized = stabilizeFootnoteLayout({
+    blocks: [table],
+    measures: [tableMeasure],
+    layoutOpts,
+    footnoteRefs: refs,
+    footnoteContentMap: new Map([[7, footnoteContent]]),
+    initialLayout,
+  });
+
+  expect(stabilized.converged).toBe(true);
+  expect(stabilized.pageFootnoteMap).toEqual(new Map([[2, [7]]]));
+  expect(stabilized.layout.pages[0].footnoteFragments).toBeUndefined();
+  expect(stabilized.layout.pages[1].footnoteFragments?.[0]?.footnoteId).toBe(7);
 });
 
 test('footnote page lookup indexes pages once for many references', () => {

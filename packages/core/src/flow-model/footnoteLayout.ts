@@ -24,6 +24,7 @@ import { footnoteToProseDoc } from '../prosemirror/conversion/toProseDoc';
 import { buildBoxTree } from './buildBoxTree';
 import { getFootnoteText } from '../docx/footnoteParser';
 import { takeFootnoteSlice, type FootnoteSliceCursor } from './footnoteSlices';
+import type { FootnoteRefLocation } from './footnoteReferenceLayout';
 import {
   addDeferredStartReservationFloors,
   footnotePlansEqual,
@@ -33,6 +34,7 @@ import {
   type FootnotePaginationPlan,
 } from './footnotePlan';
 
+export { collectFootnoteRefs, type FootnoteRefLocation } from './footnoteReferenceLayout';
 export { footnoteReservedHeightsEqual };
 
 /** Separator line height + vertical padding in pixels. */
@@ -66,89 +68,15 @@ export const FOOTNOTE_REFLOW_LIMIT = 6;
 const FOOTNOTE_FONT_SIZE_PT = 8;
 
 // ============================================================================
-// 1. Scan FlowBlocks for footnote references
-// ============================================================================
-
-/**
- * Where a footnote reference lives, as found by {@link collectFootnoteRefs}.
- *
- * `pmPos` alone is enough to attribute a reference to a page for ordinary
- * (paragraph) content, whose fragments carry a per-page pm sub-range. A table
- * is different: it splits across pages by ROW, but every `TableFragment` keeps
- * the whole table's `docFrom`/`docTo` (those drive selection mapping and must
- * not be narrowed). So for a reference authored inside a table cell we also
- * record the OUTERMOST table's id and the index of the row that contains it,
- * letting {@link mapFootnotesToPages} attribute the reference to the page that
- * actually laid out that row.
- */
-export type FootnoteRefLocation = {
-  footnoteId: number;
-  pmPos: number;
-  /** Id of the outermost enclosing table block, when the ref is in a table cell. */
-  tableNodeId?: NodeId;
-  /** Index (into the outermost table's `rows`) of the row holding the ref. */
-  rowIndex?: number;
-};
-
-/**
- * Scan FlowBlocks for runs with footnoteRefId set.
- * Returns a list of {@link FootnoteRefLocation} in document order.
- *
- * Recurses into container nodes (table cells, text boxes) so footnote
- * references authored anywhere in the body reach the page-reservation
- * pass. Without this, a `footnoteRefId` nested inside a table cell never
- * gets mapped to a page and the per-page `.layout-footnote-area` silently
- * drops that entry even though the body still renders the in-line ref
- * marker.
- *
- * For refs inside a table, the OUTERMOST table's id and row index are
- * recorded (a nested table keeps the outer context, since the outer row is
- * what the pageComposer splits into per-page fragments).
- */
-export function collectFootnoteRefs(nodes: ContentNode[]): FootnoteRefLocation[] {
-  const refs: FootnoteRefLocation[] = [];
-
-  const walk = (
-    input: ContentNode[],
-    tableCtx?: { tableNodeId: NodeId; rowIndex: number }
-  ): void => {
-    for (const block of input) {
-      if (block.kind === 'paragraph') {
-        for (const run of block.runs) {
-          if (run.kind === 'text' && run.footnoteRefId != null) {
-            refs.push({
-              footnoteId: run.footnoteRefId,
-              pmPos: run.docFrom ?? 0,
-              ...(tableCtx ?? {}),
-            });
-          }
-        }
-      } else if (block.kind === 'table') {
-        block.rows.forEach((row, rowIndex) => {
-          for (const cell of row.cells) {
-            // Keep the outermost table context for nested tables: the outer
-            // row is the unit the pageComposer places on a page.
-            walk(cell.nodes, tableCtx ?? { tableNodeId: block.id, rowIndex });
-          }
-        });
-      } else if (block.kind === 'textBox') {
-        walk(block.content, tableCtx);
-      }
-    }
-  };
-
-  walk(nodes);
-
-  return refs;
-}
-
-// ============================================================================
 // 2. Map footnote references to pages
 // ============================================================================
 
 interface FootnotePageIndex {
   ranges: Array<{ from: number; to: number; pageNumber: number }>;
-  tableRows: Map<string, Array<{ fromRow: number; toRow: number; pageNumber: number }>>;
+  tableRows: Map<
+    string,
+    Map<number, Array<{ topClip: number; bottomClip: number; pageNumber: number }>>
+  >;
 }
 
 /**
@@ -158,21 +86,54 @@ interface FootnotePageIndex {
  * indexed per table. Lookup is therefore O(log fragments) instead of scanning
  * every page and every fragment for every reference on every stabilization pass.
  */
-function buildFootnotePageIndex(pages: Page[]): FootnotePageIndex {
+function buildFootnotePageIndex(
+  pages: Page[],
+  footnoteRefs: FootnoteRefLocation[]
+): FootnotePageIndex {
   const ranges: FootnotePageIndex['ranges'] = [];
   const tableRows: FootnotePageIndex['tableRows'] = new Map();
+  const referencedRows = new Map<string, number[]>();
+
+  for (const ref of footnoteRefs) {
+    if (ref.tableBlockId == null || ref.rowIndex == null) continue;
+    const key = String(ref.tableBlockId);
+    const rows = referencedRows.get(key) ?? [];
+    rows.push(ref.rowIndex);
+    referencedRows.set(key, rows);
+  }
+  for (const [key, rows] of referencedRows) {
+    referencedRows.set(
+      key,
+      Array.from(new Set(rows)).sort((a, b) => a - b)
+    );
+  }
 
   for (const page of pages) {
     for (const fragment of page.fragments) {
       if (fragment.kind === 'table') {
         const key = String(fragment.blockId);
-        const slices = tableRows.get(key) ?? [];
-        slices.push({
-          fromRow: fragment.fromRow,
-          toRow: fragment.toRow,
-          pageNumber: page.number,
-        });
-        tableRows.set(key, slices);
+        const rows = referencedRows.get(key);
+        if (!rows) continue;
+        let low = 0;
+        let high = rows.length;
+        while (low < high) {
+          const mid = (low + high) >>> 1;
+          if (rows[mid] < fragment.fromRow) low = mid + 1;
+          else high = mid;
+        }
+        let rowCursor = low;
+        while (rowCursor < rows.length && rows[rowCursor] < fragment.toRow) {
+          const rowIndex = rows[rowCursor++];
+          const slicesByRow = tableRows.get(key) ?? new Map();
+          const slices = slicesByRow.get(rowIndex) ?? [];
+          slices.push({
+            topClip: rowIndex === fragment.fromRow ? (fragment.topClip ?? 0) : 0,
+            bottomClip: rowIndex === fragment.toRow - 1 ? (fragment.bottomClip ?? 0) : 0,
+            pageNumber: page.number,
+          });
+          slicesByRow.set(rowIndex, slices);
+          tableRows.set(key, slicesByRow);
+        }
         continue;
       }
 
@@ -186,8 +147,10 @@ function buildFootnotePageIndex(pages: Page[]): FootnotePageIndex {
   }
 
   ranges.sort((a, b) => a.from - b.from || a.to - b.to);
-  for (const slices of tableRows.values()) {
-    slices.sort((a, b) => a.fromRow - b.fromRow);
+  for (const slicesByRow of tableRows.values()) {
+    for (const slices of slicesByRow.values()) {
+      slices.sort((a, b) => a.topClip - b.topClip || a.pageNumber - b.pageNumber);
+    }
   }
   return { ranges, tableRows };
 }
@@ -214,21 +177,28 @@ function pageForPmPos(index: FootnotePageIndex, pmPos: number): number | undefin
 function pageForTableRow(
   index: FootnotePageIndex,
   tableBlockId: BlockId,
-  rowIndex: number
+  rowIndex: number,
+  rowOffset?: number,
+  rowHeight?: number
 ): number | undefined {
-  const slices = index.tableRows.get(String(tableBlockId));
-  if (!slices) return undefined;
+  const slices = index.tableRows.get(String(tableBlockId))?.get(rowIndex);
+  if (!slices?.length) return undefined;
+  if (rowOffset == null || rowHeight == null) return slices[0].pageNumber;
 
   let low = 0;
   let high = slices.length - 1;
+  let candidate = 0;
   while (low <= high) {
     const mid = (low + high) >>> 1;
-    const slice = slices[mid];
-    if (rowIndex < slice.fromRow) high = mid - 1;
-    else if (rowIndex >= slice.toRow) low = mid + 1;
-    else return slice.pageNumber;
+    if (slices[mid].topClip <= rowOffset) {
+      candidate = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
   }
-  return undefined;
+  const slice = slices[candidate];
+  return rowOffset < rowHeight - slice.bottomClip ? slice.pageNumber : undefined;
 }
 
 /**
@@ -243,7 +213,7 @@ export function mapFootnotesToPages(
   const pageFootnotes = new Map<number, number[]>();
 
   if (footnoteRefs.length === 0) return pageFootnotes;
-  const index = buildFootnotePageIndex(pages);
+  const index = buildFootnotePageIndex(pages, footnoteRefs);
 
   const assign = (pageNumber: number, footnoteId: number): void => {
     const existing = pageFootnotes.get(pageNumber) ?? [];
@@ -255,7 +225,7 @@ export function mapFootnotesToPages(
   for (const ref of footnoteRefs) {
     const pageNumber =
       ref.tableBlockId != null && ref.rowIndex != null
-        ? pageForTableRow(index, ref.tableBlockId, ref.rowIndex)
+        ? pageForTableRow(index, ref.tableBlockId, ref.rowIndex, ref.rowOffset, ref.rowHeight)
         : pageForPmPos(index, ref.pmPos);
     if (pageNumber != null) assign(pageNumber, ref.footnoteId);
   }
