@@ -19,8 +19,11 @@ import {
   type ContentNode,
   type ImageRun,
   type ImageRunPosition,
-  type LayoutMetrics,
+  type Measure,
+  type MeasuredLine,
   type ParagraphBlock,
+  type ParagraphMetrics,
+  type Run,
   type TableBlock,
   type TextBoxBlock,
 } from '../../pagination-model';
@@ -152,6 +155,37 @@ export function measureBlocksWithFloats(
     const contentHeight =
       scopes.geometryByBlock[blockIndex]?.contentHeight ?? Number.POSITIVE_INFINITY;
 
+    // A splittable paragraph can begin beside a float and continue on the next
+    // physical page, where that float no longer exists. Keep the wrapped lines
+    // that fit this scope, then append a fresh unwrapped continuation. Feeding
+    // the whole wrapped measure to pagination would make its continuation reuse
+    // stale line breaks even after activeZones is cleared for the next page.
+    if (
+      block.kind === 'paragraph' &&
+      measure.kind === 'paragraph' &&
+      zones != null &&
+      block.attrs?.keepLines !== true &&
+      Number.isFinite(contentHeight) &&
+      cumulativeY + height > contentHeight
+    ) {
+      const availableForLines = Math.max(
+        0,
+        contentHeight - cumulativeY - (block.attrs?.spacing?.before ?? 0)
+      );
+      const prefixLineCount = countParagraphLinesThatFit(measure.lines, availableForLines);
+      if (prefixLineCount > 0 && prefixLineCount < measure.lines.length) {
+        measure = mergeParagraphContinuation(
+          block,
+          measure,
+          scopes.baseMeasures[blockIndex] as ParagraphMetrics,
+          prefixLineCount,
+          blockWidth,
+          measureBlock
+        );
+        height = measureFlowHeight(block, measure);
+      }
+    }
+
     // A zone can increase an atomic/keep-lines block enough to move that whole
     // block onto the next page. Re-evaluate only those blocks at the new scope
     // origin. Splittable paragraphs keep their current-page lines in the zone
@@ -195,7 +229,7 @@ export function measureBlocksWithFloats(
     if (
       block.kind === 'pageBreak' ||
       block.kind === 'columnBreak' ||
-      block.kind === 'sectionBreak' ||
+      (block.kind === 'sectionBreak' && block.type !== 'continuous') ||
       (Number.isFinite(contentHeight) && cumulativeY >= contentHeight)
     ) {
       startsNewScope = true;
@@ -203,6 +237,150 @@ export function measureBlocksWithFloats(
   }
 
   return measures;
+}
+
+function lineFlowHeight(line: MeasuredLine): number {
+  return line.lineHeight + (line.floatSkipBefore ?? 0);
+}
+
+function countParagraphLinesThatFit(lines: MeasuredLine[], available: number): number {
+  let used = 0;
+  let count = 0;
+  for (const line of lines) {
+    const height = lineFlowHeight(line);
+    if (used + height > available) break;
+    used += height;
+    count++;
+  }
+  return count;
+}
+
+interface RunPosition {
+  run: number;
+  char: number;
+}
+
+function compareRunPositions(a: RunPosition, b: RunPosition): number {
+  return a.run === b.run ? a.char - b.char : a.run - b.run;
+}
+
+function mergeParagraphContinuation(
+  block: ParagraphBlock,
+  wrapped: ParagraphMetrics,
+  unwrapped: ParagraphMetrics,
+  prefixLineCount: number,
+  contentWidth: number,
+  measureBlock: MeasureBlockFn
+): ParagraphMetrics {
+  const prefix = wrapped.lines.slice(0, prefixLineCount);
+  const lastPrefixLine = prefix[prefix.length - 1];
+  const boundary = { run: lastPrefixLine.toRun, char: lastPrefixLine.toChar };
+  const exactUnwrappedStart = unwrapped.lines.findIndex(
+    (line) => compareRunPositions({ run: line.fromRun, char: line.fromChar }, boundary) === 0
+  );
+  const continuation =
+    exactUnwrappedStart >= 0
+      ? unwrapped.lines.slice(exactUnwrappedStart)
+      : measureParagraphRemainder(block, boundary, contentWidth, measureBlock);
+  const lines = [...prefix, ...continuation];
+  const spacing = block.attrs?.spacing;
+
+  return {
+    kind: 'paragraph',
+    lines,
+    totalHeight:
+      lines.reduce((sum, line) => sum + lineFlowHeight(line), 0) +
+      (spacing?.before ?? 0) +
+      (spacing?.after ?? 0),
+  };
+}
+
+function runLength(run: Run): number {
+  return run.kind === 'text' ? run.text.length : 1;
+}
+
+function measureParagraphRemainder(
+  block: ParagraphBlock,
+  from: RunPosition,
+  contentWidth: number,
+  measureBlock: MeasureBlockFn
+): MeasuredLine[] {
+  let runOffset = from.run;
+  let charOffset = from.char;
+  while (runOffset < block.runs.length && charOffset >= runLength(block.runs[runOffset])) {
+    runOffset++;
+    charOffset = 0;
+  }
+  if (runOffset >= block.runs.length) return [];
+
+  const runs = block.runs.slice(runOffset);
+  if (charOffset > 0 && runs[0]?.kind === 'text') {
+    runs[0] = { ...runs[0], text: runs[0].text.slice(charOffset) };
+  }
+
+  const attrs = block.attrs
+    ? {
+        ...block.attrs,
+        spacing: undefined,
+        indent: block.attrs.indent
+          ? { left: block.attrs.indent.left, right: block.attrs.indent.right }
+          : undefined,
+        listMarker: undefined,
+        listIsBullet: undefined,
+        listMarkerHidden: undefined,
+        listMarkerFontFamily: undefined,
+        listMarkerFontSize: undefined,
+        listMarkerSuffix: undefined,
+        listMarkerRevision: undefined,
+        pageBreakBefore: undefined,
+      }
+    : undefined;
+  const remainder = measureBlock({ ...block, runs, attrs }, contentWidth);
+  if (remainder.kind !== 'paragraph') return [];
+
+  return remainder.lines.map((line) => remapContinuationLine(line, runOffset, charOffset));
+}
+
+function remapContinuationLine(
+  line: MeasuredLine,
+  runOffset: number,
+  charOffset: number
+): MeasuredLine {
+  const remapPosition = (run: number, char: number): RunPosition => ({
+    run: run + runOffset,
+    char: char + (run === 0 ? charOffset : 0),
+  });
+  const from = remapPosition(line.fromRun, line.fromChar);
+  const to = remapPosition(line.toRun, line.toChar);
+  const segments = line.segments?.map((segment) => {
+    const segmentFrom = remapPosition(segment.fromRun, segment.fromChar);
+    const segmentTo = remapPosition(segment.toRun, segment.toChar);
+    return {
+      ...segment,
+      fromRun: segmentFrom.run,
+      fromChar: segmentFrom.char,
+      toRun: segmentTo.run,
+      toChar: segmentTo.char,
+    };
+  });
+  const atomAdvances = line.atomAdvances
+    ? Object.fromEntries(
+        Object.entries(line.atomAdvances).map(([run, advance]) => [
+          Number(run) + runOffset,
+          advance,
+        ])
+      )
+    : undefined;
+
+  return {
+    ...line,
+    fromRun: from.run,
+    fromChar: from.char,
+    toRun: to.run,
+    toChar: to.char,
+    ...(segments ? { segments } : {}),
+    ...(atomAdvances ? { atomAdvances } : {}),
+  };
 }
 
 function buildFloatFlowScopes(

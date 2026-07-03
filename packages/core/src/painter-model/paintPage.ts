@@ -361,23 +361,33 @@ function applyFragmentStyles(
   }
 }
 
-/**
- * Extract floating images from a paragraph block and determine their page-level positions.
- * Returns extracted images and info for the paragraph about space reserved.
- */
 function extractFloatingImagesFromParagraph(
   block: ParagraphBlock,
+  measure: ParagraphMetrics,
+  fromLine: number,
+  toLine: number,
   fragmentY: number, // Y position of the paragraph fragment on the page (relative to content area)
   contentWidth: number, // Width of the content area
   geometry?: PageGeometry
 ): PageFloatingImage[] {
   const floatingImages: PageFloatingImage[] = [];
 
-  for (const run of block.runs) {
+  const fragmentLines = measure.lines.slice(fromLine, toLine);
+  const containsRun = (runIndex: number): boolean =>
+    fragmentLines.some((line) => {
+      const startsBeforeRun =
+        line.fromRun < runIndex || (line.fromRun === runIndex && line.fromChar <= 0);
+      const endsAfterRun = line.toRun > runIndex || (line.toRun === runIndex && line.toChar >= 1);
+      return startsBeforeRun && endsAfterRun;
+    });
+
+  for (let runIndex = 0; runIndex < block.runs.length; runIndex++) {
+    const run = block.runs[runIndex];
     if (run.kind !== 'image') continue;
     const imgRun = run as ImageRun;
 
     if (!isFloatingImageRun(imgRun)) continue;
+    if (!containsRun(runIndex)) continue;
 
     const distTop = imgRun.distTop ?? 0;
     const distBottom = imgRun.distBottom ?? 0;
@@ -486,14 +496,17 @@ export function paintPage(
   const floatingRects: FloatingExclusionRect[] = [];
 
   for (const fragment of page.fragments) {
-    if (fragment.kind === 'paragraph' && config.nodeLookup) {
-      const blockData = config.nodeLookup.get(String(fragment.nodeId));
-      if (blockData?.block.kind === 'paragraph') {
+    if (fragment.kind === 'paragraph' && options.blockLookup) {
+      const blockData = options.blockLookup.get(String(fragment.blockId));
+      if (blockData?.block.kind === 'paragraph' && blockData.measure.kind === 'paragraph') {
         const paragraphBlock = blockData.block as ParagraphBlock;
         // Fragment Y is relative to page top, we need it relative to content area
         const contentRelativeY = fragment.y - page.margins.top;
         const extracted = extractFloatingImagesFromParagraph(
           paragraphBlock,
+          blockData.measure as ParagraphMetrics,
+          fragment.fromLine,
+          fragment.toLine,
           contentRelativeY,
           contentWidth,
           pageGeometry

@@ -181,45 +181,79 @@ describe('floating exclusion flow scopes', () => {
     });
   });
 
-  test('keeps float wrapping on the current-page part of a split paragraph', () => {
+  test('keeps float wrapping only on the current-page part of a split paragraph', () => {
     const blocks: FlowBlock[] = [
-      paragraph('anchor', [floatingImage(0)]),
-      paragraph('split-paragraph'),
+      paragraph('split-paragraph', [floatingImage(0), { kind: 'text', text: 'abcdefgh' }]),
       paragraph('following-page'),
     ];
 
     const measureBlock: MeasureBlockFn = (block, _width, zones) => {
       const id = String(block.id);
-      const lineHeights =
-        id === 'anchor'
-          ? [20]
-          : id === 'split-paragraph'
-            ? zones
-              ? [60, 60]
-              : [40, 40]
-            : zones
-              ? [50]
-              : [20];
+      const textRunIndex =
+        block.kind === 'paragraph' ? block.runs.findIndex((run) => run.kind === 'text') : -1;
+      const textRun =
+        block.kind === 'paragraph' && textRunIndex >= 0 ? block.runs[textRunIndex] : undefined;
+      const textLength = textRun?.kind === 'text' ? textRun.text.length : 0;
+      const ranges =
+        id === 'split-paragraph'
+          ? zones
+            ? [
+                [0, 0, 1, 2],
+                [1, 2, 1, 4],
+                [1, 4, 1, 6],
+                [1, 6, 1, 8],
+              ]
+            : [[0, 0, textRunIndex, textLength]]
+          : [[0, 0, 0, 0]];
+      const lineHeight = id === 'split-paragraph' ? 40 : 20;
       return {
         kind: 'paragraph',
-        lines: lineHeights.map((lineHeight) => ({
-          fromRun: 0,
-          fromChar: 0,
-          toRun: 0,
-          toChar: 0,
+        lines: ranges.map(([fromRun, fromChar, toRun, toChar]) => ({
+          fromRun,
+          fromChar,
+          toRun,
+          toChar,
           width: 0,
           ascent: lineHeight * 0.75,
           descent: lineHeight * 0.25,
           lineHeight,
         })),
-        totalHeight: lineHeights.reduce((sum, lineHeight) => sum + lineHeight, 0),
+        totalHeight: ranges.length * lineHeight,
       };
     };
 
     const measures = measureBlocksWithFloats(blocks, 300, measureBlock, initialGeometry);
 
-    expect(measures[1]).toMatchObject({ kind: 'paragraph', totalHeight: 120 });
-    expect(measures[2]).toMatchObject({ kind: 'paragraph', totalHeight: 20 });
+    expect(measures[0]).toMatchObject({
+      kind: 'paragraph',
+      totalHeight: 120,
+      lines: [
+        { fromChar: 0, toChar: 2 },
+        { fromChar: 2, toChar: 4 },
+        { fromChar: 4, toChar: 8 },
+      ],
+    });
+    expect(measures[1]).toMatchObject({ kind: 'paragraph', totalHeight: 20 });
+  });
+
+  test('keeps active float zones across a continuous section on the same page', () => {
+    const blocks: FlowBlock[] = [
+      paragraph('anchor', [floatingImage(0)]),
+      {
+        kind: 'sectionBreak',
+        id: 'continuous-section',
+        type: 'continuous',
+      },
+      paragraph('same-page-section'),
+    ];
+    const finalCalls = new Map<string, FinalCall>();
+
+    measureBlocksWithFloats(blocks, 300, recordingMeasure({}, finalCalls), initialGeometry);
+
+    expect(finalCalls.get('same-page-section')).toMatchObject({
+      cumulativeY: 20,
+      zones: [{ bottomY: 95 }],
+    });
   });
 
   test('a later-section margin band starts at its anchor with later geometry', () => {
