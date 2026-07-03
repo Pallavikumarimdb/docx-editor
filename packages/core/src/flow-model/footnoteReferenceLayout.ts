@@ -6,8 +6,18 @@
  * the fragment that actually paints the marker.
  */
 
-import type { BlockId, FlowBlock, Measure } from '../pagination-model/types';
+import {
+  DEFAULT_TEXTBOX_MARGINS,
+  type BlockId,
+  type FlowBlock,
+  type Measure,
+  type ParagraphMetrics,
+  type TableMeasure,
+} from '../pagination-model/types';
 import { layoutCellContent } from './cellBlockLayout';
+
+const MAX_REFERENCE_GEOMETRY_DEPTH = 32;
+const MAX_REFERENCE_GEOMETRY_BLOCKS = 10_000;
 
 /**
  * Where a footnote reference lives.
@@ -32,8 +42,13 @@ interface TableContext {
 }
 
 interface CellGeometry {
+  blockTops: Array<number | undefined>;
   lineTops: number[][];
   tableOffset: number;
+}
+
+interface GeometryBudget {
+  remaining: number;
 }
 
 function measuredRowLocation(
@@ -76,6 +91,73 @@ function measuredRowLocation(
   };
 }
 
+function paragraphLineTops(measure: ParagraphMetrics, startY: number): number[] {
+  const tops: number[] = [];
+  let y = startY;
+  for (const line of measure.lines) {
+    y += line.floatSkipBefore ?? 0;
+    tops.push(y);
+    y += line.lineHeight;
+  }
+  return tops;
+}
+
+/**
+ * Continue scanning after geometry recursion reaches its limit. This preserves
+ * references and document order while deliberately degrading only their
+ * physical location to the enclosing row.
+ */
+function collectRefsWithoutGeometry(
+  input: readonly FlowBlock[],
+  refs: FootnoteRefLocation[],
+  inheritedTableCtx?: TableContext
+): void {
+  const stack: Array<{ block: FlowBlock; tableCtx?: TableContext }> = [];
+  for (let index = input.length - 1; index >= 0; index--) {
+    stack.push({ block: input[index], tableCtx: inheritedTableCtx });
+  }
+
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    const { block, tableCtx } = current;
+    if (block.kind === 'paragraph') {
+      for (const run of block.runs) {
+        if (run.kind !== 'text' || run.footnoteRefId == null) continue;
+        refs.push({
+          footnoteId: run.footnoteRefId,
+          pmPos: run.docFrom ?? 0,
+          ...(tableCtx
+            ? {
+                tableBlockId: tableCtx.tableBlockId,
+                rowIndex: tableCtx.sourceRowIndex,
+              }
+            : {}),
+        });
+      }
+      continue;
+    }
+
+    const children: Array<{ block: FlowBlock; tableCtx?: TableContext }> = [];
+    if (block.kind === 'table') {
+      block.rows.forEach((row, rowIndex) => {
+        const nextTableCtx =
+          tableCtx ??
+          ({
+            tableBlockId: block.id,
+            rowTops: [],
+            sourceRowIndex: rowIndex,
+          } satisfies TableContext);
+        for (const cell of row.cells) {
+          for (const child of cell.blocks) children.push({ block: child, tableCtx: nextTableCtx });
+        }
+      });
+    } else if (block.kind === 'textBox') {
+      for (const child of block.content) children.push({ block: child, tableCtx });
+    }
+    for (let index = children.length - 1; index >= 0; index--) stack.push(children[index]);
+  }
+}
+
 /**
  * Scan FlowBlocks for runs with `footnoteRefId`, in document order.
  *
@@ -88,16 +170,25 @@ export function collectFootnoteRefs(
   measures?: Measure[]
 ): FootnoteRefLocation[] {
   const refs: FootnoteRefLocation[] = [];
+  const geometryBudget: GeometryBudget = { remaining: MAX_REFERENCE_GEOMETRY_BLOCKS };
 
   const walk = (
     input: FlowBlock[],
     inputMeasures?: Measure[],
     tableCtx?: TableContext,
-    cellGeometry?: CellGeometry
+    cellGeometry?: CellGeometry,
+    depth = 0
   ): void => {
+    if (depth > MAX_REFERENCE_GEOMETRY_DEPTH) {
+      collectRefsWithoutGeometry(input, refs, tableCtx);
+      return;
+    }
+
     for (let blockIndex = 0; blockIndex < input.length; blockIndex++) {
       const block = input[blockIndex];
       const measure = inputMeasures?.[blockIndex];
+      const geometryAllowed = geometryBudget.remaining-- > 0;
+      const activeGeometry = geometryAllowed ? cellGeometry : undefined;
       if (block.kind === 'paragraph') {
         for (let runIndex = 0; runIndex < block.runs.length; runIndex++) {
           const run = block.runs[runIndex];
@@ -105,7 +196,7 @@ export function collectFootnoteRefs(
           const tableLocation = tableCtx
             ? {
                 tableBlockId: tableCtx.tableBlockId,
-                ...measuredRowLocation(tableCtx, cellGeometry, blockIndex, runIndex, measure),
+                ...measuredRowLocation(tableCtx, activeGeometry, blockIndex, runIndex, measure),
               }
             : {};
           refs.push({
@@ -115,25 +206,30 @@ export function collectFootnoteRefs(
           });
         }
       } else if (block.kind === 'table') {
-        const tableMeasure = measure?.kind === 'table' ? measure : undefined;
+        const tableMeasure: TableMeasure | undefined =
+          geometryAllowed && measure?.kind === 'table' ? measure : undefined;
         const rowTops = [0];
         for (const rowMeasure of tableMeasure?.rows ?? []) {
           rowTops.push(rowTops[rowTops.length - 1] + rowMeasure.height);
         }
+        const nestedTableTop =
+          tableCtx && activeGeometry
+            ? activeGeometry.tableOffset + (activeGeometry.blockTops[blockIndex] ?? Number.NaN)
+            : 0;
         block.rows.forEach((row, rowIndex) => {
           row.cells.forEach((cell, cellIndex) => {
             const cellMeasure = tableMeasure?.rows[rowIndex]?.cells[cellIndex];
-            // Nested tables retain their outer row context. They are atomic in
-            // that outer cell's row-break geometry, so row-only attribution is
-            // the safe fallback until nested table slicing is supported.
-            if (tableCtx) {
-              walk(cell.blocks, cellMeasure?.blocks, tableCtx);
-              return;
-            }
-
-            const nextTableCtx = { tableBlockId: block.id, rowTops, sourceRowIndex: rowIndex };
-            if (!cellMeasure || rowTops.length <= rowIndex + 1) {
-              walk(cell.blocks, cellMeasure?.blocks, nextTableCtx);
+            const nextTableCtx = tableCtx ?? {
+              tableBlockId: block.id,
+              rowTops,
+              sourceRowIndex: rowIndex,
+            };
+            const hasMeasuredPosition =
+              cellMeasure &&
+              rowTops.length > rowIndex + 1 &&
+              (!tableCtx || Number.isFinite(nestedTableTop));
+            if (!hasMeasuredPosition) {
+              walk(cell.blocks, cellMeasure?.blocks, nextTableCtx, undefined, depth + 1);
               return;
             }
             const rowSpan = Math.max(1, cell.rowSpan ?? 1);
@@ -151,15 +247,47 @@ export function collectFootnoteRefs(
               cellMeasure.blocks,
               cell.padding?.top ?? 0
             );
-            walk(cell.blocks, cellMeasure.blocks, nextTableCtx, {
-              lineTops: content.lineTops,
-              tableOffset: rowTops[rowIndex] + verticalOffset,
-            });
+            walk(
+              cell.blocks,
+              cellMeasure.blocks,
+              nextTableCtx,
+              {
+                blockTops: content.blockTops,
+                lineTops: content.lineTops,
+                tableOffset: nestedTableTop + rowTops[rowIndex] + verticalOffset,
+              },
+              depth + 1
+            );
           });
         });
       } else if (block.kind === 'textBox') {
         const innerMeasures = measure?.kind === 'textBox' ? measure.innerMeasures : undefined;
-        walk(block.content, innerMeasures, tableCtx);
+        const relativeTextBoxTop = activeGeometry?.blockTops[blockIndex];
+        const textBoxTop =
+          !activeGeometry || relativeTextBoxTop == null
+            ? undefined
+            : activeGeometry.tableOffset + relativeTextBoxTop;
+        if (!tableCtx || textBoxTop == null || !innerMeasures) {
+          walk(block.content, innerMeasures, tableCtx, undefined, depth + 1);
+          continue;
+        }
+
+        const margins = block.margins ?? DEFAULT_TEXTBOX_MARGINS;
+        let paragraphTop = margins.top;
+        const blockTops: number[] = [];
+        const lineTops: number[][] = [];
+        for (const innerMeasure of innerMeasures) {
+          blockTops.push(paragraphTop);
+          lineTops.push(paragraphLineTops(innerMeasure, paragraphTop));
+          paragraphTop += innerMeasure.totalHeight;
+        }
+        walk(
+          block.content,
+          innerMeasures,
+          tableCtx,
+          { blockTops, lineTops, tableOffset: textBoxTop },
+          depth + 1
+        );
       }
     }
   };

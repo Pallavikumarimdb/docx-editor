@@ -15,7 +15,9 @@
 import type { ContentNode, LayoutMetrics } from '../pagination-model/types';
 
 export interface CellContentLayout {
-  /** Per block, the top y of each line (relative to `startY`). Atomic/non-paragraph nodes → []. */
+  /** Per block, its top y relative to `startY`; unavailable for unmeasured blocks. */
+  blockTops: Array<number | undefined>;
+  /** Per block, the top y of each line (relative to `startY`). Atomic/non-paragraph blocks → []. */
   lineTops: number[][];
   /**
    * All line bottoms in document order, plus one entry per atomic block (its
@@ -36,6 +38,7 @@ export function layoutCellContent(
   nodeMetrics: readonly LayoutMetrics[] | undefined,
   startY: number
 ): CellContentLayout {
+  const blockTops: Array<number | undefined> = [];
   const lineTops: number[][] = [];
   const flatBottoms: number[] = [];
   const unbreakableRanges: Array<{ top: number; bottom: number }> = [];
@@ -49,6 +52,7 @@ export function layoutCellContent(
     if (block?.kind === 'paragraph' && measure?.kind === 'paragraph') {
       const spacing = block.attrs?.spacing;
       y += Math.max(prevAfter, spacing?.before ?? 0);
+      blockTops.push(y);
       const tops: number[] = [];
       for (const line of measure.lines) {
         y += line.floatSkipBefore ?? 0;
@@ -60,21 +64,32 @@ export function layoutCellContent(
       }
       lineTops.push(tops);
       prevAfter = spacing?.after ?? 0;
-    } else if (measure && 'totalHeight' in measure && typeof measure.totalHeight === 'number') {
+    } else {
       // Nested table / non-paragraph: one atomic block (break only at its bottom).
+      const atomicHeight =
+        measure?.kind === 'table'
+          ? measure.totalHeight
+          : measure?.kind === 'image' || measure?.kind === 'textBox'
+            ? measure.height
+            : undefined;
+      if (atomicHeight == null) {
+        blockTops.push(undefined);
+        lineTops.push([]);
+        continue;
+      }
       const top = y + prevAfter;
-      y += prevAfter + measure.totalHeight;
+      blockTops.push(top);
+      y += prevAfter + atomicHeight;
       lineTops.push([]);
       flatBottoms.push(y);
-      unbreakableRanges.push({ top, bottom: y });
+      if (y > top) unbreakableRanges.push({ top, bottom: y });
       prevAfter = 0;
-    } else {
-      lineTops.push([]);
     }
   }
 
   // The painter renders the final block's trailing space-after as paddingBottom.
   return {
+    blockTops,
     lineTops,
     flatBottoms,
     unbreakableRanges,

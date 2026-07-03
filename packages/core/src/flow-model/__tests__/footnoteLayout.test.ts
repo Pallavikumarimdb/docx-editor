@@ -623,6 +623,88 @@ test('maps a final-line table reference to its clipped row fragment', () => {
   expect(stabilized.layout.pages[1].footnoteFragments?.[0]?.footnoteId).toBe(7);
 });
 
+test('maps a nested-table reference after an outer-row split to the continuation page', () => {
+  const beforeNested = paragraph('before-nested-table', 10);
+  const nestedReference = paragraph('nested-reference', 20, 7);
+  const nestedTable: TableBlock = {
+    kind: 'table',
+    id: 'nested-table',
+    docFrom: 18,
+    docTo: 25,
+    rows: [
+      {
+        id: 'nested-row',
+        cells: [{ id: 'nested-cell', blocks: [nestedReference] }],
+      },
+    ],
+  };
+  const nestedTableMeasure: TableMeasure = {
+    kind: 'table',
+    rows: [
+      {
+        height: 80,
+        cells: [{ blocks: [paragraphMeasure(1)], width: 180, height: 40 }],
+      },
+    ],
+    columnWidths: [180],
+    totalWidth: 180,
+    totalHeight: 80,
+  };
+  const outerTable: TableBlock = {
+    kind: 'table',
+    id: 'outer-split-table',
+    docFrom: 1,
+    docTo: 30,
+    rows: [
+      {
+        id: 'outer-row',
+        cells: [{ id: 'outer-cell', blocks: [beforeNested, nestedTable] }],
+      },
+    ],
+  };
+  const outerTableMeasure: TableMeasure = {
+    kind: 'table',
+    rows: [
+      {
+        height: 160,
+        cells: [
+          {
+            blocks: [paragraphMeasure(2), nestedTableMeasure],
+            width: 180,
+            height: 160,
+          },
+        ],
+      },
+    ],
+    columnWidths: [180],
+    totalWidth: 180,
+    totalHeight: 160,
+  };
+
+  const layout = layOutPages([outerTable], [outerTableMeasure], layoutOpts);
+  const refs = collectFootnoteRefs([outerTable], [outerTableMeasure]);
+
+  expect(
+    layout.pages.map((page) =>
+      page.fragments.map((fragment) =>
+        fragment.kind === 'table'
+          ? { topClip: fragment.topClip, bottomClip: fragment.bottomClip }
+          : fragment
+      )
+    )
+  ).toEqual([[{ topClip: undefined, bottomClip: 80 }], [{ topClip: 80, bottomClip: undefined }]]);
+  expect(refs).toEqual([
+    expect.objectContaining({
+      footnoteId: 7,
+      tableBlockId: 'outer-split-table',
+      rowIndex: 0,
+      rowOffset: 100,
+      rowHeight: 160,
+    }),
+  ]);
+  expect(mapFootnotesToPages(layout.pages, refs)).toEqual(new Map([[2, [7]]]));
+});
+
 test('footnote page lookup indexes pages once for many references', () => {
   const rawPages: Page[] = Array.from({ length: 200 }, (_, index) => ({
     number: index + 1,
