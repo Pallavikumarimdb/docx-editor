@@ -6,6 +6,7 @@ export default defineConfig([
       core: 'src/core.ts',
       api: 'src/api.ts',
       headless: 'src/headless.ts',
+      'internal/paintedPagesGuard': 'src/internal/paintedPagesGuard.ts',
       'core-plugins': 'src/core-plugins/index.ts',
       mcp: 'src/mcp/index.ts',
       // Subpath entries — stable public surface at directory-boundary

@@ -7,21 +7,17 @@ import {
 } from './paintedPagesGuard';
 
 describe('painted pages guard', () => {
-  test('holds overlay reads after a document change until matching pages finish painting', () => {
+  test('holds overlay reads until matching pages finish painting', () => {
     const refresh = mock(() => {});
     const guard = createPaintedPagesGuard(refresh);
-    const initialPaint = guard.startPaint();
-    guard.finishPaint(initialPaint);
+    guard.finishPaint(guard.startPaint());
     refresh.mockClear();
 
     guard.noteDocumentChange();
     guard.requestOverlayRefresh();
-
     expect(refresh).not.toHaveBeenCalled();
 
-    const currentPaint = guard.startPaint();
-    guard.finishPaint(currentPaint);
-
+    guard.finishPaint(guard.startPaint());
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
@@ -35,59 +31,40 @@ describe('painted pages guard', () => {
     guard.requestOverlayRefresh();
     const currentPaint = guard.startPaint();
 
-    guard.finishPaint(olderPaint);
+    expect(guard.finishPaint(olderPaint)).toBe(false);
     expect(refresh).not.toHaveBeenCalled();
-
-    guard.finishPaint(currentPaint);
+    expect(guard.finishPaint(currentPaint)).toBe(true);
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
-  test('coalesces retained requests into one refresh after current pages paint', () => {
+  test('coalesces retained requests and consumes them exactly once', () => {
     const refresh = mock(() => {});
     const guard = createPaintedPagesGuard(refresh);
 
     guard.noteDocumentChange();
     guard.requestOverlayRefresh();
     guard.requestOverlayRefresh();
-    guard.requestOverlayRefresh();
+    const paint = guard.startPaint();
 
-    const currentPaint = guard.startPaint();
-    guard.finishPaint(currentPaint);
-
+    guard.finishPaint(paint);
+    guard.finishPaint(paint);
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
-  test('does not refresh when a paint completes without a pending request', () => {
+  test('does not refresh without a pending request', () => {
     const refresh = mock(() => {});
     const guard = createPaintedPagesGuard(refresh);
 
-    const paint = guard.startPaint();
-    guard.finishPaint(paint);
+    guard.finishPaint(guard.startPaint());
 
     expect(refresh).not.toHaveBeenCalled();
     expect(guard.pagesAreCurrent()).toBe(true);
   });
 
-  test('consumes a retained request exactly once', () => {
-    const refresh = mock(() => {});
-    const guard = createPaintedPagesGuard(refresh);
-
-    guard.noteDocumentChange();
-    guard.requestOverlayRefresh();
-    guard.requestOverlayRefresh();
-    const paint = guard.startPaint();
-
-    guard.finishPaint(paint);
-    guard.finishPaint(paint);
-
-    expect(refresh).toHaveBeenCalledTimes(1);
-  });
-
   test('runs selection-only refreshes immediately while pages are current', () => {
     const refresh = mock(() => {});
     const guard = createPaintedPagesGuard(refresh);
-    const initialPaint = guard.startPaint();
-    guard.finishPaint(initialPaint);
+    guard.finishPaint(guard.startPaint());
     refresh.mockClear();
 
     guard.requestOverlayRefresh();
@@ -95,16 +72,18 @@ describe('painted pages guard', () => {
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
-  test('suppresses an image DOM read while painted pages are stale', () => {
-    const readImageGeometry = mock(() => ({ width: 10, height: 20 }));
+  test('re-checks page currency before deferred DOM reads', () => {
+    const guard = createPaintedPagesGuard(() => {});
+    guard.finishPaint(guard.startPaint());
+    const read = mock(() => ({ width: 10, height: 20 }));
 
-    const result = readCurrentPaintedPages(() => false, readImageGeometry);
+    guard.noteDocumentChange();
 
-    expect(result).toBeNull();
-    expect(readImageGeometry).not.toHaveBeenCalled();
+    expect(readCurrentPaintedPages(guard.pagesAreCurrent, read)).toBeNull();
+    expect(read).not.toHaveBeenCalled();
   });
 
-  test('uses onSelectionChange as the single request source for selection transactions', () => {
+  test('classifies transactions that need a direct overlay request', () => {
     expect(transactionNeedsDirectOverlayRequest({ docChanged: false, selectionSet: true })).toBe(
       false
     );
@@ -116,34 +95,30 @@ describe('painted pages guard', () => {
     );
   });
 
-  test('keeps requests retained after failed paints and ignores work after disposal', () => {
+  test('retains requests after failed paints and ignores work after disposal', () => {
     const refresh = mock(() => {});
     const guard = createPaintedPagesGuard(refresh);
 
     guard.noteDocumentChange();
     guard.requestOverlayRefresh();
-    const failedPaint = guard.startPaint();
-    guard.abandonPaint(failedPaint);
+    guard.abandonPaint(guard.startPaint());
     expect(refresh).not.toHaveBeenCalled();
 
-    const successfulPaint = guard.startPaint();
-    guard.finishPaint(successfulPaint);
+    guard.finishPaint(guard.startPaint());
     expect(refresh).toHaveBeenCalledTimes(1);
 
     guard.dispose();
     expect(guard.isDisposed()).toBe(true);
     expect(guard.pagesAreCurrent()).toBe(false);
     guard.requestOverlayRefresh();
-    const disposedPaint = guard.startPaint();
-    guard.finishPaint(disposedPaint);
+    guard.finishPaint(guard.startPaint());
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
-  test('revives after a strict-effects cleanup without losing current pages', () => {
+  test('revives without losing current-page state', () => {
     const refresh = mock(() => {});
     const guard = createPaintedPagesGuard(refresh);
-    const paint = guard.startPaint();
-    guard.finishPaint(paint);
+    guard.finishPaint(guard.startPaint());
 
     guard.dispose();
     guard.revive();

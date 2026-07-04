@@ -3,6 +3,7 @@ interface PaintTicket {
   paintEpoch: number;
 }
 
+/** @internal */
 export function readCurrentPaintedPages<T>(
   pagesAreCurrent: () => boolean,
   read: () => T
@@ -10,6 +11,7 @@ export function readCurrentPaintedPages<T>(
   return pagesAreCurrent() ? read() : null;
 }
 
+/** @internal */
 export function transactionNeedsDirectOverlayRequest(transaction: {
   docChanged: boolean;
   selectionSet: boolean;
@@ -17,6 +19,7 @@ export function transactionNeedsDirectOverlayRequest(transaction: {
   return !transaction.docChanged && !transaction.selectionSet;
 }
 
+/** @internal */
 export interface PaintedPagesGuard {
   noteDocumentChange: () => void;
   startPaint: () => PaintTicket;
@@ -33,7 +36,7 @@ export interface PaintedPagesGuard {
  * Prevents overlay geometry reads while the visible page DOM trails the PM
  * document. Paint tickets also stop an overtaken pass from releasing work.
  *
- * This is adapter-private coordination; it deliberately does not live in core.
+ * @internal
  */
 export function createPaintedPagesGuard(refreshOverlays: () => void): PaintedPagesGuard {
   let documentEpoch = 0;

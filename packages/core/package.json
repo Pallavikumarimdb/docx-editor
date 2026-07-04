@@ -17,6 +17,11 @@
       "import": "./dist/headless.mjs",
       "require": "./dist/headless.js"
     },
+    "./internal/paintedPagesGuard": {
+      "types": "./dist/internal/paintedPagesGuard.d.ts",
+      "import": "./dist/internal/paintedPagesGuard.mjs",
+      "require": "./dist/internal/paintedPagesGuard.js"
+    },
     "./core-plugins": {
       "types": "./dist/core-plugins.d.ts",
       "import": "./dist/core-plugins.mjs",
@@ -328,6 +333,9 @@
     "*": {
       "headless": [
         "./dist/headless.d.ts"
+      ],
+      "internal/paintedPagesGuard": [
+        "./dist/internal/paintedPagesGuard.d.ts"
       ],
       "core-plugins": [
         "./dist/core-plugins.d.ts"
