@@ -64,6 +64,9 @@ export interface PageDraft {
   margins: PageMargins;
   fragments: Fragment[];
   columns?: ColumnLayout;
+  sectionIndex?: number;
+  sectionPageNumber?: number;
+  headerFooterRefs?: SectionLayoutConfig['headerFooterRefs'];
   footnoteReservedHeight?: number;
   /**
    * A shortened bottom for this page's columns, so a terminal multi-column
@@ -89,6 +92,8 @@ export interface LayoutCursor {
   readonly y: number;
   /** The content node above the pen, for the spacing-collapse rule. */
   readonly prev: ContentNode | null;
+  /** Suppress inherited top spacing after a standalone structural page break. */
+  readonly suppressInheritedSpaceBeforeAtTop?: boolean;
 }
 
 /** Everything the placement functions need but never change. */
@@ -233,6 +238,9 @@ export function startPage(ctx: FlowContext, prev: ContentNode | null = null): La
     margins,
     fragments: [],
     columns: (ctx.section.columns?.count ?? 1) > 1 ? ctx.section.columns : undefined,
+    sectionIndex: ctx.sectionIndex,
+    sectionPageNumber,
+    headerFooterRefs: ctx.section.headerFooterRefs,
     footnoteReservedHeight: ctx.config.footnoteReservedHeights?.get(number),
   };
   ctx.pages.push(page);

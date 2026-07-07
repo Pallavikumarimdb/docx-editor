@@ -21,12 +21,6 @@ import type { Theme } from '../../types/document';
 import { resolveColorToHex } from '../../utils/colorResolver';
 import { eighthsToPixels, pointsToPixels } from '../../utils/units';
 
-/**
- * `w:sz` when the document doesn't say: 4 eighths of a point = 0.5pt, Word's
- * default border weight.
- */
-const DEFAULT_BORDER_EIGHTHS = 4;
-
 /** A border with no colour is black. */
 const DEFAULT_BORDER_COLOR = '#000000';
 
@@ -78,7 +72,7 @@ export function convertBorderSpecToLayout(
 ): BorderKind | undefined {
   if (!border.style || ABSENT_STYLES.has(border.style)) return undefined;
 
-  const authored = eighthsToPixels(border.size ?? DEFAULT_BORDER_EIGHTHS);
+  const authored = border.size !== undefined ? eighthsToPixels(border.size) : 1;
   if (!Number.isFinite(authored) || authored <= 0) return undefined;
 
   const width = Math.min(authored, MAX_BORDER_WIDTH_PX);

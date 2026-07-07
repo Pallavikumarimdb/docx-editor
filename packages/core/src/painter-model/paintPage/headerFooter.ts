@@ -59,6 +59,28 @@ export interface HeaderFooterContent {
   visualBottom?: number;
 }
 
+/**
+ * Header/footer render content resolved for one document section.
+ */
+export interface SectionHeaderFooterContent {
+  /** Default header for pages in this section. */
+  headerContent?: HeaderFooterContent;
+  /** Default footer for pages in this section. */
+  footerContent?: HeaderFooterContent;
+  /** First-page header for this section when titlePg is set. */
+  firstPageHeaderContent?: HeaderFooterContent;
+  /** First-page footer for this section when titlePg is set. */
+  firstPageFooterContent?: HeaderFooterContent;
+  /** Whether this section uses a distinct first page header/footer. */
+  titlePg?: boolean;
+  /** Distance from page top to header content for this section. */
+  headerDistance?: number;
+  /** Distance from page bottom to footer content for this section. */
+  footerDistance?: number;
+  /** OOXML page borders for this section. */
+  pageBorders?: RenderPageOptions['pageBorders'];
+}
+
 export interface HeaderFooterLayoutInfo {
   flowTop: number;
   flowLeft: number;

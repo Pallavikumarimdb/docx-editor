@@ -776,7 +776,7 @@ function extractParagraphContent(paragraph: PMNode): ParagraphContent[] {
         currentRun = null;
         currentMarksKey = null;
       }
-      content.push(createTabRun());
+      content.push(createTabRun(node));
     } else if (node.type.name === 'field') {
       // Field ends current run and emits a field content item
       if (currentRun) {

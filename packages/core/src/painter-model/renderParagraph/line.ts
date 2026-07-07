@@ -18,6 +18,7 @@ import type {
 import type { RenderContext } from '../paintPage';
 import { isFloatingImageRun } from '../floatingImageFlow';
 import {
+  calculatePositionalTabWidth,
   calculateTabWidth,
   type TabRuler,
   type TabMark as TabCalcStop,
@@ -153,22 +154,6 @@ function getInlineImageRunKey(run: ImageRun): string {
     run.displayMode ?? 'inline',
     run.wrapType ?? 'none',
   ].join('|');
-}
-
-/**
- * The alignment of the stop a tab at `currentX` lands on.
- *
- * The WIDTH comes from the measurer (see the call site); this only recovers the
- * stop's *kind*, which the painter needs for the right-anchor flex trick and for
- * the leader glyph. Asking `calculateTabWidth` again is safe here because we
- * discard its width.
- */
-function resolveTabAlignment(currentX: number, ruler: TabRuler): TabMark['val'] {
-  return calculateTabWidth(currentX, ruler).alignment as TabMark['val'];
-}
-
-function resolveTabLeader(currentX: number, ruler: TabRuler): TabMark['leader'] {
-  return calculateTabWidth(currentX, ruler).leader;
 }
 
 /**
@@ -432,15 +417,24 @@ export function paintLine(
       //
       // `calculateTabWidth` remains the fallback for a synthetic line that
       // carries no advances (a hand-built fixture, a re-measured segment).
+      const positionalTarget =
+        run.positional?.relativeTo === 'indent'
+          ? leftIndentPx + (config?.availableWidth ?? 0)
+          : (config?.lineRightEdgePx ?? leftIndentPx + (config?.availableWidth ?? 0));
+      const calculated = run.positional
+        ? calculatePositionalTabWidth(currentX, positionalTarget, run.positional, {
+            followingWidth,
+            decimalPrefixWidth,
+          })
+        : calculateTabWidth(currentX, tabRuler, { followingWidth, decimalPrefixWidth });
       const recorded = line.atomAdvances?.[line.fromRun + i];
       const tabResult =
         recorded !== undefined
           ? {
+              ...calculated,
               width: recorded,
-              alignment: resolveTabAlignment(currentX, tabRuler),
-              leader: resolveTabLeader(currentX, tabRuler),
             }
-          : calculateTabWidth(currentX, tabRuler, { followingWidth, decimalPrefixWidth });
+          : calculated;
 
       // Right-tab anchor (TOC pattern): when an end-aligned tab's stop is at
       // the line's right edge, let flex layout pin the trailing content there

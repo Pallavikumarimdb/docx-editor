@@ -251,17 +251,18 @@ export function mapFootnotesToPages(
  */
 export function applyFootnotePresentation(
   nodes: ContentNode[],
-  displayNumber: number
+  displayNumber: number | string
 ): ContentNode[] {
+  const displayText = String(displayNumber);
   if (nodes.length === 0) {
     return [
       {
         kind: 'paragraph',
-        id: `fn-empty-${displayNumber}`,
+        id: `fn-empty-${displayText}`,
         runs: [
           {
             kind: 'text',
-            text: `${displayNumber}  `,
+            text: `${displayText}  `,
             fontSize: FOOTNOTE_FONT_SIZE_PT,
             superscript: true,
           },
@@ -302,7 +303,7 @@ export function applyFootnotePresentation(
     const firstTextRun = firstPara.runs.find((r) => r.kind === 'text') as TextRun | undefined;
     const numberRun: TextRun = {
       kind: 'text',
-      text: `${displayNumber}  `,
+      text: `${displayText}  `,
       fontSize: FOOTNOTE_FONT_SIZE_PT,
       superscript: true,
       ...(firstTextRun?.fontFamily ? { fontFamily: firstTextRun.fontFamily } : {}),

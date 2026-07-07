@@ -215,6 +215,39 @@ describe('PM content-control addressing', () => {
     expect(next.doc.textContent).toBe(`before ${String.fromCodePoint(0x2612)} after`);
   });
 
+  test('setContentControlValueAtPosTr preserves label-only inline checkbox content', () => {
+    const rawPropertiesXml =
+      '<w:sdtPr><w:tag w:val="task-alpha"/><w14:checkbox>' +
+      '<w14:checked w14:val="0"/><w14:checkedState w14:val="2612"/>' +
+      '<w14:uncheckedState w14:val="2610"/></w14:checkbox></w:sdtPr>';
+    const doc = schema.nodes.doc.create(null, [
+      schema.nodes.paragraph.create(null, [
+        inlineSdt(
+          {
+            sdtType: 'checkbox',
+            tag: 'task-alpha',
+            checked: false,
+            rawPropertiesXml,
+          },
+          'Task alpha'
+        ),
+      ]),
+    ]);
+    const state = EditorState.create({ schema, doc });
+    const control = findContentControlsInPM(state.doc, { tag: 'task-alpha' })[0];
+    const next = state.apply(
+      setContentControlValueAtPosTr(state, control.pos, {
+        kind: 'checkbox',
+        checked: true,
+      })
+    );
+    const node = next.doc.nodeAt(control.pos)!;
+
+    expect(node.attrs.checked).toBe(true);
+    expect(node.textContent).toBe('Task alpha');
+    expect(String(node.attrs.rawPropertiesXml)).toContain('w14:val="1"');
+  });
+
   test('setContentControlValueTr selects a dropdown item by value', () => {
     const doc = schema.nodes.doc.create(null, [
       blockSdt(

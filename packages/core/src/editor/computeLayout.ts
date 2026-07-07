@@ -33,6 +33,8 @@ import {
   buildBoxTree,
   computePerBlockWidths,
   demoteBlockLikeFloatingTables,
+  buildEndnoteFlowBlocks,
+  collectEndnoteRefs,
   collectFootnoteRefs,
   convertHeaderFooterToContent,
   convertHeaderFooterPmDocToContent,
@@ -186,6 +188,21 @@ export function computeLayout(inputs: ComputeLayoutInputs): LayoutComputation {
   // Step 1: PM doc → flow nodes.
   const pageContentHeight = resolvedPageSize.h - resolvedMargins.top - resolvedMargins.bottom;
   const nodes = buildBoxTree(state.doc, { theme, pageContentHeight });
+  const endnoteRefs = collectEndnoteRefs(nodes);
+  if (endnoteRefs.length > 0 && document?.package?.endnotes?.length) {
+    const endnoteContentWidth =
+      resolvedFinalPageSize.w - resolvedFinalMargins.left - resolvedFinalMargins.right;
+    nodes.push(
+      ...buildEndnoteFlowBlocks(document.package.endnotes, endnoteRefs, {
+        styles: styles ?? undefined,
+        theme: theme ?? null,
+        defaultTabMarkTwips: state.doc.attrs?.defaultTabMarkTwips as number | null,
+        numFmt: finalSectionProperties?.endnotePr?.numFmt ?? 'lowerRoman',
+        numStart: finalSectionProperties?.endnotePr?.numStart ?? 1,
+        contentWidth: endnoteContentWidth,
+      })
+    );
+  }
 
   // Section markers in the PM carry the authored sectPr that closes each
   // section. Rebind them to the parser's effective section list so inherited

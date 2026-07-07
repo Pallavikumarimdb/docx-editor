@@ -24,6 +24,7 @@ import type {
 } from '../types/document';
 import { resolveColor, resolveHighlightToCss, resolveShadingColor } from './colorResolver';
 import { resolveFontFamily, resolveThemeFont } from './fontResolver';
+import { underlineStyleToCss } from './underlineStyle';
 import {
   halfPointsToPixels,
   twipsToPixels,
@@ -134,15 +135,19 @@ export function textToStyle(
   const decorations: string[] = [];
   const decorationStyles: string[] = [];
   const decorationColors: string[] = [];
+  const decorationThicknesses: string[] = [];
 
   // Underline
   if (formatting.underline && formatting.underline.style !== 'none') {
     decorations.push('underline');
 
     // Map OOXML underline styles to CSS
-    const underlineStyle = mapUnderlineStyle(formatting.underline.style);
-    if (underlineStyle !== 'solid') {
-      decorationStyles.push(underlineStyle);
+    const underlineStyle = underlineStyleToCss(formatting.underline.style);
+    if (underlineStyle.decorationStyle) {
+      decorationStyles.push(underlineStyle.decorationStyle);
+    }
+    if (underlineStyle.decorationThickness) {
+      decorationThicknesses.push(underlineStyle.decorationThickness);
     }
 
     // Underline color
@@ -171,6 +176,10 @@ export function textToStyle(
 
     if (decorationColors.length > 0) {
       style.textDecorationColor = decorationColors[0];
+    }
+
+    if (decorationThicknesses.length > 0) {
+      style.textDecorationThickness = decorationThicknesses[0];
     }
   }
 
@@ -531,36 +540,6 @@ export function resolveShadingFill(
   }
 
   return '';
-}
-
-/**
- * Map OOXML underline style to CSS text-decoration-style
- */
-function mapUnderlineStyle(
-  underlineStyle: string
-): 'solid' | 'double' | 'dotted' | 'dashed' | 'wavy' {
-  switch (underlineStyle) {
-    case 'double':
-      return 'double';
-    case 'dotted':
-    case 'dottedHeavy':
-      return 'dotted';
-    case 'dash':
-    case 'dashedHeavy':
-    case 'dashLong':
-    case 'dashLongHeavy':
-    case 'dotDash':
-    case 'dashDotHeavy':
-    case 'dotDotDash':
-    case 'dashDotDotHeavy':
-      return 'dashed';
-    case 'wave':
-    case 'wavyHeavy':
-    case 'wavyDouble':
-      return 'wavy';
-    default:
-      return 'solid';
-  }
 }
 
 /**

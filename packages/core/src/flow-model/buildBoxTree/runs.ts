@@ -28,6 +28,10 @@ import { resolveColor, resolveHighlightToCss } from '../../utils/colorResolver';
 import { sanitizeHref } from '../../utils/sanitizeHref';
 import { sanitizeImageSrc } from '../../utils/sanitizeImageSrc';
 import { halfPointsToPixels, halfPointsToPoints } from '../../utils/units';
+import {
+  checkboxDisplayStateFromAttrs,
+  textStartsWithCheckboxGlyph,
+} from '../../prosemirror/checkboxSdt';
 import { twipsToPixels, constrainImageToPage } from './shared';
 import type { BuildBoxTreeOptions } from './shared';
 
@@ -241,7 +245,7 @@ function extractRunFormatting(marks: readonly Mark[], theme?: Theme | null): Run
 
       case 'comment': {
         const commentId = mark.attrs.commentId as number;
-        if (commentId) {
+        if (typeof commentId === 'number' && Number.isFinite(commentId)) {
           if (!formatting.commentIds) formatting.commentIds = [];
           formatting.commentIds.push(commentId);
         }
@@ -331,6 +335,22 @@ function inlineCheckboxWidgetFor(child: PMNode, childPos: number): InlineSdtWidg
   };
 }
 
+function syntheticCheckboxRunFor(child: PMNode, childPos: number): TextRun | undefined {
+  const widget = inlineCheckboxWidgetFor(child, childPos);
+  if (!widget) return undefined;
+  const attrs = child.attrs as Record<string, unknown>;
+  const display = checkboxDisplayStateFromAttrs(attrs);
+  if (textStartsWithCheckboxGlyph(child.textContent, display)) return undefined;
+  return {
+    kind: 'text',
+    text: `${display.char} `,
+    ...(display.fontFamily ? { fontFamily: display.fontFamily } : {}),
+    docFrom: childPos,
+    docTo: childPos + child.nodeSize,
+    inlineSdtWidget: widget,
+  };
+}
+
 /**
  * Convert a paragraph node to runs.
  */
@@ -381,6 +401,7 @@ export function paragraphToRuns(
         kind: 'tab',
         ...paraDefaults,
         ...formatting,
+        positional: child.attrs.positional ?? undefined,
         docFrom: childPos,
         docTo: childPos + child.nodeSize,
       };
@@ -463,7 +484,11 @@ export function paragraphToRuns(
         docTo: childPos + child.nodeSize,
       });
     } else if (child.type.name === 'sdt') {
-      const inlineWidget = inlineCheckboxWidgetFor(child, childPos) ?? inlineSdtWidget;
+      const syntheticCheckboxRun = syntheticCheckboxRunFor(child, childPos);
+      if (syntheticCheckboxRun) runs.push(syntheticCheckboxRun);
+      const inlineWidget = syntheticCheckboxRun
+        ? inlineSdtWidget
+        : (inlineCheckboxWidgetFor(child, childPos) ?? inlineSdtWidget);
       const sdtInnerOffset = childPos + 1; // +1 for opening tag
       child.forEach((sdtChild, sdtChildOffset) => {
         pushRunsForChild(sdtChild, sdtInnerOffset + sdtChildOffset, inlineWidget);

@@ -8,6 +8,7 @@ import { setMark } from './markUtils';
 import type { TextColorAttrs } from '../../schema/marks';
 import type { UnderlineAttrs } from '../../schema/marks';
 import type { ExtensionContext, ExtensionRuntime } from '../types';
+import { underlineStyleToCss } from '../../../utils/underlineStyle';
 
 export const UnderlineExtension = createMarkExtension({
   name: 'underline',
@@ -29,15 +30,12 @@ export const UnderlineExtension = createMarkExtension({
       const cssStyle: string[] = ['text-decoration: underline'];
 
       if (attrs.style && attrs.style !== 'single') {
-        const styleMap: Record<string, string> = {
-          double: 'double',
-          dotted: 'dotted',
-          dash: 'dashed',
-          wave: 'wavy',
-        };
-        const cssDecorationStyle = styleMap[attrs.style];
-        if (cssDecorationStyle) {
-          cssStyle.push(`text-decoration-style: ${cssDecorationStyle}`);
+        const underlineStyle = underlineStyleToCss(attrs.style);
+        if (underlineStyle.decorationStyle) {
+          cssStyle.push(`text-decoration-style: ${underlineStyle.decorationStyle}`);
+        }
+        if (underlineStyle.decorationThickness) {
+          cssStyle.push(`text-decoration-thickness: ${underlineStyle.decorationThickness}`);
         }
       }
 

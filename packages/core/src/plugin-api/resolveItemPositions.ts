@@ -86,8 +86,10 @@ export function resolveItemPositions<T extends ResolvableSidebarItem>(
   const result: ResolvedPosition<T>[] = [];
   let lastBottom = 0;
   for (const pos of positioned) {
-    const height = cardHeights.get(pos.item.id) ?? pos.item.estimatedHeight ?? 80;
-    const y = Math.max(pos.targetY, lastBottom + MIN_CARD_GAP);
+    const rawHeight = cardHeights.get(pos.item.id) ?? pos.item.estimatedHeight ?? 80;
+    const height = rawHeight * zoom;
+    const gap = MIN_CARD_GAP * zoom;
+    const y = Math.max(pos.targetY, lastBottom + gap);
     result.push({ item: pos.item, y });
     lastBottom = y + height;
   }

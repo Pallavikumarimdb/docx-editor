@@ -237,6 +237,7 @@ export function paintParagraphFragment(
 
   // Apply borders
   const borders = block.attrs?.borders;
+  let borderBox: HTMLElement | null = null;
   if (borders) {
     const borderKindToCss = (style?: string): string => {
       // Map OOXML border styles to CSS
@@ -266,7 +267,11 @@ export function paintParagraphFragment(
     // Ensure box-sizing is set for proper border calculations
     fragmentEl.style.boxSizing = 'border-box';
 
-    const borderToCss = (b: BorderKind) => `${b.width}px ${borderKindToCss(b.style)} ${b.color}`;
+    const borderToCss = (b: BorderKind) => {
+      const style = borderKindToCss(b.style);
+      const width = style === 'double' ? Math.max(b.width ?? 1, 3) : (b.width ?? 1);
+      return `${width}px ${style} ${b.color}`;
+    };
 
     // Word-style border grouping (ECMA-376 §17.3.1.24):
     // Adjacent paragraphs with identical pBdr form a group.
@@ -280,15 +285,22 @@ export function paintParagraphFragment(
     const renderedTopBorder = groupedWithPrev ? borders.between : borders.top;
     const renderedBottomBorder = !groupedWithNext ? borders.bottom : undefined;
 
-    const borderBox = doc.createElement('div');
+    borderBox = doc.createElement('div');
     borderBox.className = 'layout-paragraph-border';
     borderBox.style.position = 'absolute';
+    borderBox.style.zIndex = '0';
     borderBox.style.pointerEvents = 'none';
     borderBox.style.boxSizing = 'border-box';
     borderBox.style.left = `${indentLeft - (borders.left?.space ?? 0)}px`;
     borderBox.style.right = `${indentRight - (borders.right?.space ?? 0)}px`;
     borderBox.style.top = `${-(renderedTopBorder?.space ?? 0)}px`;
     borderBox.style.bottom = `${-(renderedBottomBorder?.space ?? 0)}px`;
+
+    if (block.attrs?.shading) {
+      // Word shades the paragraph border box, including the pBdr/@space inset.
+      // Applying background to the fragment only leaves that padding area unfilled.
+      borderBox.style.backgroundColor = block.attrs.shading;
+    }
 
     if (renderedTopBorder) {
       borderBox.style.borderTop = borderToCss(renderedTopBorder);
@@ -305,6 +317,10 @@ export function paintParagraphFragment(
 
     const hasBorder = renderedTopBorder || renderedBottomBorder || borders.left || borders.right;
     if (hasBorder) {
+      // Keep the expanded border/shading layer behind the text lines. Positioned
+      // descendants with auto z-order paint above in-flow content, which hides
+      // shaded callout text if the background lives on the border overlay.
+      fragmentEl.style.isolation = 'isolate';
       fragmentEl.appendChild(borderBox);
     }
 
@@ -323,7 +339,7 @@ export function paintParagraphFragment(
   }
 
   // Apply shading (background color)
-  if (block.attrs?.shading) {
+  if (block.attrs?.shading && !borderBox) {
     fragmentEl.style.backgroundColor = block.attrs.shading;
   }
 
@@ -377,6 +393,7 @@ export function paintParagraphFragment(
       const splitLineEl = doc.createElement('div');
       splitLineEl.className = `${PARAGRAPH_CLASS_NAMES.line} layout-line-split`;
       splitLineEl.style.position = 'relative';
+      splitLineEl.style.zIndex = '1';
       splitLineEl.style.height = `${line.lineHeight}px`;
       splitLineEl.style.lineHeight = `${line.lineHeight}px`;
 
@@ -431,6 +448,8 @@ export function paintParagraphFragment(
       // inline content can land is `fragment.width - indentRight - lineRightOffset`.
       lineRightEdgePx: fragment.width - indentRight - lineRightOffset,
     });
+    lineEl.style.position = 'relative';
+    lineEl.style.zIndex = '1';
 
     // Apply left offset from floating images (lines start after the floating image)
     // Also constrain width so text doesn't overflow into the image area

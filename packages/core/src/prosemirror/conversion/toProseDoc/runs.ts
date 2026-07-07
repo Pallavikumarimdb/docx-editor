@@ -32,6 +32,8 @@ import { mergeTextFormatting } from '../../../utils/textFormattingMerge';
 import type { StyleResolver } from '../../styles';
 import { textFormattingToMarks } from './marks';
 
+export type NoteRefDisplayFormatter = (noteType: 'footnote' | 'endnote', id: number) => string;
+
 /**
  * Convert a SimpleField or ComplexField to a ProseMirror field node.
  * Preserves run formatting (bold, fontSize, color, etc.) as PM marks.
@@ -106,7 +108,8 @@ export function convertMathEquation(math: MathEquation): PMNode | null {
 export function convertRun(
   run: Run,
   styleFormatting?: TextFormatting,
-  styleResolver?: StyleResolver | null
+  styleResolver?: StyleResolver | null,
+  noteRefDisplayFormatter?: NoteRefDisplayFormatter
 ): PMNode[] {
   const nodes: PMNode[] = [];
 
@@ -127,7 +130,7 @@ export function convertRun(
   const marks = textFormattingToMarks(mergedFormatting);
 
   for (const content of run.content) {
-    const contentNodes = convertRunContent(content, marks);
+    const contentNodes = convertRunContent(content, marks, noteRefDisplayFormatter);
     nodes.push(...contentNodes);
   }
 
@@ -137,11 +140,28 @@ export function convertRun(
 /**
  * Convert RunContent to ProseMirror nodes
  */
-function convertRunContent(content: RunContent, marks: ReturnType<typeof schema.mark>[]): PMNode[] {
+function convertRunContent(
+  content: RunContent,
+  marks: ReturnType<typeof schema.mark>[],
+  noteRefDisplayFormatter?: NoteRefDisplayFormatter
+): PMNode[] {
   switch (content.type) {
     case 'text':
       if (content.text) {
-        return [schema.text(content.text, marks)];
+        if (!content.text.includes('\t')) {
+          return [schema.text(content.text, marks)];
+        }
+        const nodes: PMNode[] = [];
+        const parts = content.text.split('\t');
+        for (let i = 0; i < parts.length; i++) {
+          if (parts[i]) {
+            nodes.push(schema.text(parts[i], marks));
+          }
+          if (i < parts.length - 1) {
+            nodes.push(schema.node('tab', null, undefined, marks));
+          }
+        }
+        return nodes;
       }
       return [];
 
@@ -157,7 +177,25 @@ function convertRunContent(content: RunContent, marks: ReturnType<typeof schema.
     case 'tab':
       // Carry marks (including any enclosing hyperlink) so round-trip keeps
       // the tab inside the hyperlink — TOC entries depend on this.
-      return [schema.node('tab', null, undefined, marks)];
+      return [schema.node('tab', { positional: content.positional ?? null }, undefined, marks)];
+
+    case 'symbol': {
+      const codePoint = parseInt(content.char, 16);
+      if (!Number.isInteger(codePoint) || codePoint < 0x20 || codePoint > 0x10ffff) return [];
+      const mapped = codePoint >= 0xf020 && codePoint <= 0xf0ff ? codePoint - 0xf000 : codePoint;
+      if (mapped < 0x20) return [];
+      const symbolMarks = content.font
+        ? schema
+            .mark('fontFamily', {
+              ascii: content.font,
+              hAnsi: content.font,
+              eastAsia: content.font,
+              cs: content.font,
+            })
+            .addToSet(marks)
+        : marks;
+      return [schema.text(String.fromCodePoint(mapped), symbolMarks)];
+    }
 
     case 'drawing':
       if (content.image) {
@@ -182,7 +220,12 @@ function convertRunContent(content: RunContent, marks: ReturnType<typeof schema.
         id: content.id.toString(),
         noteType: 'footnote',
       });
-      return [schema.text(content.id.toString(), [...marks, footnoteMark])];
+      return [
+        schema.text(noteRefDisplayFormatter?.('footnote', content.id) ?? content.id.toString(), [
+          ...marks,
+          footnoteMark,
+        ]),
+      ];
 
     case 'endnoteRef':
       // Endnote reference - render as superscript number with footnoteRef mark
@@ -190,7 +233,12 @@ function convertRunContent(content: RunContent, marks: ReturnType<typeof schema.
         id: content.id.toString(),
         noteType: 'endnote',
       });
-      return [schema.text(content.id.toString(), [...marks, endnoteMark])];
+      return [
+        schema.text(noteRefDisplayFormatter?.('endnote', content.id) ?? content.id.toString(), [
+          ...marks,
+          endnoteMark,
+        ]),
+      ];
 
     default:
       return [];
@@ -412,7 +460,8 @@ function convertImage(image: Image): PMNode {
 export function convertHyperlink(
   hyperlink: Hyperlink,
   styleFormatting?: TextFormatting,
-  styleResolver?: StyleResolver | null
+  styleResolver?: StyleResolver | null,
+  noteRefDisplayFormatter?: NoteRefDisplayFormatter
 ): PMNode[] {
   const nodes: PMNode[] = [];
 
@@ -452,7 +501,7 @@ export function convertHyperlink(
       // hyperlink don't carry the hyperlink mark through convertImage /
       // convertShape today — linked-image round-trip is a separate gap.)
       for (const content of child.content) {
-        nodes.push(...convertRunContent(content, allMarks));
+        nodes.push(...convertRunContent(content, allMarks, noteRefDisplayFormatter));
       }
     }
   }

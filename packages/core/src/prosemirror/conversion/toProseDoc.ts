@@ -19,13 +19,21 @@
 
 import type { Node as PMNode } from 'prosemirror-model';
 import { schema } from '../schema';
-import type { Document, BlockContent, StyleDefinitions, Theme } from '../../types/document';
+import type {
+  Document,
+  BlockContent,
+  StyleDefinitions,
+  Theme,
+  NumberFormat,
+} from '../../types/document';
+import { formatNumber } from '../../docx/numberingParser';
 import { createStyleResolver, type StyleResolver } from '../styles';
 import { getDocumentWatermark } from '../../docx/watermarkApi';
 import { paragraphHasNonLeadingPageBreak } from './toProseDoc/paragraph';
 import { convertTable } from './toProseDoc/tables';
 import { convertParagraphWithTextBoxes } from './toProseDoc/textbox';
 import { sdtPropsToAttrs } from './sdtAttrs';
+import type { NoteRefDisplayFormatter } from './toProseDoc/runs';
 
 /**
  * Convert a list of block-content model nodes to PM nodes.
@@ -43,12 +51,13 @@ function convertBlocksToNodes(
   blocks: BlockContent[],
   styleResolver: StyleResolver | null,
   theme: Theme | null,
-  includePageBreaks: boolean
+  includePageBreaks: boolean,
+  noteRefDisplayFormatter?: NoteRefDisplayFormatter
 ): PMNode[] {
   const nodes: PMNode[] = [];
   for (const block of blocks) {
     if (block.type === 'paragraph') {
-      nodes.push(...convertParagraphWithTextBoxes(block, styleResolver));
+      nodes.push(...convertParagraphWithTextBoxes(block, styleResolver, noteRefDisplayFormatter));
       if (includePageBreaks && paragraphHasNonLeadingPageBreak(block)) {
         nodes.push(schema.node('pageBreak'));
       }
@@ -59,7 +68,8 @@ function convertBlocksToNodes(
         block.content,
         styleResolver,
         theme,
-        includePageBreaks
+        includePageBreaks,
+        noteRefDisplayFormatter
       );
       const inner = childNodes.length > 0 ? childNodes : [schema.node('paragraph', {}, [])];
       // Block-level bookmark markers wrapping this control's `w:sdt` ride as
@@ -94,6 +104,20 @@ export interface ToProseDocOptions {
   defaultTabMarkTwips?: number | null;
 }
 
+function createNoteRefDisplayFormatter(document: Document): NoteRefDisplayFormatter {
+  const body = document.package.document;
+  const footnoteFmt: NumberFormat = body.finalSectionProperties?.footnotePr?.numFmt ?? 'decimal';
+  const footnoteStart = body.finalSectionProperties?.footnotePr?.numStart ?? 1;
+  const endnoteFmt: NumberFormat = body.finalSectionProperties?.endnotePr?.numFmt ?? 'lowerRoman';
+  const endnoteStart = body.finalSectionProperties?.endnotePr?.numStart ?? 1;
+
+  return (noteType, id) => {
+    const start = noteType === 'endnote' ? endnoteStart : footnoteStart;
+    const fmt = noteType === 'endnote' ? endnoteFmt : footnoteFmt;
+    return formatNumber(start + Math.max(0, id - 1), fmt);
+  };
+}
+
 /**
  * Convert a Document to a ProseMirror document
  *
@@ -110,7 +134,8 @@ export function toProseDoc(document: Document, options?: ToProseDocOptions): PMN
     document.package.document.content,
     styleResolver,
     theme,
-    /* includePageBreaks */ true
+    /* includePageBreaks */ true,
+    createNoteRefDisplayFormatter(document)
   );
 
   // Ensure we have at least one paragraph.

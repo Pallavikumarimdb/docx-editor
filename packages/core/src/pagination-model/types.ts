@@ -1,14 +1,8 @@
 /**
  * The pagination model — the engine's public data contract.
  *
- * Three parallel vocabularies, in the order the engine consumes them:
- *
- *   1. **Content nodes** ({@link ContentNode}) — what the document *is*. Produced by
- *      `buildBoxTree` from a ProseMirror document snapshot. Geometry-free.
- *   2. **Layout metrics** ({@link LayoutMetrics}) — how tall each node *is* at a
- *      given available width. One per node, index-aligned with the node array.
- *   3. **Fragments** ({@link Fragment}) — where a (possibly partial) node *lands*
- *      on a page. Produced by `layOutPages` from nodes + metrics.
+ * Content nodes describe the document, layout metrics measure each node, and
+ * fragments describe where each measured node lands on a page.
  *
  * The discriminant on all three, and on runs, is `kind` — never `type`.
  *
@@ -280,6 +274,8 @@ export interface TextRun extends RunFormatting, DocRange {
  */
 export interface TabRun extends RunFormatting, DocRange {
   kind: 'tab';
+  /** Absolute-position tab metadata (`w:ptab`) when this tab is positional. */
+  positional?: import('../types/document').TabContent['positional'];
 }
 
 /**
@@ -628,6 +624,10 @@ export interface ColumnBreakBlock extends ContentNodeBase {
   kind: 'columnBreak';
 }
 
+export type { PageHeaderFooterRefs } from './headerFooterRefs';
+export { selectHeaderFooterRefForPage } from './headerFooterRefs';
+import type { PageHeaderFooterRefs } from './headerFooterRefs';
+
 /**
  * The boundary between two sections (`w:sectPr`). Carries the geometry the
  * *following* content adopts; absent fields inherit from the previous section.
@@ -640,6 +640,8 @@ export interface SectionMarkerBlock extends ContentNodeBase {
   pageSize?: Size;
   margins?: PageMargins;
   columns?: ColumnLayout;
+  /** Effective header/footer refs for the section closed by this break. */
+  headerFooterRefs?: PageHeaderFooterRefs;
 }
 
 /**
@@ -960,6 +962,12 @@ export interface Page {
   fragments: Fragment[];
   /** The section's column geometry, when it has more than one column. */
   columns?: ColumnLayout;
+  /** Zero-based section index this page belongs to. */
+  sectionIndex?: number;
+  /** One-based page number within the section. */
+  sectionPageNumber?: number;
+  /** Effective header/footer refs for this page's section. */
+  headerFooterRefs?: PageHeaderFooterRefs;
   /** Px reserved at the bottom of the content box for the footnote area. */
   footnoteReservedHeight?: number;
   /** Footnotes whose references landed on this page, in document order. */
@@ -996,6 +1004,8 @@ export interface SectionLayoutConfig {
   margins: PageMargins;
   columns?: ColumnLayout;
   startType?: SectionStartType;
+  /** Effective header/footer refs for pages in this section. */
+  headerFooterRefs?: PageHeaderFooterRefs;
 }
 
 /**
@@ -1031,6 +1041,8 @@ export interface LayoutConfig {
   columns?: ColumnLayout;
   /** How the final section starts. */
   bodyBreakType?: SectionStartType;
+  /** Effective header/footer refs for the body's final section. */
+  finalHeaderFooterRefs?: PageHeaderFooterRefs;
   /** Vertical gap between pages, px. */
   pageGap?: number;
   /**

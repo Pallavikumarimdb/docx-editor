@@ -38,7 +38,8 @@ import type {
   TableCellPropertyChange,
   TableStructuralChangeInfo,
   ConditionalFormatStyle,
-  Paragraph,
+  BlockContent,
+  BlockSdt,
   Theme,
   RelationshipMap,
   MediaFile,
@@ -46,6 +47,7 @@ import type {
 import type { StyleMap } from './styleParser';
 import type { NumberingMap } from './numberingParser';
 import { parseParagraph } from './paragraphParser';
+import { parseSdtProperties } from './sdtProperties';
 // Shared with the body/header/footer parser (blockContentParser): a paragraph
 // inside a table cell needs the same anchored-text-box enrichment pass, or a
 // text box anchored from a run in a cell is dropped at parse.
@@ -560,8 +562,8 @@ function parseCellContent(
   rels: RelationshipMap | null,
   media: Map<string, MediaFile> | null,
   options?: { inHeaderFooter?: boolean }
-): (Paragraph | Table)[] {
-  const content: (Paragraph | Table)[] = [];
+): BlockContent[] {
+  const content: BlockContent[] = [];
 
   // Get all child elements
   const elements = tcElement.elements || [];
@@ -597,6 +599,10 @@ function parseCellContent(
       const table = parseTable(child, styles, theme, numbering, rels, media, options);
       content.push(table);
       markers.onBlockPushed(table);
+    } else if (localName === 'sdt') {
+      const sdt = parseCellBlockSdt(child, styles, theme, numbering, rels, media, options);
+      content.push(sdt);
+      markers.onBlockPushed(sdt);
     }
     // Other content types in cells are rare but could be added
   }
@@ -616,6 +622,25 @@ function parseCellContent(
   markers.finalize();
 
   return content;
+}
+
+function parseCellBlockSdt(
+  sdt: XmlElement,
+  styles: StyleMap | null,
+  theme: Theme | null,
+  numbering: NumberingMap | null,
+  rels: RelationshipMap | null,
+  media: Map<string, MediaFile> | null,
+  options?: { inHeaderFooter?: boolean }
+): BlockSdt {
+  const sdtPr = findChild(sdt, 'w', 'sdtPr');
+  const sdtEndPr = findChild(sdt, 'w', 'sdtEndPr');
+  const sdtContent = findChild(sdt, 'w', 'sdtContent');
+  const properties = parseSdtProperties(sdtPr, sdtEndPr);
+  const content = sdtContent
+    ? parseCellContent(sdtContent, styles, theme, numbering, rels, media, options)
+    : [];
+  return { type: 'blockSdt', properties, content };
 }
 
 // ============================================================================

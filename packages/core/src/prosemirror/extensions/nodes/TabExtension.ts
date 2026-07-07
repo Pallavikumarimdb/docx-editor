@@ -11,6 +11,9 @@ export const TabExtension = createNodeExtension({
     inline: true,
     group: 'inline',
     selectable: false,
+    attrs: {
+      positional: { default: null },
+    },
     parseDOM: [
       {
         tag: 'span.docx-tab',

@@ -4,7 +4,7 @@
  * instruction text, soft/no-break hyphens, drawings, shapes.
  */
 
-import type { TextFormatting } from '../formatting';
+import type { TabLeader, TextFormatting } from '../formatting';
 import type { Image } from './image';
 import type { Shape } from './shape';
 import type { RunPropertyChange } from './trackedChange';
@@ -27,6 +27,12 @@ export interface TextContent {
  */
 export interface TabContent {
   type: 'tab';
+  /** Absolute-position tab metadata (`w:ptab`) when this tab is positional. */
+  positional?: {
+    alignment?: 'left' | 'center' | 'right';
+    relativeTo?: 'margin' | 'indent';
+    leader?: TabLeader;
+  };
 }
 
 /**

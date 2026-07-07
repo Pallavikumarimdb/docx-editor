@@ -14,7 +14,12 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { calculateTabWidth, type TabMark, type TabRuler } from '../tabMetrics';
+import {
+  calculatePositionalTabWidth,
+  calculateTabWidth,
+  type TabMark,
+  type TabRuler,
+} from '../tabMetrics';
 
 /** 1440 twips = 1 inch = 96px, so 720 twips = 48px. */
 const GRID_PX = 48;
@@ -172,5 +177,18 @@ describe('leaders', () => {
       defaultStopTwips: 0,
     };
     expect(calculateTabWidth(0, ruler, { followingWidth: 20 }).leader).toBe('dot');
+  });
+});
+
+describe('positional tabs (w:ptab)', () => {
+  test('right-aligns following content to the target and preserves the leader', () => {
+    const result = calculatePositionalTabWidth(
+      120,
+      640,
+      { alignment: 'right', leader: 'dot' },
+      { followingWidth: 20 }
+    );
+
+    expect(result).toEqual({ width: 500, alignment: 'end', leader: 'dot' });
   });
 });

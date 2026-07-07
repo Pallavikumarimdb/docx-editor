@@ -42,6 +42,30 @@ describe('parseParagraph run-boundary preservation', () => {
   });
 });
 
+describe('parseParagraph positional tabs', () => {
+  test('parses w:ptab as a tab with alignment, relative target, and leader', () => {
+    const paragraph = parseParagraphXml(`
+      <w:p xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+        <w:r>
+          <w:t>Chapter 1: Introduction</w:t>
+          <w:ptab w:alignment="right" w:relativeTo="margin" w:leader="dot"/>
+          <w:t>1</w:t>
+        </w:r>
+      </w:p>
+    `);
+
+    const run = paragraph.content[0];
+    expect(run?.type).toBe('run');
+    if (!run || run.type !== 'run') return;
+
+    expect(run.content).toHaveLength(3);
+    expect(run.content[1]).toEqual({
+      type: 'tab',
+      positional: { alignment: 'right', relativeTo: 'margin', leader: 'dot' },
+    });
+  });
+});
+
 describe('parseParagraph tracked-change hardening', () => {
   test('parses deletion text from w:delText runs', () => {
     const paragraph = parseParagraphXml(`
@@ -160,6 +184,37 @@ describe('parseParagraph rendered page break markers', () => {
 });
 
 describe('parseParagraph SDT content preservation', () => {
+  test('projects native checkbox properties while preserving label-only content', () => {
+    const paragraph = parseParagraphXml(`
+      <w:p xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+           xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">
+        <w:sdt>
+          <w:sdtPr>
+            <w:alias w:val="Task alpha"/>
+            <w:tag w:val="task-alpha"/>
+            <w14:checkbox>
+              <w14:checked w14:val="1"/>
+              <w14:checkedState w14:val="2612" w14:font="MS Gothic"/>
+              <w14:uncheckedState w14:val="2610" w14:font="MS Gothic"/>
+            </w14:checkbox>
+          </w:sdtPr>
+          <w:sdtContent>
+            <w:r><w:t>Task alpha</w:t></w:r>
+          </w:sdtContent>
+        </w:sdt>
+      </w:p>
+    `);
+
+    const sdt = paragraph.content[0];
+    expect(sdt.type).toBe('inlineSdt');
+    if (sdt.type !== 'inlineSdt') return;
+    expect(sdt.properties.sdtType).toBe('checkbox');
+    expect(sdt.properties.checked).toBe(true);
+    expect(sdt.properties.alias).toBe('Task alpha');
+    expect(sdt.properties.tag).toBe('task-alpha');
+    expect(sdt.content[0].type).toBe('run');
+  });
+
   test('keeps a simple field that lives inside an inline SDT', () => {
     const paragraph = parseParagraphXml(`
       <w:p xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">

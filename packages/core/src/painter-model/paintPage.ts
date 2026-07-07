@@ -1,17 +1,6 @@
-/**
- * Page Renderer
- *
- * Renders a single page from PageLayout data to DOM elements.
- * Each page contains positioned fragments within a content area.
- *
- * This file owns the single-page orchestrator (`paintPage`) plus page-level
- * styling (background, borders, content area) and floating-image extraction
- * from paragraphs. Header/footer rendering lives in ./paintPage/headerFooter.ts,
- * footnote area rendering in ./paintPage/footnotes.ts, and the multi-page
- * virtualization / IntersectionObserver layer in ./paintPage/virtualization.ts.
+/** Paints one composed page and its page-level furniture.
  * @packageDocumentation
- * @public
- */
+ * @public */
 
 import type {
   Page,
@@ -71,6 +60,7 @@ import { paintFloatingImagesLayer } from './floatingImageLayer';
 import {
   renderHeaderFooterContent,
   type HeaderFooterContent,
+  type SectionHeaderFooterContent,
   type HeaderFooterLayoutInfo,
 } from './paintPage/headerFooter';
 import {
@@ -92,7 +82,11 @@ export {
   type FloatingImagePaintRecord,
   type FloatingImagesLayerOptions,
 } from './floatingImageLayer';
-export type { HeaderFooterContent, HeaderFooterLayoutInfo } from './paintPage/headerFooter';
+export type {
+  HeaderFooterContent,
+  SectionHeaderFooterContent,
+  HeaderFooterLayoutInfo,
+} from './paintPage/headerFooter';
 export {
   resolveHeaderFooterFloatingTablePosition,
   resolveHeaderFooterFloatLeft,
@@ -141,33 +135,24 @@ export interface RenderContext {
   positioning?: 'absolute' | 'flow';
 }
 
-/**
- * Options for rendering a page
- */
 export interface RenderPageOptions {
-  /** Document to create elements in (default: window.document) */
   document?: Document;
-  /** Custom page class name */
   pageClassName?: string;
-  /** Show page borders (for debugging) */
   showBorders?: boolean;
-  /** Background color for pages */
   backgroundColor?: string;
-  /** Drop shadow on pages */
   showShadow?: boolean;
-  /** Header content to render (used for all pages, or pages 2+ when titlePg is set). */
   headerContent?: HeaderFooterContent;
-  /** Footer content to render (used for all pages, or pages 2+ when titlePg is set). */
   footerContent?: HeaderFooterContent;
-  /** Header content for the first page only (when titlePg is set). */
   firstPageHeaderContent?: HeaderFooterContent;
-  /** Footer content for the first page only (when titlePg is set). */
   firstPageFooterContent?: HeaderFooterContent;
-  /** Whether different first page headers/footers are enabled (w:titlePg). */
   titlePg?: boolean;
-  /** Distance from page top to header content. */
+  headerContentByRef?: Map<string, HeaderFooterContent>;
+  footerContentByRef?: Map<string, HeaderFooterContent>;
+  evenAndOddHeaders?: boolean;
+  headerPartRId?: string;
+  footerPartRId?: string;
+  headerFooterBySection?: SectionHeaderFooterContent[];
   headerDistance?: number;
-  /** Distance from page bottom to footer content. */
   footerDistance?: number;
   /** Block lookup for rendering actual content. */
   nodeLookup?: NodeLookup;
@@ -181,13 +166,9 @@ export interface RenderPageOptions {
     offsetFrom?: 'page' | 'text';
     zOrder?: 'front' | 'back';
   };
-  /** Theme for resolving border colors. */
   theme?: Theme | null;
-  /** Footnotes to render at the bottom of this page. */
   footnoteArea?: FootnoteRenderItem[];
-  /** Comment IDs that are resolved — skip highlight for these */
   resolvedCommentIds?: Set<number>;
-  /** Watermark to paint behind body content (resolved from the page's section header). */
   watermark?: Watermark;
 }
 
@@ -452,7 +433,6 @@ export function paintPage(
   }
   const doc = config.document ?? document;
 
-  // Create page container
   const pageEl = doc.createElement('div');
   pageEl.className = config.pageClassName ?? PAGE_CLASS_NAMES.page;
   pageEl.dataset.pageNumber = String(page.number);
@@ -482,16 +462,13 @@ export function paintPage(
     pageEl.appendChild(pageBorderEl);
   }
 
-  // Create content area
   const contentEl = doc.createElement('div');
   contentEl.className = PAGE_CLASS_NAMES.content;
   applyContentAreaStyles(contentEl, page);
 
-  // Calculate content width for justify alignment
   const pageGeometry = pageGeometryFromPage(page);
   const contentWidth = pageGeometry.contentWidth;
 
-  // PHASE 1: Extract all floating images from paragraphs on this page
   const allFloatingImages: PageFloatingImage[] = [];
   const floatingRects: FloatingExclusionRect[] = [];
 
@@ -516,7 +493,6 @@ export function paintPage(
     }
   }
 
-  // Collect floating image exclusion rectangles
   for (const img of allFloatingImages) {
     if (!floatingImageWrapsText(img) && img.wrapType !== 'topAndBottom') continue;
 
@@ -616,11 +592,9 @@ export function paintPage(
     }
   }
 
-  // PHASE 2: Convert floating rects to per-image measurement zones
   const floatingZones: FloatingImageZone[] =
     floatingRects.length > 0 ? rectsToFloatingZones(floatingRects, contentWidth) : [];
 
-  // PHASE 3: Render behind-text floating images before text fragments.
   const behindFloatingImages = allFloatingImages.filter(floatingImageIsBehindDoc);
   const frontFloatingImages = allFloatingImages.filter((img) => !floatingImageIsBehindDoc(img));
   if (behindFloatingImages.length > 0) {
@@ -633,8 +607,6 @@ export function paintPage(
     contentEl.appendChild(floatingLayer);
   }
 
-  // PHASE 4: Render each fragment with floating image awareness
-  // Helper to peek at a fragment's paragraph borders (for border grouping)
   const getParaBorders = (frag: Fragment): ParagraphBorders | undefined => {
     if (frag.kind !== 'paragraph' || !config.nodeLookup || !frag.nodeId) return undefined;
     const nodeData = config.nodeLookup.get(String(frag.nodeId));
@@ -805,14 +777,47 @@ export function paintPage(
     const colGap = page.columns.gap;
     const colWidth = (contentWidth - (colCount - 1) * colGap) / colCount;
     const contentHeight = page.size.h - page.margins.top - page.margins.bottom;
+    const columnXPositions = Array.from(
+      { length: colCount },
+      (_, col) => page.margins.left + col * (colWidth + colGap)
+    );
+    const columnFragments = page.fragments
+      .map((fragment) => ({
+        fragment,
+        columnIndex: columnXPositions.findIndex((x) => Math.abs(fragment.x - x) <= 1),
+      }))
+      .filter(({ columnIndex }) => columnIndex >= 0);
+    const nonFirstColumnFragments = columnFragments.filter(({ columnIndex }) => columnIndex > 0);
+    const rawSeparatorTop =
+      nonFirstColumnFragments.length > 0
+        ? Math.min(...nonFirstColumnFragments.map(({ fragment }) => fragment.y - page.margins.top))
+        : columnFragments.length > 0
+          ? Math.min(...columnFragments.map(({ fragment }) => fragment.y - page.margins.top))
+          : 0;
+    const separatorTop = Math.max(0, Math.min(contentHeight, rawSeparatorTop));
+    const fragmentsInUsedBand = columnFragments.filter(({ fragment }) => {
+      const height = 'height' in fragment ? fragment.height : 0;
+      return fragment.y - page.margins.top + height >= separatorTop;
+    });
+    const separatorBottom =
+      fragmentsInUsedBand.length > 0
+        ? Math.max(
+            ...fragmentsInUsedBand.map(({ fragment }) => {
+              const height = 'height' in fragment ? fragment.height : 0;
+              return fragment.y - page.margins.top + height;
+            })
+          )
+        : 0;
+    const separatorHeight = Math.max(0, Math.min(contentHeight, separatorBottom) - separatorTop);
 
     for (let col = 0; col < colCount - 1; col++) {
       const lineX = (col + 1) * colWidth + col * colGap + colGap / 2;
       const line = doc.createElement('div');
+      line.className = 'layout-column-separator';
       line.style.position = 'absolute';
       line.style.left = `${lineX}px`;
-      line.style.top = '0';
-      line.style.height = `${contentHeight}px`;
+      line.style.top = `${separatorTop}px`;
+      line.style.height = `${separatorHeight}px`;
       line.style.width = '0.5px';
       line.style.backgroundColor = '#000';
       line.style.pointerEvents = 'none';
@@ -848,7 +853,6 @@ export function paintPage(
 
   pageEl.appendChild(contentEl);
 
-  // Render header area (always rendered for hover hint / double-click target)
   {
     const defaultHeaderDistance = 48;
     const headerDistance = config.headerDistance ?? page.margins.header ?? defaultHeaderDistance;

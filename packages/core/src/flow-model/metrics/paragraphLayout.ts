@@ -30,6 +30,7 @@ import type {
   ParagraphBlock,
   ParagraphMetrics,
   Run,
+  TabRun,
   LineSegment,
 } from '../../pagination-model/types';
 import {
@@ -51,7 +52,11 @@ import {
 import { MIN_WRAP_SEGMENT_WIDTH } from './wrapThresholds';
 import { getListMarkerInlineWidth } from './listMarkerWidth';
 import { isFloatingImageRun } from '../../painter-model/floatingImageFlow';
-import { calculateTabWidth, type TabRuler } from '../../prosemirror/utils/tabMetrics';
+import {
+  calculatePositionalTabWidth,
+  calculateTabWidth,
+  type TabRuler,
+} from '../../prosemirror/utils/tabMetrics';
 import { pointsToPixels } from '../../utils/units';
 
 export type { FloatingImageZone } from './floatingZones';
@@ -579,10 +584,20 @@ function fillLines(
         const seg = line.segments[line.segmentIndex];
         const penFromContentEdge = (seg?.leftOffset ?? 0) + line.penX;
         const following = followingContentWidth(tokens, token, block.runs, defaults);
-        const advance = calculateTabWidth(penFromContentEdge, tabRuler, {
-          followingWidth: following.width,
-          decimalPrefixWidth: following.decimalPrefixWidth,
-        });
+        const run = block.runs[token.runIndex] as TabRun;
+        const positionalTarget =
+          run.positional?.relativeTo === 'indent'
+            ? (attrs?.indent?.left ?? 0) + (seg?.availableWidth ?? availableWidth)
+            : (seg?.leftOffset ?? 0) + (seg?.availableWidth ?? availableWidth);
+        const advance = run.positional
+          ? calculatePositionalTabWidth(penFromContentEdge, positionalTarget, run.positional, {
+              followingWidth: following.width,
+              decimalPrefixWidth: following.decimalPrefixWidth,
+            })
+          : calculateTabWidth(penFromContentEdge, tabRuler, {
+              followingWidth: following.width,
+              decimalPrefixWidth: following.decimalPrefixWidth,
+            });
         // A tab that overshoots the line just fills what's left of it.
         const width = Math.min(advance.width, Math.max(0, roomLeft()));
         placeAtomic(line, token.runIndex, 0, 1, width);

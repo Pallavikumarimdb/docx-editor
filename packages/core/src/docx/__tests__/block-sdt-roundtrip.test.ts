@@ -3,7 +3,7 @@ import { parseDocumentBody } from '../documentParser';
 import { serializeDocumentBody } from '../serializer/documentSerializer';
 import { parseHeaderFooter } from '../headerFooterParser';
 import { serializeHeaderFooter } from '../serializer/headerFooterSerializer';
-import type { BlockSdt, DocumentBody } from '../../types/document';
+import type { BlockSdt, DocumentBody, Table } from '../../types/document';
 
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
 const W15 = 'xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml"';
@@ -59,6 +59,31 @@ describe('block SDT parsing', () => {
 
     const sdt = firstBlockSdt(doc);
     expect(sdt.content[0].type).toBe('table');
+  });
+
+  test('a block SDT inside a table cell is preserved', () => {
+    const doc = body(`
+      <w:tbl>
+        <w:tr>
+          <w:tc>
+            <w:sdt>
+              <w:sdtPr><w:alias w:val="Project Name"/><w:tag w:val="project-name"/></w:sdtPr>
+              <w:sdtContent>
+                <w:p><w:r><w:t>Q4 Migration</w:t></w:r></w:p>
+              </w:sdtContent>
+            </w:sdt>
+          </w:tc>
+        </w:tr>
+      </w:tbl>
+    `);
+
+    const table = doc.content[0] as Table;
+    const sdt = table.rows[0].cells[0].content[0];
+    expect(sdt.type).toBe('blockSdt');
+    if (sdt.type !== 'blockSdt') return;
+    expect(sdt.properties.alias).toBe('Project Name');
+    expect(sdt.properties.tag).toBe('project-name');
+    expect(sdt.content[0].type).toBe('paragraph');
   });
 
   test('a block SDT wrapping multiple children keeps document order', () => {
@@ -245,6 +270,27 @@ describe('block SDT serialization round-trip', () => {
     expect(out).toContain('w:val="outer"');
     expect(out).toContain('w:val="inner"');
     expect(out).toContain('deep');
+  });
+
+  test('a cell-level block SDT round-trips inside w:tc', () => {
+    const out = roundtrip(`
+      <w:tbl>
+        <w:tr>
+          <w:tc>
+            <w:sdt>
+              <w:sdtPr><w:alias w:val="Team Lead"/><w:tag w:val="team-lead"/></w:sdtPr>
+              <w:sdtContent>
+                <w:p><w:r><w:t>Ada Lovelace</w:t></w:r></w:p>
+              </w:sdtContent>
+            </w:sdt>
+          </w:tc>
+        </w:tr>
+      </w:tbl>
+    `);
+
+    expect(out).toContain('<w:tc><w:sdt>');
+    expect(out).toContain('w:val="team-lead"');
+    expect(out).toContain('Ada Lovelace');
   });
 
   test('bookmarks inside sdtContent survive the round trip', () => {

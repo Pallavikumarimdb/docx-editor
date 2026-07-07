@@ -28,7 +28,13 @@ import { mergeTextFormatting } from '../../../utils/textFormattingMerge';
 import type { StyleResolver } from '../../styles';
 import { getMarkSetKey, RUN_BOUNDARY_MARK_EXCLUSIONS } from '../markKeys';
 import { resolveTextFormatting } from './marks';
-import { convertRun, convertHyperlink, convertField, convertMathEquation } from './runs';
+import {
+  convertRun,
+  convertHyperlink,
+  convertField,
+  convertMathEquation,
+  type NoteRefDisplayFormatter,
+} from './runs';
 import { sdtPropsToAttrs } from '../sdtAttrs';
 
 /**
@@ -41,7 +47,8 @@ export function convertParagraph(
   paragraph: Paragraph,
   styleResolver: StyleResolver | null,
   activeCommentIds?: Set<number>,
-  extraRunFormatting?: TextFormatting
+  extraRunFormatting?: TextFormatting,
+  noteRefDisplayFormatter?: NoteRefDisplayFormatter
 ): PMNode {
   const attrs = paragraphFormattingToAttrs(paragraph, styleResolver);
   const inlineNodes: PMNode[] = [];
@@ -72,7 +79,12 @@ export function convertParagraph(
     } else if (content.type === 'commentRangeEnd') {
       commentIds.delete(content.id);
     } else if (content.type === 'run') {
-      let runNodes = convertRun(content, mergedStyleRunFormatting, styleResolver);
+      let runNodes = convertRun(
+        content,
+        mergedStyleRunFormatting,
+        styleResolver,
+        noteRefDisplayFormatter
+      );
       const runBoundary = runBoundaryFromConvertedRun(content, runNodes);
       if (runBoundary && originalRunBoundaries) {
         originalRunBoundaries.push(runBoundary);
@@ -84,7 +96,12 @@ export function convertParagraph(
       }
       inlineNodes.push(...runNodes);
     } else if (content.type === 'hyperlink') {
-      const linkNodes = convertHyperlink(content, mergedStyleRunFormatting, styleResolver);
+      const linkNodes = convertHyperlink(
+        content,
+        mergedStyleRunFormatting,
+        styleResolver,
+        noteRefDisplayFormatter
+      );
       inlineNodes.push(...linkNodes);
       originalRunBoundaries = undefined;
     } else if (content.type === 'simpleField' || content.type === 'complexField') {
@@ -92,7 +109,12 @@ export function convertParagraph(
       if (fieldNode) inlineNodes.push(fieldNode);
       originalRunBoundaries = undefined;
     } else if (content.type === 'inlineSdt') {
-      const sdtNode = convertInlineSdt(content, mergedStyleRunFormatting, styleResolver);
+      const sdtNode = convertInlineSdt(
+        content,
+        mergedStyleRunFormatting,
+        styleResolver,
+        noteRefDisplayFormatter
+      );
       if (sdtNode) inlineNodes.push(sdtNode);
       originalRunBoundaries = undefined;
     } else if (content.type === 'insertion') {
@@ -100,7 +122,9 @@ export function convertParagraph(
         content,
         'insertion',
         mergedStyleRunFormatting,
-        styleResolver
+        styleResolver,
+        false,
+        noteRefDisplayFormatter
       );
       if (commentIds.size > 0) {
         insNodes = applyCommentMarks(insNodes, commentIds);
@@ -112,7 +136,9 @@ export function convertParagraph(
         content,
         'deletion',
         mergedStyleRunFormatting,
-        styleResolver
+        styleResolver,
+        false,
+        noteRefDisplayFormatter
       );
       if (commentIds.size > 0) {
         delNodes = applyCommentMarks(delNodes, commentIds);
@@ -125,7 +151,8 @@ export function convertParagraph(
         'deletion',
         mergedStyleRunFormatting,
         styleResolver,
-        true
+        true,
+        noteRefDisplayFormatter
       );
       if (commentIds.size > 0) {
         moveFromNodes = applyCommentMarks(moveFromNodes, commentIds);
@@ -138,7 +165,8 @@ export function convertParagraph(
         'insertion',
         mergedStyleRunFormatting,
         styleResolver,
-        true
+        true,
+        noteRefDisplayFormatter
       );
       if (commentIds.size > 0) {
         moveToNodes = applyCommentMarks(moveToNodes, commentIds);
@@ -242,14 +270,17 @@ function convertTrackedChange(
   markType: 'insertion' | 'deletion',
   styleRunFormatting?: TextFormatting,
   styleResolver?: StyleResolver | null,
-  isMovePair = false
+  isMovePair = false,
+  noteRefDisplayFormatter?: NoteRefDisplayFormatter
 ): PMNode[] {
   const nodes: PMNode[] = [];
   for (const item of change.content) {
     if (item.type === 'run') {
-      nodes.push(...convertRun(item, styleRunFormatting, styleResolver));
+      nodes.push(...convertRun(item, styleRunFormatting, styleResolver, noteRefDisplayFormatter));
     } else if (item.type === 'hyperlink') {
-      nodes.push(...convertHyperlink(item, styleRunFormatting, styleResolver));
+      nodes.push(
+        ...convertHyperlink(item, styleRunFormatting, styleResolver, noteRefDisplayFormatter)
+      );
     }
   }
 
@@ -457,23 +488,39 @@ function paragraphFormattingToAttrs(
 function convertInlineSdt(
   sdt: InlineSdt,
   styleRunFormatting?: TextFormatting,
-  styleResolver?: StyleResolver | null
+  styleResolver?: StyleResolver | null,
+  noteRefDisplayFormatter?: NoteRefDisplayFormatter
 ): PMNode | null {
   const props = sdt.properties;
   const inlineNodes: PMNode[] = [];
 
   for (const content of sdt.content) {
     if (content.type === 'run') {
-      const runNodes = convertRun(content, styleRunFormatting, styleResolver);
+      const runNodes = convertRun(
+        content,
+        styleRunFormatting,
+        styleResolver,
+        noteRefDisplayFormatter
+      );
       inlineNodes.push(...runNodes);
     } else if (content.type === 'hyperlink') {
-      const linkNodes = convertHyperlink(content, styleRunFormatting, styleResolver);
+      const linkNodes = convertHyperlink(
+        content,
+        styleRunFormatting,
+        styleResolver,
+        noteRefDisplayFormatter
+      );
       inlineNodes.push(...linkNodes);
     } else if (content.type === 'simpleField' || content.type === 'complexField') {
       const fieldNode = convertField(content, styleRunFormatting);
       if (fieldNode) inlineNodes.push(fieldNode);
     } else if (content.type === 'inlineSdt') {
-      const nestedSdt = convertInlineSdt(content, styleRunFormatting, styleResolver);
+      const nestedSdt = convertInlineSdt(
+        content,
+        styleRunFormatting,
+        styleResolver,
+        noteRefDisplayFormatter
+      );
       if (nestedSdt) inlineNodes.push(nestedSdt);
     } else if (content.type === 'mathEquation') {
       const mathNode = convertMathEquation(content);

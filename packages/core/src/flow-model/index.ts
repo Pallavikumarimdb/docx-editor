@@ -55,6 +55,13 @@ export type {
   TableCellTarget,
   PointerTargetResult,
 } from './pointerTargetResolve';
+export {
+  DEFAULT_SCROLL_BOTTOM_MARGIN_PX,
+  getPageScrollInfo,
+  getVisualScrollHeight,
+  getVisualViewportHeight,
+} from './scrollGeometry';
+export type { PageScrollInfo, PageScrollInfoInput, PageScrollLayout } from './scrollGeometry';
 
 // Click → PM position
 //
@@ -110,6 +117,7 @@ export {
   FOOTNOTE_COLUMN_GAP_PX,
   FOOTNOTE_REFLOW_LIMIT,
 } from './footnoteLayout';
+export { buildEndnoteFlowBlocks, collectEndnoteRefs } from './endnoteLayout';
 export type {
   FootnoteRefLocation,
   MeasureBlocksFn,
@@ -117,6 +125,7 @@ export type {
   StabilizeFootnoteLayoutArgs,
   StabilizeFootnoteLayoutResult,
 } from './footnoteLayout';
+export type { BuildEndnoteFlowBlocksOptions, EndnoteRefLocation } from './endnoteLayout';
 
 // Header / footer layout helpers — same pattern as footnote: full pipeline
 // (normalization + conversion) lives in core, with adapter-supplied

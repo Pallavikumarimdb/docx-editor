@@ -8,9 +8,11 @@ import {
   stabilizeFootnoteLayoutWithPageContent,
   type FootnoteRefLocation,
 } from '../footnoteLayout';
+import { buildEndnoteFlowBlocks, collectEndnoteRefs } from '../endnoteLayout';
 import { takeFootnoteSlice } from '../footnoteSlices';
 import { layOutPages } from '../../pagination-model';
 import type {
+  ContentNode,
   FootnoteContent,
   LayoutConfig,
   MeasuredLine,
@@ -21,7 +23,7 @@ import type {
   TableBlock,
   TableMetrics,
 } from '../../pagination-model/types';
-import type { Footnote } from '../../types/document';
+import type { Endnote, Footnote } from '../../types/document';
 
 const layoutConfig: LayoutConfig = {
   pageSize: { w: 200, h: 140 },
@@ -106,6 +108,64 @@ function bodyFixture() {
   const refs: FootnoteRefLocation[] = [{ footnoteId: 7, pmPos: 1 }];
   return { block, measure, initialLayout, refs };
 }
+
+describe('endnote document-end rendering helpers', () => {
+  test('collects endnote refs and builds lower-roman endnote blocks', () => {
+    const nodes: ContentNode[] = [
+      {
+        kind: 'paragraph',
+        id: 'p1',
+        runs: [
+          { kind: 'text', text: 'first', endnoteRefId: 1 },
+          { kind: 'text', text: 'second', endnoteRefId: 2 },
+        ],
+      },
+    ];
+    const endnotes: Endnote[] = [
+      {
+        type: 'endnote',
+        id: 1,
+        content: [
+          {
+            type: 'paragraph',
+            content: [{ type: 'run', content: [{ type: 'text', text: 'Alpha' }] }],
+          },
+        ],
+      },
+      {
+        type: 'endnote',
+        id: 2,
+        content: [
+          {
+            type: 'paragraph',
+            content: [{ type: 'run', content: [{ type: 'text', text: 'Beta' }] }],
+          },
+        ],
+      },
+    ];
+
+    const refs = collectEndnoteRefs(nodes);
+    const out = buildEndnoteFlowBlocks(endnotes, refs, {
+      numFmt: 'lowerRoman',
+      contentWidth: 600,
+    });
+
+    expect(refs).toEqual([{ endnoteId: 1 }, { endnoteId: 2 }]);
+    expect((out[0] as ParagraphBlock).attrs?.borders?.top).toMatchObject({
+      style: 'solid',
+      width: 1,
+    });
+    expect((out[0] as ParagraphBlock).attrs?.indent?.right).toBeCloseTo(400, 4);
+    expect((out[1] as ParagraphBlock).runs[0]).toMatchObject({
+      text: 'i  ',
+      superscript: true,
+    });
+    expect((out[2] as ParagraphBlock).runs[0]).toMatchObject({
+      text: 'ii  ',
+      superscript: true,
+    });
+  });
+});
 
 describe('footnote continuation planning', () => {
   test('slices paragraphs at line boundaries and continues beyond the body', () => {

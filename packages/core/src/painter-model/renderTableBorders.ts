@@ -32,9 +32,10 @@ export function styleBorder(
   if (!isVisibleBorder(border)) {
     el.style[styleProp] = 'none';
   } else {
-    const width = border.width ?? 1;
-    const color = border.color ?? '#000000';
     const style = border.style ?? 'solid';
+    const rawWidth = border.width ?? 1;
+    const width = style === 'double' ? Math.max(rawWidth, 3) : rawWidth;
+    const color = border.color ?? '#000000';
     el.style[styleProp] = `${width}px ${style} ${color}`;
   }
 }
