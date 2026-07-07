@@ -64,9 +64,9 @@ export function measureTableCellBlockVisualHeight(
   return spacingBefore + maxImageHeight + spacingAfter;
 }
 
-/** Combined top + bottom border width of a cell, in pixels. */
-function getTableCellVerticalBorderHeight(cell: TableCell | undefined): number {
-  const top = cell?.borders?.top?.width ?? 0;
+/** Visible vertical border budget for a cell under the painter's collapsed-border model. */
+function getTableCellVerticalBorderHeight(cell: TableCell | undefined, rowIdx: number): number {
+  const top = rowIdx === 0 ? (cell?.borders?.top?.width ?? 0) : 0;
   const bottom = cell?.borders?.bottom?.width ?? 0;
   return top + bottom;
 }
@@ -178,7 +178,7 @@ export function measureTable(
       }
       maxVerticalBorderHeight = Math.max(
         maxVerticalBorderHeight,
-        getTableCellVerticalBorderHeight(sourceCell)
+        getTableCellVerticalBorderHeight(sourceCell, rowIdx)
       );
     }
 
@@ -217,7 +217,7 @@ export function measureTable(
       const lastRowIdx = Math.min(rowIdx + rowSpan - 1, rows.length - 1);
       const cellNeeded =
         (measuredCells[cellIdx]?.height ?? 0) +
-        getTableCellVerticalBorderHeight(sourceRowCells[cellIdx]);
+        getTableCellVerticalBorderHeight(sourceRowCells[cellIdx], rowIdx);
       let spanned = 0;
       for (let r = rowIdx; r <= lastRowIdx; r++) spanned += naturalRowHeights[r] ?? 0;
       const deficit = cellNeeded - spanned;

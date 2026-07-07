@@ -35,6 +35,11 @@ export interface DocumentSettings {
    * right margin).
    */
   themeFontLang?: { eastAsia?: string; bidi?: string };
+  /**
+   * `w:evenAndOddHeaders` (§17.15.1.35) — when true, even-numbered pages use
+   * the section's `even` header/footer variant instead of `default`.
+   */
+  evenAndOddHeaders?: boolean;
 }
 
 /** OOXML default per §17.6.13 when `w:defaultTabMark` is absent. */
@@ -69,9 +74,16 @@ export function parseSettings(xml: string | null): DocumentSettings {
         }
       : undefined;
 
+  const evenAndOddEl = root ? findChild(root, 'w', 'evenAndOddHeaders') : null;
+  const evenAndOddVal = evenAndOddEl ? getAttribute(evenAndOddEl, 'w', 'val') : null;
+  const evenAndOddHeaders = evenAndOddEl
+    ? evenAndOddVal !== 'false' && evenAndOddVal !== '0'
+    : undefined;
+
   return {
     defaultTabMark: valid ? raw : DEFAULT_TAB_STOP_TWIPS,
     ...(defaultTableStyle ? { defaultTableStyle } : {}),
     ...(themeFontLang ? { themeFontLang } : {}),
+    ...(evenAndOddHeaders !== undefined ? { evenAndOddHeaders } : {}),
   };
 }

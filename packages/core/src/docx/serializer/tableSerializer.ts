@@ -31,10 +31,11 @@ import type {
   CellMargins,
   FloatingTableProperties,
   ShadingProperties,
-  Paragraph,
+  BlockContent,
 } from '../../types/document';
 
 import { serializeParagraph } from './paragraphSerializer';
+import { serializeBlockSdt } from './sdtSerializer';
 import { serializeConditionalFormatStyle } from './conditionalFormatSerializer';
 import { escapeXml, intAttr } from './xmlUtils';
 import { serializeBorder } from './borderSerializer';
@@ -657,9 +658,9 @@ function serializeTableCellPropertyChange(change: TableCellPropertyChange): stri
 // ============================================================================
 
 /**
- * Serialize cell content (paragraphs, nested tables)
+ * Serialize cell content (paragraphs, nested tables, block SDTs)
  */
-function serializeCellContent(content: (Paragraph | Table)[]): string {
+function serializeCellContent(content: BlockContent[]): string {
   const parts: string[] = [];
 
   for (const item of content) {
@@ -667,6 +668,8 @@ function serializeCellContent(content: (Paragraph | Table)[]): string {
       parts.push(wrapBlockMarkers(item, serializeParagraph(item)));
     } else if (item.type === 'table') {
       parts.push(wrapBlockMarkers(item, serializeTable(item)));
+    } else if (item.type === 'blockSdt') {
+      parts.push(wrapBlockMarkers(item, serializeBlockSdt(item, serializeCellBlockContent)));
     }
   }
 
@@ -676,6 +679,19 @@ function serializeCellContent(content: (Paragraph | Table)[]): string {
   }
 
   return parts.join('');
+}
+
+function serializeCellBlockContent(block: BlockContent): string {
+  if (block.type === 'paragraph') {
+    return wrapBlockMarkers(block, serializeParagraph(block));
+  }
+  if (block.type === 'table') {
+    return wrapBlockMarkers(block, serializeTable(block));
+  }
+  if (block.type === 'blockSdt') {
+    return wrapBlockMarkers(block, serializeBlockSdt(block, serializeCellBlockContent));
+  }
+  return '';
 }
 
 // ============================================================================

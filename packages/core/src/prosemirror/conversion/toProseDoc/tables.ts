@@ -5,8 +5,7 @@
  * the conditional-format cascade (wholeTable → first/last row → first/last
  * col → bands → corners), per-cell border/margin/shading resolution, and
  * default-table-style inheritance for borders+cellMargins. The cell content
- * walker recurses into `convertParagraph` from ./paragraph.ts and into
- * `convertTable` itself for nested tables.
+ * walker recurses into paragraphs, nested tables, and block SDTs.
  */
 
 import type { Node as PMNode } from 'prosemirror-model';
@@ -19,6 +18,8 @@ import type {
   TableBorders,
   TableLook,
   TextFormatting,
+  BlockContent,
+  BlockSdt,
   Theme,
 } from '../../../types/document';
 import type { TableAttrs, TableRowAttrs, TableCellAttrs } from '../../schema/nodes';
@@ -28,6 +29,7 @@ import type { StyleResolver } from '../../styles';
 import { resolveTextFormatting } from './marks';
 import { convertParagraph } from './paragraph';
 import { registerTableConverter } from '../tableConverterRegistry';
+import { sdtPropsToAttrs } from '../sdtAttrs';
 
 /**
  * Resolve table style conditional formatting
@@ -755,15 +757,12 @@ function convertTableCell(
     attrs.tcPrChange = cell.propertyChanges;
   }
 
-  // Convert cell content (paragraphs and nested tables)
+  // Convert cell content (paragraphs, nested tables, and block SDTs)
   const contentNodes: PMNode[] = [];
   for (const content of cell.content) {
-    if (content.type === 'paragraph') {
-      contentNodes.push(convertParagraph(content, styleResolver, undefined, conditionalStyle?.rPr));
-    } else if (content.type === 'table') {
-      // Nested tables - recursively convert
-      contentNodes.push(convertTable(content, styleResolver));
-    }
+    contentNodes.push(
+      ...convertCellBlockContent(content, styleResolver, conditionalStyle?.rPr, theme)
+    );
   }
 
   // Ensure cell has at least one paragraph
@@ -774,6 +773,44 @@ function convertTableCell(
   // Use tableHeader for header cells, tableCell otherwise
   const nodeType = isHeader ? 'tableHeader' : 'tableCell';
   return schema.node(nodeType, attrs, contentNodes);
+}
+
+function convertCellBlockContent(
+  content: BlockContent,
+  styleResolver: StyleResolver | null,
+  styleRunFormatting?: TextFormatting,
+  theme?: Theme | null
+): PMNode[] {
+  if (content.type === 'paragraph') {
+    return [convertParagraph(content, styleResolver, undefined, styleRunFormatting)];
+  }
+  if (content.type === 'table') {
+    return [convertTable(content, styleResolver, theme)];
+  }
+  if (content.type === 'blockSdt') {
+    return [convertCellBlockSdt(content, styleResolver, styleRunFormatting, theme)];
+  }
+  return [];
+}
+
+function convertCellBlockSdt(
+  sdt: BlockSdt,
+  styleResolver: StyleResolver | null,
+  styleRunFormatting?: TextFormatting,
+  theme?: Theme | null
+): PMNode {
+  const childNodes = sdt.content.flatMap((child) =>
+    convertCellBlockContent(child, styleResolver, styleRunFormatting, theme)
+  );
+  const attrs: Record<string, unknown> = sdtPropsToAttrs(sdt.properties);
+  if (sdt.leadingBlockMarkers && sdt.leadingBlockMarkers.length > 0) {
+    attrs.leadingBlockMarkers = sdt.leadingBlockMarkers;
+  }
+  if (sdt.trailingBlockMarkers && sdt.trailingBlockMarkers.length > 0) {
+    attrs.trailingBlockMarkers = sdt.trailingBlockMarkers;
+  }
+  const inner = childNodes.length > 0 ? childNodes : [schema.node('paragraph', {}, [])];
+  return schema.node('blockSdt', attrs, inner);
 }
 
 // Publish the canonical converter so the table-insert command (extensions

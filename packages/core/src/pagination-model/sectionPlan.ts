@@ -61,6 +61,7 @@ export function collectSectionConfigs(
       margins: node.margins ?? inherited.margins,
       columns: node.columns,
       startType: node.type,
+      headerFooterRefs: node.headerFooterRefs ?? inherited.headerFooterRefs,
     };
 
     configs.push(config);

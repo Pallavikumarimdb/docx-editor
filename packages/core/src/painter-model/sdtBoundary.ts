@@ -7,6 +7,12 @@
 import type { Node as PMNode } from 'prosemirror-model';
 import type { Page, Fragment, SdtGroup } from '../pagination-model/types';
 
+export type SdtBoundaryExtent = {
+  groups: SdtGroup[];
+  top: number;
+  bottom: number;
+};
+
 /**
  * Draw the visible boundary for each block-level content control on a page.
  *
@@ -26,16 +32,35 @@ export function renderSdtBoundaryBoxes(
   sdtGroupsOf: (frag: Fragment) => SdtGroup[],
   doc: Document
 ): void {
+  const extents: SdtBoundaryExtent[] = [];
+  for (const fragment of page.fragments) {
+    const groups = sdtGroupsOf(fragment);
+    if (groups.length === 0 || !('height' in fragment)) continue;
+    const top = fragment.y - page.margins.top;
+    extents.push({ groups, top, bottom: top + (fragment as { height: number }).height });
+  }
+
+  renderSdtBoundaryBoxesForExtents(contentEl, contentWidth, extents, doc);
+}
+
+/**
+ * Draw SDT boundary boxes from already-local content extents. Used by table
+ * cells, where content is rendered inside the table rather than as page
+ * fragments, but should still get the same visible control chrome.
+ */
+export function renderSdtBoundaryBoxesForExtents(
+  contentEl: HTMLElement,
+  contentWidth: number,
+  extents: SdtBoundaryExtent[],
+  doc: Document
+): void {
   // Accumulate vertical extent per (groupId @ depth) in fragment order.
   type Acc = { group: SdtGroup; depth: number; top: number; bottom: number };
   const boxes = new Map<string, Acc>();
   const order: string[] = [];
 
-  for (const fragment of page.fragments) {
-    const groups = sdtGroupsOf(fragment);
-    if (groups.length === 0 || !('height' in fragment)) continue;
-    const top = fragment.y - page.margins.top;
-    const bottom = top + (fragment as { height: number }).height;
+  for (const extent of extents) {
+    const { groups, top, bottom } = extent;
     groups.forEach((group, depth) => {
       // Key by id AND depth so a re-entered id can't merge across nesting.
       const key = `${depth}:${group.id}`;

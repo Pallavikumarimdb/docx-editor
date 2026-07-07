@@ -22,7 +22,7 @@ export const BlockSdtExtension = createNodeExtension({
   schemaNodeName: 'blockSdt',
   nodeSpec: {
     group: 'block',
-    content: '(paragraph | horizontalRule | pageBreak | table | textBox | blockSdt)+',
+    content: '(paragraph | horizontalRule | pageBreak | columnBreak | table | textBox | blockSdt)+',
     isolating: true,
     defining: true,
     attrs: {

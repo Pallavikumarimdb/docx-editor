@@ -119,6 +119,38 @@ export function calculateTabWidth(
 }
 
 /**
+ * Calculate the advance for an absolute-position tab (`w:ptab`).
+ *
+ * The caller supplies the target coordinate because positional tabs are
+ * relative to the current margin or indent rather than the regular tab grid.
+ *
+ * @public
+ */
+export function calculatePositionalTabWidth(
+  currentX: number,
+  targetX: number,
+  tab: {
+    alignment?: 'left' | 'center' | 'right';
+    leader?: TabMark['leader'];
+  },
+  options: TabAdvanceOptions = {}
+): TabAdvance {
+  const alignment = tab.alignment ?? 'left';
+  let width = targetX - currentX;
+  if (alignment === 'center') {
+    width -= (options.followingWidth ?? 0) / 2;
+  } else if (alignment === 'right') {
+    width -= options.followingWidth ?? 0;
+  }
+
+  return {
+    width: Math.max(MIN_ADVANCE_PX, width),
+    leader: tab.leader,
+    alignment: alignment === 'right' ? 'end' : alignment === 'left' ? 'start' : 'center',
+  };
+}
+
+/**
  * The stops past the pen, nearest first.
  *
  * Word does not let a distant explicit stop suppress a nearer default-grid one:

@@ -21,10 +21,12 @@ import type {
   ImageBlock,
   TextBoxBlock,
   PageBreakBlock,
+  ColumnBreakBlock,
   SectionMarkerBlock,
   SdtGroup,
   ColumnLayout,
   ParagraphAttrs,
+  PageHeaderFooterRefs,
 } from '../pagination-model/types';
 import { DEFAULT_TEXTBOX_MARGINS, DEFAULT_TEXTBOX_WIDTH } from '../pagination-model/types';
 import type { ParagraphAttrs as PMParagraphAttrs } from '../prosemirror/schema/nodes';
@@ -369,6 +371,60 @@ function convertParagraph(
   };
 }
 
+function isStructuralPageBreakParagraph(node: PMNode): boolean {
+  const pmAttrs = node.attrs as PMParagraphAttrs;
+  return pmAttrs.pageBreakBefore === true && node.childCount === 0;
+}
+
+function hasAuthoredVisualContent(block: ContentNode): boolean {
+  if (block.kind !== 'paragraph') return false;
+  const attrs = block.attrs;
+  if (!attrs) return false;
+  if (attrs.borders?.top || attrs.borders?.bottom) return true;
+  if (attrs.spacingOverrides?.before || attrs.spacingOverrides?.after) return true;
+  return false;
+}
+
+function suppressStructuralEmptyParagraphsAfterTables(blocks: ContentNode[]): ContentNode[] {
+  const trailingEmptyAfterTable = new Set<number>();
+  for (let i = 1; i < blocks.length; i++) {
+    const prev = blocks[i - 1];
+    const cur = blocks[i];
+    if (prev.kind !== 'table') continue;
+    if (cur.kind !== 'paragraph') continue;
+    if (cur.runs.length > 0) continue;
+    if (hasAuthoredVisualContent(cur)) continue;
+    trailingEmptyAfterTable.add(i);
+  }
+
+  return blocks.map((block, index) => {
+    if (!trailingEmptyAfterTable.has(index) || block.kind !== 'paragraph') {
+      return block;
+    }
+
+    return {
+      ...block,
+      attrs: { ...(block.attrs ?? {}), suppressEmptyParagraphHeight: true },
+    };
+  });
+}
+
+function sdtGroupFromNode(node: PMNode, pos: number): SdtGroup {
+  const a = node.attrs as Record<string, unknown>;
+  return {
+    id: `sdt@${pos}`,
+    sdtType: typeof a.sdtType === 'string' ? a.sdtType : 'richText',
+    tag: a.tag != null ? String(a.tag) : undefined,
+    alias: a.alias != null ? String(a.alias) : undefined,
+    lock: a.lock != null ? String(a.lock) : undefined,
+    checked: typeof a.checked === 'boolean' ? a.checked : undefined,
+    bound: a.dataBinding != null ? true : undefined,
+    repeatingItem: /<w15:repeatingSectionItem[\s/>]/.test(String(a.rawPropertiesXml ?? ''))
+      ? true
+      : undefined,
+  };
+}
+
 /**
  * Convert a table cell node.
  */
@@ -381,12 +437,32 @@ function convertTableCell(
   const nodes: ContentNode[] = [];
   let offset = startPos + 1; // +1 for opening tag
 
-  node.forEach((child) => {
-    if (child.type.name === 'paragraph') {
-      nodes.push(convertParagraph(child, offset, config));
-    } else if (child.type.name === 'table') {
-      nodes.push(convertTable(child, offset, config));
+  const appendCellNode = (child: PMNode, pos: number, sdtGroups: SdtGroup[]): void => {
+    if (child.type.name === 'blockSdt') {
+      const group = sdtGroupFromNode(child, pos);
+      const childGroups = [...sdtGroups, group];
+      child.forEach((grandchild, grandchildOffset) => {
+        appendCellNode(grandchild, pos + 1 + grandchildOffset, childGroups);
+      });
+      return;
     }
+
+    const startLen = nodes.length;
+    if (child.type.name === 'paragraph') {
+      nodes.push(convertParagraph(child, pos, config));
+    } else if (child.type.name === 'table') {
+      nodes.push(convertTable(child, pos, config));
+    }
+
+    if (sdtGroups.length > 0) {
+      for (let i = startLen; i < nodes.length; i++) {
+        nodes[i].sdtGroups = sdtGroups;
+      }
+    }
+  };
+
+  node.forEach((child) => {
+    appendCellNode(child, offset, []);
     offset += child.nodeSize;
   });
 
@@ -441,7 +517,7 @@ function convertTableCell(
 
   return {
     id: allocBoxId(),
-    nodes,
+    nodes: suppressStructuralEmptyParagraphsAfterTables(nodes),
     colSpan: attrs.colspan as number,
     rowSpan: attrs.rowspan as number,
     width,
@@ -705,12 +781,22 @@ export function buildBoxTree(doc: PMNode, config: BuildBoxTreeOptions = {}): Con
 
   const nodes: ContentNode[] = [];
   const offset = 0; // Start at document beginning
-  let lastSectionMarginsTwips: { top: number; bottom: number; left: number; right: number } = {
+  let lastSectionMarginsTwips: {
+    top: number;
+    bottom: number;
+    left: number;
+    right: number;
+    header: number;
+    footer: number;
+  } = {
     top: 1440,
     bottom: 1440,
     left: 1440,
     right: 1440,
+    header: 720,
+    footer: 720,
   };
+  let lastHeaderFooterRefs: PageHeaderFooterRefs = {};
   // Shared counter map: paragraphs in tables and text boxes update it too,
   // so list numbering stays continuous across containers.
   if (!normalizedConfig.listCounters) {
@@ -729,19 +815,7 @@ export function buildBoxTree(doc: PMNode, config: BuildBoxTreeOptions = {}): Con
    */
   const processNode = (node: PMNode, pos: number, sdtGroups: SdtGroup[]): void => {
     if (node.type.name === 'blockSdt') {
-      const a = node.attrs as Record<string, unknown>;
-      const group: SdtGroup = {
-        id: `sdt@${pos}`,
-        sdtType: typeof a.sdtType === 'string' ? a.sdtType : 'richText',
-        tag: a.tag != null ? String(a.tag) : undefined,
-        alias: a.alias != null ? String(a.alias) : undefined,
-        lock: a.lock != null ? String(a.lock) : undefined,
-        checked: typeof a.checked === 'boolean' ? a.checked : undefined,
-        bound: a.dataBinding != null ? true : undefined,
-        repeatingItem: /<w15:repeatingSectionItem[\s/>]/.test(String(a.rawPropertiesXml ?? ''))
-          ? true
-          : undefined,
-      };
+      const group = sdtGroupFromNode(node, pos);
       const childGroups = [...sdtGroups, group];
       // Child PM position = SDT node start + 1 (enter the node) + child offset.
       node.forEach((child, childOffset) => {
@@ -755,6 +829,16 @@ export function buildBoxTree(doc: PMNode, config: BuildBoxTreeOptions = {}): Con
     switch (node.type.name) {
       case 'paragraph':
         {
+          if (isStructuralPageBreakParagraph(node)) {
+            const pb: PageBreakBlock = {
+              kind: 'pageBreak',
+              id: allocBoxId(),
+              docFrom: pos,
+              docTo: pos + node.nodeSize,
+            };
+            nodes.push(pb);
+            break;
+          }
           const contentNode = convertParagraph(node, pos, normalizedConfig);
           const pmAttrs = node.attrs as PMParagraphAttrs;
 
@@ -785,22 +869,51 @@ export function buildBoxTree(doc: PMNode, config: BuildBoxTreeOptions = {}): Con
                 secProps.marginTop !== undefined ||
                 secProps.marginBottom !== undefined ||
                 secProps.marginLeft !== undefined ||
-                secProps.marginRight !== undefined
+                secProps.marginRight !== undefined ||
+                secProps.headerDistance !== undefined ||
+                secProps.footerDistance !== undefined
               ) {
                 const mergedTwips = {
                   top: secProps.marginTop ?? lastSectionMarginsTwips.top,
                   bottom: secProps.marginBottom ?? lastSectionMarginsTwips.bottom,
                   left: secProps.marginLeft ?? lastSectionMarginsTwips.left,
                   right: secProps.marginRight ?? lastSectionMarginsTwips.right,
+                  header: secProps.headerDistance ?? lastSectionMarginsTwips.header,
+                  footer: secProps.footerDistance ?? lastSectionMarginsTwips.footer,
                 };
                 sectionBreak.margins = {
                   top: twipsToPixels(mergedTwips.top),
                   bottom: twipsToPixels(mergedTwips.bottom),
                   left: twipsToPixels(mergedTwips.left),
                   right: twipsToPixels(mergedTwips.right),
+                  header: twipsToPixels(mergedTwips.header),
+                  footer: twipsToPixels(mergedTwips.footer),
                 };
                 lastSectionMarginsTwips = mergedTwips;
               }
+              const findRef = (
+                refs: Array<{ type?: string; rId?: string }> | undefined,
+                type: string
+              ): string | undefined => refs?.find((r) => r.type === type)?.rId;
+              const mergedRefs: PageHeaderFooterRefs = {
+                headerDefault:
+                  findRef(secProps.headerReferences, 'default') ??
+                  lastHeaderFooterRefs.headerDefault,
+                headerFirst:
+                  findRef(secProps.headerReferences, 'first') ?? lastHeaderFooterRefs.headerFirst,
+                headerEven:
+                  findRef(secProps.headerReferences, 'even') ?? lastHeaderFooterRefs.headerEven,
+                footerDefault:
+                  findRef(secProps.footerReferences, 'default') ??
+                  lastHeaderFooterRefs.footerDefault,
+                footerFirst:
+                  findRef(secProps.footerReferences, 'first') ?? lastHeaderFooterRefs.footerFirst,
+                footerEven:
+                  findRef(secProps.footerReferences, 'even') ?? lastHeaderFooterRefs.footerEven,
+                titlePg: secProps.titlePg === true ? true : undefined,
+              };
+              sectionBreak.headerFooterRefs = mergedRefs;
+              lastHeaderFooterRefs = mergedRefs;
               // Populate columns
               const colCount = secProps.columnCount ?? 1;
               if (colCount > 1) {
@@ -813,6 +926,7 @@ export function buildBoxTree(doc: PMNode, config: BuildBoxTreeOptions = {}): Con
                 sectionBreak.columns = cols;
               }
             }
+            sectionBreak.headerFooterRefs ??= lastHeaderFooterRefs;
 
             nodes.push(sectionBreak);
           }
@@ -841,6 +955,17 @@ export function buildBoxTree(doc: PMNode, config: BuildBoxTreeOptions = {}): Con
           docTo: pos + node.nodeSize,
         };
         nodes.push(pb);
+        break;
+      }
+
+      case 'columnBreak': {
+        const cb: ColumnBreakBlock = {
+          kind: 'columnBreak',
+          id: allocBoxId(),
+          docFrom: pos,
+          docTo: pos + node.nodeSize,
+        };
+        nodes.push(cb);
         break;
       }
     }

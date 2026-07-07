@@ -449,9 +449,22 @@ function serializeTextContent(content: TextContent): string {
 }
 
 /**
- * Serialize tab content (w:tab)
+ * Serialize tab content (w:tab / w:ptab)
  */
-function serializeTabContent(_content: TabContent): string {
+function serializeTabContent(content: TabContent): string {
+  if (content.positional) {
+    const attrs: string[] = [];
+    if (content.positional.alignment) {
+      attrs.push(`w:alignment="${content.positional.alignment}"`);
+    }
+    if (content.positional.relativeTo) {
+      attrs.push(`w:relativeTo="${content.positional.relativeTo}"`);
+    }
+    if (content.positional.leader && content.positional.leader !== 'none') {
+      attrs.push(`w:leader="${content.positional.leader}"`);
+    }
+    return attrs.length > 0 ? `<w:ptab ${attrs.join(' ')}/>` : '<w:ptab/>';
+  }
   return '<w:tab/>';
 }
 

@@ -73,12 +73,14 @@ export function layOutPages(
     pageSize: config.pageSize,
     margins: config.margins,
     columns: config.columns,
+    headerFooterRefs: config.finalHeaderFooterRefs,
   };
   const final: SectionLayoutConfig = {
     pageSize: config.finalPageSize ?? config.pageSize,
     margins: config.finalMargins ?? config.margins,
     columns: config.columns,
     startType: config.bodyBreakType,
+    headerFooterRefs: config.finalHeaderFooterRefs,
   };
 
   const schedule = collectSectionConfigs(nodes, initial, final);
@@ -98,7 +100,10 @@ export function layOutPages(
   };
 
   // An empty document is still one page. Word shows a blank sheet, not nothing.
-  let cursor = startPage(ctx);
+  let cursor: LayoutCursor = {
+    ...startPage(ctx),
+    suppressInheritedSpaceBeforeAtTop: true,
+  };
   let sectionIndex = 0;
 
   for (let i = 0; i < nodes.length; i++) {
@@ -115,7 +120,10 @@ export function layOutPages(
       }
 
       case 'pageBreak':
-        cursor = startPage(ctx, cursor.prev);
+        cursor = {
+          ...startPage(ctx, cursor.prev),
+          suppressInheritedSpaceBeforeAtTop: true,
+        };
         break;
 
       case 'columnBreak':
@@ -315,7 +323,7 @@ function placeParagraph(
 
   const lines = metrics.lines;
   if (lines.length === 0) {
-    return { ...cursor, prev: node };
+    return { ...cursor, prev: node, suppressInheritedSpaceBeforeAtTop: false };
   }
 
   // `w:keepLines` (§17.3.1.14) — keep the whole paragraph on one page, if it
@@ -333,7 +341,7 @@ function placeParagraph(
     // `spacing.before` from every paragraph that widow control moved to the next
     // page — the commonest thing widow control does.
     const isFirstLine = lineIndex === 0;
-    const gap = isFirstLine ? collapsedGap(cursor.prev, node) : 0;
+    const gap = isFirstLine ? placementGap(cursor, node) : 0;
     const top = cursor.y + gap;
 
     let count = countLinesThatFit(lines, lineIndex, region.bottom - top);
@@ -381,7 +389,12 @@ function placeParagraph(
       ...fragmentRange(node, metrics, lineIndex, endLine),
     });
 
-    cursor = { ...cursor, y: top + height, prev: node };
+    cursor = {
+      ...cursor,
+      y: top + height,
+      prev: node,
+      suppressInheritedSpaceBeforeAtTop: false,
+    };
     lineIndex = endLine;
 
     if (lineIndex < lines.length) {
@@ -390,6 +403,18 @@ function placeParagraph(
   }
 
   return cursor;
+}
+
+function placementGap(cursor: LayoutCursor, node: ParagraphBlock): number {
+  const spacingBefore = node.attrs?.spacing?.before ?? 0;
+  if (
+    cursor.suppressInheritedSpaceBeforeAtTop &&
+    !node.attrs?.spacingOverrides?.before &&
+    spacingBefore > 0
+  ) {
+    return 0;
+  }
+  return collapsedGap(cursor.prev, node);
 }
 
 /**
@@ -471,7 +496,7 @@ function honourKeepLines(
 ): LayoutCursor {
   const region = currentRegion(ctx, cursor);
   const total = sliceHeight(metrics.lines, 0, metrics.lines.length);
-  const leadingGap = collapsedGap(cursor.prev, node);
+  const leadingGap = placementGap(cursor, node);
   const effectiveTotal = leadingGap + total;
 
   if (effectiveTotal > region.bottom - region.top + FIT_TOLERANCE_PX) return cursor; // Never fits.
@@ -638,6 +663,9 @@ function finish(ctx: FlowContext, config: LayoutConfig): PageLayout {
     margins: draft.margins,
     fragments: draft.fragments,
     ...(draft.columns ? { columns: draft.columns } : {}),
+    ...(draft.sectionIndex != null ? { sectionIndex: draft.sectionIndex } : {}),
+    ...(draft.sectionPageNumber != null ? { sectionPageNumber: draft.sectionPageNumber } : {}),
+    ...(draft.headerFooterRefs ? { headerFooterRefs: draft.headerFooterRefs } : {}),
     ...(draft.footnoteReservedHeight
       ? { footnoteReservedHeight: draft.footnoteReservedHeight }
       : {}),

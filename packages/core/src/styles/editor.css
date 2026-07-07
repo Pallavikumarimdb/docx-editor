@@ -90,6 +90,13 @@
   --doc-toggle-active-bg: hsl(var(--foreground));
   --doc-toggle-active-fg: #ffffff;
 
+  /* Inline comment/annotation marks. Resting highlights stay quiet on the
+   * document canvas; focused sidebar items get the stronger active treatment. */
+  --doc-comment-bg: rgba(255, 212, 0, 0.12);
+  --doc-comment-border: rgba(245, 174, 0, 0.45);
+  --doc-comment-active-bg: rgba(255, 212, 0, 0.35);
+  --doc-comment-active-border: rgba(245, 174, 0, 0.9);
+
   /* Text */
   --doc-text: #202124; /* primary text */
   --doc-text-muted: #5f6368; /* secondary text */
@@ -196,6 +203,10 @@
   --doc-on-primary: #1f1f1f; /* text/icon on a filled primary surface */
   --doc-toggle-active-bg: var(--doc-primary-light);
   --doc-toggle-active-fg: var(--doc-primary);
+  --doc-comment-bg: rgba(253, 214, 99, 0.16);
+  --doc-comment-border: rgba(253, 214, 99, 0.5);
+  --doc-comment-active-bg: rgba(253, 214, 99, 0.32);
+  --doc-comment-active-border: rgba(253, 214, 99, 0.95);
   --doc-text: #e8e8e8; /* primary text */
   --doc-text-muted: #a0a0a0; /* secondary text */
   --doc-text-subtle: #6e6e6e; /* tertiary/disabled text */

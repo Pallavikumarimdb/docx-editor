@@ -33,23 +33,9 @@ import {
   makeTableBodyClip,
 } from './renderTableBorders';
 import type { RevisionInfo } from '../types/content/trackedChange';
-
-/**
- * Apply tracked-change classes + data attrs to a painted row/cell. The
- * sidebar reads `data-revision-id` / `data-revision-author` to anchor
- * cards; the CSS in `prosemirror/editor.css` keys on the two classes.
- */
-function applyRevisionAttrs(
-  el: HTMLElement,
-  scope: 'row' | 'cell',
-  kind: 'ins' | 'del' | 'merge',
-  info: RevisionInfo
-): void {
-  el.classList.add(`ep-revision-${scope}`, `ep-revision-${kind}`);
-  el.dataset.revisionId = String(info.revisionId);
-  el.dataset.revisionAuthor = info.author;
-  if (info.date) el.dataset.revisionDate = info.date;
-}
+import { renderSdtBoundaryBoxesForExtents, type SdtBoundaryExtent } from './sdtBoundary';
+import { tagSdtCellBlock } from './renderTableSdt';
+import { applyRevisionAttrs } from './renderTableRevisions';
 
 /**
  * CSS class names for table elements
@@ -90,7 +76,6 @@ function renderCellContent(
   const contentWidth = Math.max(0, cellMetrics.width - padLeft - padRight);
   contentEl.style.width = `${contentWidth}px`;
 
-  // Extract floating images from cell paragraphs
   const cellFloatingImages = extractCellFloatingImages(cell, cellMetrics, contentWidth);
 
   // Build floating zones for measurement and render floating layer
@@ -137,6 +122,7 @@ function renderCellContent(
 
   let cumulativeY = 0;
   let previousParagraphAfter = 0;
+  const sdtExtents: SdtBoundaryExtent[] = [];
   for (let i = 0; i < cell.nodes.length; i++) {
     const block = cell.nodes[i];
     const measure = cellMetrics.metrics[i];
@@ -184,6 +170,13 @@ function renderCellContent(
       if (effectiveSpaceBefore > 0) {
         fragEl.style.marginTop = `${effectiveSpaceBefore}px`;
       }
+      tagSdtCellBlock(
+        fragEl,
+        sdtExtents,
+        paragraphBlock.sdtGroups,
+        cumulativeY,
+        cumulativeY + paragraphMetrics.totalHeight
+      );
       contentEl.appendChild(fragEl);
       cumulativeY += paragraphMetrics.totalHeight;
       previousParagraphAfter = spacing?.after ?? 0;
@@ -200,6 +193,13 @@ function renderCellContent(
       if (effectiveSpaceBefore > 0) {
         nestedTableEl.style.marginTop = `${effectiveSpaceBefore}px`;
       }
+      tagSdtCellBlock(
+        nestedTableEl,
+        sdtExtents,
+        tableBlock.sdtGroups,
+        cumulativeY + effectiveSpaceBefore,
+        cumulativeY + effectiveSpaceBefore + tableMeasure.totalHeight
+      );
       contentEl.appendChild(nestedTableEl);
       cumulativeY += effectiveSpaceBefore + ((measure as TableMetrics).totalHeight ?? 0);
       previousParagraphAfter = 0;
@@ -221,6 +221,8 @@ function renderCellContent(
       })
     );
   }
+
+  renderSdtBoundaryBoxesForExtents(contentEl, contentWidth, sdtExtents, doc);
 
   return contentEl;
 }

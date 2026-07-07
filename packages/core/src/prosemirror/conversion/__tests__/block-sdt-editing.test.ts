@@ -12,7 +12,10 @@
 import { describe, test, expect } from 'bun:test';
 import { toProseDoc } from '../toProseDoc';
 import { fromProseDoc } from '../fromProseDoc';
-import type { Document, BlockSdt, Paragraph } from '../../../types/document';
+import { buildBoxTree } from '../../../flow-model/buildBoxTree';
+import type { Document, BlockSdt, Paragraph, Table } from '../../../types/document';
+import type { TableBlock } from '../../../pagination-model/types';
+import type { Node as PMNode } from 'prosemirror-model';
 
 function para(text: string): Paragraph {
   return { type: 'paragraph', content: [{ type: 'run', content: [{ type: 'text', text }] }] };
@@ -82,6 +85,36 @@ describe('block SDT — toProseDoc emits an editable blockSdt node', () => {
     expect(node.child(0).attrs.tag).toBe('inner');
     expect(node.child(0).child(0).textContent).toBe('deep');
   });
+
+  test('block SDTs inside table cells survive as cell children', () => {
+    const table: Table = {
+      type: 'table',
+      rows: [
+        {
+          type: 'tableRow',
+          cells: [
+            {
+              type: 'tableCell',
+              content: [
+                {
+                  type: 'blockSdt',
+                  properties: { sdtType: 'richText', tag: 'project-name' },
+                  content: [para('Q4 Migration')],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const pmTable = toProseDoc(docOf(table)).firstChild!;
+    const pmCell = pmTable.child(0).child(0);
+    const control = pmCell.child(0);
+    expect(control.type.name).toBe('blockSdt');
+    expect(control.attrs.tag).toBe('project-name');
+    expect(control.child(0).textContent).toBe('Q4 Migration');
+  });
 });
 
 describe('block SDT — fromProseDoc reconstructs the BlockSdt model', () => {
@@ -125,6 +158,128 @@ describe('block SDT — fromProseDoc reconstructs the BlockSdt model', () => {
     expect(sdt.properties.tag).toBe('outer');
     expect(sdt.content[0].type).toBe('blockSdt');
     expect((sdt.content[0] as BlockSdt).properties.tag).toBe('inner');
+  });
+
+  test('a block SDT inside a table cell round-trips through PM', () => {
+    const table: Table = {
+      type: 'table',
+      rows: [
+        {
+          type: 'tableRow',
+          cells: [
+            {
+              type: 'tableCell',
+              content: [
+                {
+                  type: 'blockSdt',
+                  properties: { sdtType: 'richText', tag: 'team-lead' },
+                  content: [para('Ada Lovelace')],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const back = fromProseDoc(toProseDoc(docOf(table)));
+    const backTable = back.package.document.content[0] as Table;
+    const sdt = backTable.rows[0].cells[0].content[0];
+    expect(sdt.type).toBe('blockSdt');
+    if (sdt.type !== 'blockSdt') return;
+    expect(sdt.properties.tag).toBe('team-lead');
+    expect(sdt.content[0].type).toBe('paragraph');
+  });
+});
+
+describe('block SDT — buildBoxTree flattens to tagged child flow blocks', () => {
+  function flow(pm: PMNode) {
+    return buildBoxTree(pm);
+  }
+
+  test('children become independent flow blocks tagged with the SDT group', () => {
+    const sdt: BlockSdt = {
+      type: 'blockSdt',
+      properties: { sdtType: 'richText', tag: 'grp', alias: 'Grp', lock: 'sdtLocked' },
+      content: [para('one'), para('two')],
+    };
+    // Trailing paragraph keeps the control off the doc edge; assert on the
+    // control's own (tagged) flow blocks.
+    const all = flow(toProseDoc(docOf(sdt, para('tail'))));
+    const blocks = all.filter((b) => b.sdtGroups && b.sdtGroups.length > 0);
+
+    // Two flat paragraph blocks (a control is not a single non-splittable block).
+    expect(blocks.length).toBe(2);
+    expect(blocks.every((b) => b.kind === 'paragraph')).toBe(true);
+
+    for (const b of blocks) {
+      expect(b.sdtGroups![0].tag).toBe('grp');
+      expect(b.sdtGroups![0].alias).toBe('Grp');
+      expect(b.sdtGroups![0].lock).toBe('sdtLocked');
+      expect(b.sdtGroups![0].sdtType).toBe('richText');
+    }
+    // Both share one group identity (one control, one boundary).
+    expect(blocks[0].sdtGroups![0].id).toBe(blocks[1].sdtGroups![0].id);
+  });
+
+  test('blocks outside a control carry no sdtGroups', () => {
+    const sdt: BlockSdt = {
+      type: 'blockSdt',
+      properties: { sdtType: 'richText', tag: 'g' },
+      content: [para('inside')],
+    };
+    const blocks = flow(toProseDoc(docOf(para('before'), sdt, para('after'))));
+    expect(blocks.length).toBe(3);
+    expect(blocks[0].sdtGroups).toBeUndefined();
+    expect(blocks[1].sdtGroups?.length).toBe(1);
+    expect(blocks[2].sdtGroups).toBeUndefined();
+  });
+
+  test('nested controls stack outermost→innermost on each child', () => {
+    const inner: BlockSdt = {
+      type: 'blockSdt',
+      properties: { sdtType: 'richText', tag: 'inner' },
+      content: [para('deep')],
+    };
+    const outer: BlockSdt = {
+      type: 'blockSdt',
+      properties: { sdtType: 'richText', tag: 'outer' },
+      content: [inner],
+    };
+    const all = flow(toProseDoc(docOf(outer, para('tail'))));
+    const blocks = all.filter((b) => b.sdtGroups && b.sdtGroups.length > 0);
+    expect(blocks.length).toBe(1);
+    const groups = blocks[0].sdtGroups!;
+    expect(groups.map((g) => g.tag)).toEqual(['outer', 'inner']);
+  });
+
+  test('table-cell controls flatten into tagged cell flow blocks', () => {
+    const table: Table = {
+      type: 'table',
+      rows: [
+        {
+          type: 'tableRow',
+          cells: [
+            {
+              type: 'tableCell',
+              content: [
+                {
+                  type: 'blockSdt',
+                  properties: { sdtType: 'richText', tag: 'project-name' },
+                  content: [para('Q4 Migration')],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const tableBlock = flow(toProseDoc(docOf(table)))[0] as TableBlock;
+    const cellBlocks = tableBlock.rows[0].cells[0].nodes;
+    expect(cellBlocks).toHaveLength(1);
+    expect(cellBlocks[0].kind).toBe('paragraph');
+    expect(cellBlocks[0].sdtGroups?.[0].tag).toBe('project-name');
   });
 });
 

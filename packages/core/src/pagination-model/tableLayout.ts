@@ -72,7 +72,15 @@ export function layoutTable(
     const headerOverhead = repeatsHeader ? headerHeight : 0;
     const available = region.bottom - top - headerOverhead;
 
-    const slice = fitTableRows(node, metrics, info, row, rowOffset, available);
+    const slice = fitTableRows(
+      node,
+      metrics,
+      info,
+      row,
+      rowOffset,
+      available,
+      region.bottom - region.top - headerOverhead
+    );
 
     if (slice.consumed <= 0) {
       // Nothing fits. Move on — but ONLY if there is somewhere to move to.
@@ -154,7 +162,8 @@ export function fitTableRows(
   info: TableRowBreakInfo,
   row: number,
   rowOffset: number,
-  available: number
+  available: number,
+  freshAvailable = available
 ): TableRowSlice {
   const rowCount = metrics.rows.length;
   let consumed = 0;
@@ -174,7 +183,8 @@ export function fitTableRows(
 
     // This row doesn't fit in what's left.
     const room = available - consumed;
-    const splittable = !node.rows[r]?.cantSplit;
+    const fitsFresh = rest <= freshAvailable + FIT_TOLERANCE_PX;
+    const splittable = !node.rows[r]?.cantSplit && !fitsFresh;
 
     if (splittable) {
       const slice = snapRowBreak(info, r, offset, room);

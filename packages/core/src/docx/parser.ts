@@ -46,7 +46,7 @@ import {
   isSeparatorFootnote,
   isSeparatorEndnote,
 } from './footnoteParser';
-import { parseComments } from './commentParser';
+import { inferNestedCommentRepliesFromRanges, parseComments } from './commentParser';
 import { removeOrphanCommentRanges } from './commentRangeIntegrity';
 import { dedupeParagraphIds } from './paragraphIdIntegrity';
 import { loadFontsWithMapping } from '../utils/fontLoader';
@@ -270,8 +270,8 @@ export async function parseDocx(input: DocxInput, options: ParseOptions = {}): P
     // STAGE 9b: Parse comments (75-77%)
     // ========================================================================
     onProgress('Parsing comments...', 75);
-    const comments = timeStage('comments', () =>
-      parseComments(
+    const comments = timeStage('comments', () => {
+      const parsed = parseComments(
         raw.commentsXml,
         styles,
         theme,
@@ -279,8 +279,9 @@ export async function parseDocx(input: DocxInput, options: ParseOptions = {}): P
         media,
         raw.commentsExtensibleXml,
         raw.commentsExtendedXml
-      )
-    );
+      );
+      return inferNestedCommentRepliesFromRanges(parsed, documentBody.content);
+    });
     if (comments.length > 0) {
       documentBody.comments = comments;
     }

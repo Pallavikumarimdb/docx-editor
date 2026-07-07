@@ -15,7 +15,15 @@
  * - Comment content: child w:p elements
  */
 
-import type { Comment, Paragraph, Theme, RelationshipMap, MediaFile } from '../types/document';
+import type {
+  BlockContent,
+  Comment,
+  Paragraph,
+  ParagraphContent,
+  Theme,
+  RelationshipMap,
+  MediaFile,
+} from '../types/document';
 import type { StyleMap } from './styleParser';
 import { parseXml, findChild, getChildElements, getAttribute } from './xmlParser';
 import { parseParagraph } from './paragraphParser';
@@ -227,4 +235,75 @@ export function parseComments(
   }
 
   return comments;
+}
+
+/**
+ * Infer reply threading from nested comment ranges when no explicit
+ * commentsExtended.xml / parentId metadata exists. Some generators write the
+ * reply as a nested comment range in document.xml but omit w15:paraIdParent.
+ */
+export function inferNestedCommentRepliesFromRanges(
+  comments: Comment[],
+  content: BlockContent[]
+): Comment[] {
+  if (comments.length === 0 || content.length === 0) return comments;
+
+  const commentIds = new Set(comments.map((comment) => comment.id));
+  const inferredParentByChild = new Map<number, number>();
+
+  const visitParagraphContent = (paragraphContent: ParagraphContent[] | undefined) => {
+    if (!paragraphContent) return;
+    const active: number[] = [];
+
+    for (const item of paragraphContent) {
+      if (item.type === 'commentRangeStart') {
+        const childId = item.id;
+        let parentId: number | undefined;
+        for (let i = active.length - 1; i >= 0; i--) {
+          const candidate = active[i];
+          if (candidate !== childId && commentIds.has(candidate)) {
+            parentId = candidate;
+            break;
+          }
+        }
+        if (parentId != null && commentIds.has(childId) && !inferredParentByChild.has(childId)) {
+          inferredParentByChild.set(childId, parentId);
+        }
+        active.push(childId);
+      } else if (item.type === 'commentRangeEnd') {
+        const idx = active.lastIndexOf(item.id);
+        if (idx !== -1) active.splice(idx, 1);
+      }
+    }
+  };
+
+  const visitBlocks = (blocks: BlockContent[]) => {
+    for (const block of blocks) {
+      if (block.type === 'paragraph') {
+        visitParagraphContent(block.content);
+      } else if (block.type === 'table') {
+        for (const row of block.rows) {
+          for (const cell of row.cells) {
+            visitBlocks(cell.content);
+          }
+        }
+      } else if (block.type === 'blockSdt') {
+        visitBlocks(block.content);
+      }
+    }
+  };
+
+  visitBlocks(content);
+  if (inferredParentByChild.size === 0) return comments;
+
+  let changed = false;
+  const next = comments.map((comment) => {
+    if (comment.parentId != null) return comment;
+    const parentId = inferredParentByChild.get(comment.id);
+    if (parentId == null) return comment;
+    changed = true;
+    return { ...comment, parentId };
+  });
+
+  return changed ? next : comments;
 }

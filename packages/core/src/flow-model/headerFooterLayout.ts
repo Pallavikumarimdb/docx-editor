@@ -288,6 +288,15 @@ function measureFlowHeight(measure: LayoutMetrics | undefined): number {
   return 0;
 }
 
+function getParagraphBorderVisualOutsets(block: ContentNode): { top: number; bottom: number } {
+  if (block.kind !== 'paragraph') return { top: 0, bottom: 0 };
+  const borders = block.attrs?.borders;
+  return {
+    top: borders?.top ? (borders.top.space ?? 0) : 0,
+    bottom: borders?.bottom ? (borders.bottom.space ?? 0) : 0,
+  };
+}
+
 export function calculateHeaderFooterVisualBounds(
   nodes: ContentNode[],
   layoutMetrics: LayoutMetrics[],
@@ -310,8 +319,9 @@ export function calculateHeaderFooterVisualBounds(
     if (block.kind === 'paragraph' && measure.kind === 'paragraph') {
       const paragraphStartY = cursorY;
       const paragraphBottomY = paragraphStartY + measure.totalHeight;
-      visualTop = Math.min(visualTop, paragraphStartY);
-      visualBottom = Math.max(visualBottom, paragraphBottomY);
+      const borderOutsets = getParagraphBorderVisualOutsets(block);
+      visualTop = Math.min(visualTop, paragraphStartY - borderOutsets.top);
+      visualBottom = Math.max(visualBottom, paragraphBottomY + borderOutsets.bottom);
 
       for (const run of block.runs) {
         if (run.kind !== 'image' || !run.position) continue;

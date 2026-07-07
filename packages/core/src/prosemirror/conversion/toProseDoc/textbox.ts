@@ -16,6 +16,7 @@ import { emuToPixels } from '../../../docx/imageParser';
 import type { StyleResolver } from '../../styles';
 import { isAnchoredDocxTextBox, textBoxAnchorAttrsFromDocx } from '../textBoxAnchors';
 import { convertParagraph } from './paragraph';
+import type { NoteRefDisplayFormatter } from './runs';
 
 /**
  * Convert a paragraph block to PM nodes, extracting text boxes as sibling nodes.
@@ -23,16 +24,32 @@ import { convertParagraph } from './paragraph';
  */
 export function convertParagraphWithTextBoxes(
   block: Paragraph,
-  styleResolver: StyleResolver | null
+  styleResolver: StyleResolver | null,
+  noteRefDisplayFormatter?: NoteRefDisplayFormatter
 ): PMNode[] {
+  const columnParts = splitParagraphByColumnBreak(block);
+  if (columnParts.length > 1 || columnParts[0] === 'columnBreak') {
+    return columnParts.flatMap((part) =>
+      part === 'columnBreak'
+        ? [schema.node('columnBreak')]
+        : convertParagraphWithTextBoxes(part, styleResolver, noteRefDisplayFormatter)
+    );
+  }
+
   const textBoxes = extractTextBoxesFromParagraph(block);
-  const pmParagraph = convertParagraph(block, styleResolver);
+  const pmParagraph = convertParagraph(
+    block,
+    styleResolver,
+    undefined,
+    undefined,
+    noteRefDisplayFormatter
+  );
   const nodes: PMNode[] = [];
   const isEmptyAfterExtraction = textBoxes.length > 0 && pmParagraph.content.size === 0;
   const { anchored, inFlow } = partitionTextBoxesByAnchor(textBoxes);
 
   for (const tb of anchored) {
-    nodes.push(convertTextBox(tb, styleResolver));
+    nodes.push(convertTextBox(tb, styleResolver, noteRefDisplayFormatter));
   }
 
   if (!isEmptyAfterExtraction) {
@@ -40,9 +57,59 @@ export function convertParagraphWithTextBoxes(
   }
 
   for (const tb of inFlow) {
-    nodes.push(convertTextBox(tb, styleResolver));
+    nodes.push(convertTextBox(tb, styleResolver, noteRefDisplayFormatter));
   }
   return nodes;
+}
+
+type ParagraphColumnPart = Paragraph | 'columnBreak';
+
+function splitParagraphByColumnBreak(paragraph: Paragraph): ParagraphColumnPart[] {
+  let sawColumnBreak = false;
+  let lastPartWasColumnBreak = false;
+  const parts: ParagraphColumnPart[] = [];
+  let currentContent: ParagraphContent[] = [];
+
+  const pushCurrentParagraph = (preserveEmpty = false) => {
+    if (currentContent.length === 0 && !preserveEmpty) return;
+    parts.push({ ...paragraph, content: currentContent });
+    currentContent = [];
+    lastPartWasColumnBreak = false;
+  };
+
+  for (const item of paragraph.content) {
+    if (item.type !== 'run') {
+      currentContent.push(item);
+      continue;
+    }
+
+    let currentRunContent: Run['content'] = [];
+    const pushCurrentRun = () => {
+      if (currentRunContent.length === 0) return;
+      currentContent.push({ ...item, content: currentRunContent });
+      currentRunContent = [];
+    };
+
+    for (const runContent of item.content) {
+      if (runContent.type === 'break' && runContent.breakType === 'column') {
+        sawColumnBreak = true;
+        pushCurrentRun();
+        pushCurrentParagraph();
+        parts.push('columnBreak');
+        lastPartWasColumnBreak = true;
+      } else {
+        currentRunContent.push(runContent);
+      }
+    }
+
+    pushCurrentRun();
+  }
+
+  if (!sawColumnBreak) return [paragraph];
+  // A column break at the end of a paragraph leaves the paragraph mark after
+  // the break. Word renders that mark as an empty line in the next column.
+  pushCurrentParagraph(lastPartWasColumnBreak);
+  return parts;
 }
 
 function partitionTextBoxesByAnchor(textBoxes: TextBox[]): {
@@ -140,7 +207,11 @@ function extractTextBoxesFromParagraph(paragraph: Paragraph): TextBox[] {
 /**
  * Convert a TextBox to a ProseMirror textBox node
  */
-function convertTextBox(textBox: TextBox, styleResolver: StyleResolver | null): PMNode {
+function convertTextBox(
+  textBox: TextBox,
+  styleResolver: StyleResolver | null,
+  noteRefDisplayFormatter?: NoteRefDisplayFormatter
+): PMNode {
   const widthPx = textBox.size?.width ? emuToPixels(textBox.size.width) : 200;
   const heightPx = textBox.size?.height ? emuToPixels(textBox.size.height) : undefined;
 
@@ -171,7 +242,9 @@ function convertTextBox(textBox: TextBox, styleResolver: StyleResolver | null): 
   // Convert text box content (paragraphs) to PM nodes
   const contentNodes: PMNode[] = [];
   for (const para of textBox.content) {
-    contentNodes.push(convertParagraph(para, styleResolver));
+    contentNodes.push(
+      convertParagraph(para, styleResolver, undefined, undefined, noteRefDisplayFormatter)
+    );
   }
 
   // Ensure at least one paragraph

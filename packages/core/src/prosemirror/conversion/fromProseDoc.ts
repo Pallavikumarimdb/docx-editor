@@ -264,6 +264,9 @@ function extractBlocks(pmDoc: PMNode): BlockContent[] {
       flushPendingTextBoxes();
       // Convert page break node to a paragraph with a page break run
       blocks.push(createPageBreakParagraph());
+    } else if (node.type.name === 'columnBreak') {
+      flushPendingTextBoxes();
+      blocks.push(createColumnBreakParagraph());
     }
   });
 
@@ -299,6 +302,18 @@ function convertPMBlockSdt(node: PMNode): BlockSdt {
  */
 function createPageBreakParagraph(): Paragraph {
   const breakContent: BreakContent = { type: 'break', breakType: 'page' };
+  const run: Run = { type: 'run', content: [breakContent] };
+  return {
+    type: 'paragraph',
+    content: [run],
+  };
+}
+
+/**
+ * Create a paragraph containing only a column break run (for DOCX serialization)
+ */
+function createColumnBreakParagraph(): Paragraph {
+  const breakContent: BreakContent = { type: 'break', breakType: 'column' };
   const run: Run = { type: 'run', content: [breakContent] };
   return {
     type: 'paragraph',

@@ -445,6 +445,35 @@ function parseTabContent(): TabContent {
 }
 
 /**
+ * Parse absolute-position tab element (w:ptab)
+ */
+function parsePositionalTabContent(element: XmlElement): TabContent {
+  const tab: TabContent = { type: 'tab' };
+  const alignment = getAttribute(element, 'w', 'alignment');
+  const relativeTo = getAttribute(element, 'w', 'relativeTo');
+  const leader = getAttribute(element, 'w', 'leader');
+
+  tab.positional = {
+    alignment:
+      alignment === 'left' || alignment === 'center' || alignment === 'right'
+        ? alignment
+        : undefined,
+    relativeTo: relativeTo === 'margin' || relativeTo === 'indent' ? relativeTo : undefined,
+    leader:
+      leader === 'none' ||
+      leader === 'dot' ||
+      leader === 'hyphen' ||
+      leader === 'underscore' ||
+      leader === 'heavy' ||
+      leader === 'middleDot'
+        ? leader
+        : undefined,
+  };
+
+  return tab;
+}
+
+/**
  * Parse break element (w:br)
  */
 function parseBreakContent(element: XmlElement): BreakContent {
@@ -593,6 +622,11 @@ function parseRunContents(
       case 'tab':
         // Tab character
         contents.push(parseTabContent());
+        break;
+
+      case 'ptab':
+        // Absolute-position tab character
+        contents.push(parsePositionalTabContent(child));
         break;
 
       case 'br':

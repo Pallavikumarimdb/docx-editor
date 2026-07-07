@@ -66,7 +66,12 @@ export {
   type RenderContext,
 };
 export type { RenderPagesUpdateKind };
-export type { HeaderFooterContent, RenderPageOptions, FootnoteRenderItem } from './paintPage';
+export type {
+  HeaderFooterContent,
+  SectionHeaderFooterContent,
+  RenderPageOptions,
+  FootnoteRenderItem,
+} from './paintPage';
 export { registerPageFurniture } from './pageFurnitureRegistry';
 
 // Anchored-object position resolution — shared with the measure pipeline so the

@@ -31,6 +31,7 @@ import {
 import type { FontFamilyAttrs } from './schema/marks';
 import { sdtAttrsToProps, sdtPropsToAttrs } from './conversion/sdtAttrs';
 import type { SdtType, SdtProperties, SdtDataBinding } from '../types/document';
+import { checkboxDisplayStateFromAttrs, textStartsWithCheckboxGlyph } from './checkboxSdt';
 
 /** A control discovered in the PM doc, with its PM position for scroll/edit. */
 export interface PMContentControl {
@@ -376,6 +377,17 @@ function setContentControlValueForTargetTr(
   }
   const { properties, content } = applyContentControlValue(props, value);
   const { schema } = state;
+  const attrs = target.node.attrs as Record<string, unknown>;
+  const shouldPreserveInlineCheckboxLabel =
+    target.node.type.name === 'sdt' &&
+    value.kind === 'checkbox' &&
+    !textStartsWithCheckboxGlyph(target.node.textContent, checkboxDisplayStateFromAttrs(attrs));
+  if (shouldPreserveInlineCheckboxLabel) {
+    return state.tr.setNodeMarkup(target.pos, undefined, {
+      ...attrs,
+      ...sdtPropsToAttrs(properties),
+    });
+  }
   const from = target.pos + 1;
   const to = target.pos + 1 + target.node.content.size;
   const replacement =
@@ -385,7 +397,7 @@ function setContentControlValueForTargetTr(
   const tr = state.tr.replaceWith(from, to, replacement);
   // Sync structured attrs (checked / rawPropertiesXml); node start is stable.
   tr.setNodeMarkup(target.pos, undefined, {
-    ...(target.node.attrs as Record<string, unknown>),
+    ...attrs,
     ...sdtPropsToAttrs(properties),
   });
   return tr;

@@ -194,6 +194,37 @@ describe('toProseDoc — table cell theme color resolution', () => {
   });
 });
 
+describe('toProseDoc — endnote reference display', () => {
+  test('renders inline endnote references with lower-roman display by default', () => {
+    const doc: Document = {
+      package: {
+        document: {
+          content: [
+            {
+              type: 'paragraph',
+              content: [
+                { type: 'run', content: [{ type: 'text', text: 'First ' }] },
+                { type: 'run', content: [{ type: 'endnoteRef', id: 1 }] },
+                { type: 'run', content: [{ type: 'text', text: ' second ' }] },
+                { type: 'run', content: [{ type: 'endnoteRef', id: 2 }] },
+              ],
+            },
+          ],
+          finalSectionProperties: { endnotePr: { numFmt: 'lowerRoman' } },
+        },
+        endnotes: [
+          { type: 'endnote', id: 1, content: [] },
+          { type: 'endnote', id: 2, content: [] },
+        ],
+      },
+    };
+
+    const pmDoc = toProseDoc(doc);
+
+    expect(pmDoc.textContent).toBe('First i second ii');
+  });
+});
+
 describe('ProseMirror table cell DOM serialization', () => {
   test('OOXML auto border colors serialize to valid CSS colors', () => {
     const borders = {

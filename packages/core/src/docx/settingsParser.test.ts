@@ -54,3 +54,32 @@ describe('parseSettings — themeFontLang (§17.15.1.88)', () => {
     expect(parseSettings(xml).themeFontLang).toBeUndefined();
   });
 });
+
+describe('parseSettings — evenAndOddHeaders (§17.15.1.35)', () => {
+  test('bare on/off element means true', () => {
+    const xml = `<w:settings ${SETTINGS_NS}><w:evenAndOddHeaders/></w:settings>`;
+    expect(parseSettings(xml).evenAndOddHeaders).toBe(true);
+  });
+
+  test('explicit true means true', () => {
+    const xml = `<w:settings ${SETTINGS_NS}><w:evenAndOddHeaders w:val="true"/></w:settings>`;
+    expect(parseSettings(xml).evenAndOddHeaders).toBe(true);
+  });
+
+  test('explicit false values mean false', () => {
+    expect(
+      parseSettings(`<w:settings ${SETTINGS_NS}><w:evenAndOddHeaders w:val="false"/></w:settings>`)
+        .evenAndOddHeaders
+    ).toBe(false);
+    expect(
+      parseSettings(`<w:settings ${SETTINGS_NS}><w:evenAndOddHeaders w:val="0"/></w:settings>`)
+        .evenAndOddHeaders
+    ).toBe(false);
+  });
+
+  test('is undefined when the element is absent', () => {
+    const xml = `<w:settings ${SETTINGS_NS}><w:defaultTabStop w:val="720"/></w:settings>`;
+    expect(parseSettings(xml).evenAndOddHeaders).toBeUndefined();
+    expect(parseSettings(null).evenAndOddHeaders).toBeUndefined();
+  });
+});

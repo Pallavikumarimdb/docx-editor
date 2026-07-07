@@ -53,6 +53,7 @@ import { TextBoxExtension } from './nodes/TextBoxExtension';
 import { ShapeExtension } from './nodes/ShapeExtension';
 import { HorizontalRuleExtension } from './nodes/HorizontalRuleExtension';
 import { PageBreakExtension } from './nodes/PageBreakExtension';
+import { ColumnBreakExtension } from './nodes/ColumnBreakExtension';
 import { FieldExtension } from './nodes/FieldExtension';
 import { SdtExtension } from './nodes/SdtExtension';
 import { BlockSdtExtension } from './nodes/BlockSdtExtension';
@@ -149,6 +150,7 @@ export function createStarterKit(options: StarterKitOptions = {}): AnyExtension[
   add('dropCursor', DropCursorExtension());
   add('horizontalRule', HorizontalRuleExtension());
   add('pageBreak', PageBreakExtension());
+  add('columnBreak', ColumnBreakExtension());
   add('field', FieldExtension());
   add('sdt', SdtExtension());
   add('blockSdt', BlockSdtExtension());

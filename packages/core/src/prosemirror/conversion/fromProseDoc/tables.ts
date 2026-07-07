@@ -18,10 +18,12 @@ import type {
   TableRowFormatting,
   TableCellFormatting,
   TableBorders,
-  Paragraph,
+  BlockContent,
+  BlockSdt,
 } from '../../../types/document';
 import type { TableAttrs, TableRowAttrs, TableCellAttrs } from '../../schema/nodes';
 import { convertPMParagraph } from './paragraph';
+import { sdtAttrsToProps } from '../sdtAttrs';
 
 function inferTableBorders(rows: TableRow[]): TableBorders | undefined {
   for (const row of rows) {
@@ -509,15 +511,12 @@ function tableRowAttrsToFormatting(attrs: TableRowAttrs): TableRowFormatting | u
  */
 function convertPMTableCell(node: PMNode): TableCell {
   const attrs = node.attrs as TableCellAttrs;
-  const content: (Paragraph | Table)[] = [];
+  const content: BlockContent[] = [];
 
-  // Extract cell content (paragraphs and nested tables)
+  // Extract cell content (paragraphs, nested tables, and block SDTs)
   node.forEach((contentNode) => {
-    if (contentNode.type.name === 'paragraph') {
-      content.push(convertPMParagraph(contentNode));
-    } else if (contentNode.type.name === 'table') {
-      content.push(convertPMTable(contentNode));
-    }
+    const block = convertPMTableCellBlock(contentNode);
+    if (block) content.push(block);
   });
 
   const cell: TableCell = {
@@ -549,6 +548,37 @@ function convertPMTableCell(node: PMNode): TableCell {
     cell.propertyChanges = attrs.tcPrChange;
   }
   return cell;
+}
+
+function convertPMTableCellBlock(node: PMNode): BlockContent | null {
+  if (node.type.name === 'paragraph') {
+    return convertPMParagraph(node);
+  }
+  if (node.type.name === 'table') {
+    return convertPMTable(node);
+  }
+  if (node.type.name === 'blockSdt') {
+    return convertPMTableCellBlockSdt(node);
+  }
+  return null;
+}
+
+function convertPMTableCellBlockSdt(node: PMNode): BlockSdt {
+  const attrs = node.attrs as Record<string, unknown>;
+  const blockSdt: BlockSdt = {
+    type: 'blockSdt',
+    properties: sdtAttrsToProps(attrs),
+    content: [],
+  };
+  node.forEach((child) => {
+    const block = convertPMTableCellBlock(child);
+    if (block) blockSdt.content.push(block);
+  });
+  const leading = attrs.leadingBlockMarkers as BlockSdt['leadingBlockMarkers'];
+  const trailing = attrs.trailingBlockMarkers as BlockSdt['trailingBlockMarkers'];
+  if (leading && leading.length > 0) blockSdt.leadingBlockMarkers = leading;
+  if (trailing && trailing.length > 0) blockSdt.trailingBlockMarkers = trailing;
+  return blockSdt;
 }
 
 /**

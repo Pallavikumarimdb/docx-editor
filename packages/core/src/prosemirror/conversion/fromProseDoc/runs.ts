@@ -66,7 +66,7 @@ export function addNodeToHyperlink(hyperlink: Hyperlink, node: PMNode): void {
   if (node.isText && node.text) {
     hyperlink.children.push(createRunFromText(node.text, nonLinkMarks));
   } else if (node.type.name === 'tab') {
-    hyperlink.children.push(createTabRun());
+    hyperlink.children.push(createTabRun(node));
   } else if (node.type.name === 'hardBreak') {
     hyperlink.children.push(createBreakRun());
   }
@@ -119,9 +119,10 @@ export function createBreakRun(): Run {
 /**
  * Create a Run containing a tab
  */
-export function createTabRun(): Run {
+export function createTabRun(node?: PMNode): Run {
   const tabContent: TabContent = {
     type: 'tab',
+    positional: node?.attrs.positional ?? undefined,
   };
 
   return {

@@ -6,7 +6,8 @@
  */
 
 import { describe, test, expect } from 'bun:test';
-import { parseComments } from './commentParser';
+import { inferNestedCommentRepliesFromRanges, parseComments } from './commentParser';
+import type { BlockContent, Comment } from '../types/document';
 
 // Minimal comments.xml with two comments
 const COMMENTS_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -254,6 +255,32 @@ describe('commentParser', () => {
 </w:comments>`;
       const comments = parseComments(xml, emptyStyles, emptyTheme, emptyRels, emptyMedia);
       expect(comments[1].parentId).toBe(1);
+    });
+  });
+
+  describe('nested range reply inference', () => {
+    test('threads a nested comment range under the active outer comment', () => {
+      const comments: Comment[] = [
+        { id: 2, author: 'Dev Lead', content: [] },
+        { id: 3, author: 'QA Reviewer', content: [] },
+      ];
+      const content: BlockContent[] = [
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'commentRangeStart', id: 2 },
+            { type: 'commentRangeStart', id: 3 },
+            { type: 'run', content: [{ type: 'text', text: 'threaded text' }] },
+            { type: 'commentRangeEnd', id: 3 },
+            { type: 'commentRangeEnd', id: 2 },
+          ],
+        },
+      ];
+
+      const inferred = inferNestedCommentRepliesFromRanges(comments, content);
+
+      expect(inferred[0].parentId).toBeUndefined();
+      expect(inferred[1].parentId).toBe(2);
     });
   });
 });

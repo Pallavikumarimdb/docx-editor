@@ -23,6 +23,7 @@ import { resolveFontFamily } from '../../utils/fontResolver';
 import { sanitizeHref } from '../../utils/sanitizeHref';
 import { sanitizeImageSrc } from '../../utils/sanitizeImageSrc';
 import { measureTextWidth, resolveFontStyle } from '../../flow-model/metrics/textMetrics';
+import { underlineStyleToCss } from '../../utils/underlineStyle';
 import {
   PARAGRAPH_CLASS_NAMES,
   isTextRun,
@@ -164,7 +165,13 @@ function styleRunElement(
     decorations.push('underline');
     if (typeof run.underline === 'object') {
       if (run.underline.style) {
-        element.style.textDecorationStyle = run.underline.style;
+        const underlineStyle = underlineStyleToCss(run.underline.style);
+        if (underlineStyle.decorationStyle) {
+          element.style.textDecorationStyle = underlineStyle.decorationStyle;
+        }
+        if (underlineStyle.decorationThickness) {
+          element.style.textDecorationThickness = underlineStyle.decorationThickness;
+        }
       }
       if (run.underline.color) {
         element.style.textDecorationColor = run.underline.color;
@@ -182,8 +189,10 @@ function styleRunElement(
       (id) => !resolvedCommentIds || !resolvedCommentIds.has(id)
     );
     if (activeCommentId != null) {
-      element.style.backgroundColor = 'rgba(255, 212, 0, 0.15)';
-      element.style.borderBottom = '1px solid rgba(255, 212, 0, 0.4)';
+      element.style.backgroundColor = 'var(--doc-comment-bg)';
+      element.style.borderBottomWidth = '2px';
+      element.style.borderBottomStyle = 'solid';
+      element.style.borderBottomColor = 'var(--doc-comment-border)';
       element.style.cursor = 'pointer';
       element.style.transition = 'background-color 0.15s ease';
       element.dataset.commentId = String(activeCommentId);

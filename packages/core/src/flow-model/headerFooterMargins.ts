@@ -23,7 +23,12 @@
  *     warning instead of aborting pagination.
  */
 
-import type { ContentNode, PageMargins, SectionMarkerBlock } from '../pagination-model/types';
+import type {
+  ContentNode,
+  PageHeaderFooterRefs,
+  PageMargins,
+  SectionMarkerBlock,
+} from '../pagination-model/types';
 import type { HeaderFooterContent } from '../painter-model/paintPage';
 
 /** Word's default `w:header` / `w:footer` distance (0.5in = 48px). */
@@ -59,6 +64,16 @@ export interface ExtendMarginsForHeaderFooterInput {
   headers?: Array<HeaderFooterContent | undefined>;
   /** Footer variants in play this layout. */
   footers?: Array<HeaderFooterContent | undefined>;
+  /**
+   * Per-section header/footer resolution. When provided, each margin set is
+   * extended by the band heights of its own section's referenced parts.
+   */
+  perSection?: {
+    headerContentByRef: Map<string, HeaderFooterContent>;
+    footerContentByRef: Map<string, HeaderFooterContent>;
+    initialRefs?: PageHeaderFooterRefs;
+    finalRefs?: PageHeaderFooterRefs;
+  };
   /** Optional diagnostic sink for the clamp (adapters pass `console.warn`). */
   warn?: (message: string) => void;
 }
@@ -80,13 +95,28 @@ export interface ExtendMarginsForHeaderFooterResult {
 export function extendMarginsForHeaderFooter(
   input: ExtendMarginsForHeaderFooterInput
 ): ExtendMarginsForHeaderFooterResult {
-  const { pageSize, margins, finalMargins, bodyNodes, headers, footers, warn } = input;
+  const { pageSize, margins, finalMargins, bodyNodes, headers, footers, perSection, warn } = input;
 
-  const headerContentHeight = Math.max(0, ...(headers ?? []).map(bandHeight));
-  const footerContentHeight = Math.max(0, ...(footers ?? []).map(bandHeight));
+  const globalHeaderHeight = Math.max(0, ...(headers ?? []).map(bandHeight));
+  const globalFooterHeight = Math.max(0, ...(footers ?? []).map(bandHeight));
+  const heightsForRefs = (
+    refs: PageHeaderFooterRefs | undefined
+  ): { header: number; footer: number } => {
+    if (!perSection || !refs) return { header: globalHeaderHeight, footer: globalFooterHeight };
+    const headerHeights = [refs.headerDefault, refs.headerFirst, refs.headerEven].map((rId) =>
+      bandHeight(rId ? perSection.headerContentByRef.get(rId) : undefined)
+    );
+    const footerHeights = [refs.footerDefault, refs.footerFirst, refs.footerEven].map((rId) =>
+      bandHeight(rId ? perSection.footerContentByRef.get(rId) : undefined)
+    );
+    return { header: Math.max(0, ...headerHeights), footer: Math.max(0, ...footerHeights) };
+  };
 
   // No header/footer content anywhere → nothing can push a body margin.
-  if (headerContentHeight === 0 && footerContentHeight === 0) {
+  const anyPerSectionContent =
+    perSection &&
+    (perSection.headerContentByRef.size > 0 || perSection.footerContentByRef.size > 0);
+  if (globalHeaderHeight === 0 && globalFooterHeight === 0 && !anyPerSectionContent) {
     return { margins, finalMargins };
   }
 
@@ -101,7 +131,8 @@ export function extendMarginsForHeaderFooter(
   // so the band must grow there alone. Deciding once from the body margins left
   // the landscape footer overlapping the footnote area / body text (the page
   // number rode up next to the last footnote instead of sitting below it).
-  const extend = (m: PageMargins): PageMargins => {
+  const extend = (m: PageMargins, refs?: PageHeaderFooterRefs): PageMargins => {
+    const { header: headerContentHeight, footer: footerContentHeight } = heightsForRefs(refs);
     const headerDistance = m.header ?? DEFAULT_HF_DISTANCE_PX;
     const footerDistance = m.footer ?? DEFAULT_HF_DISTANCE_PX;
     const extendHeader = headerContentHeight > m.top - headerDistance;
@@ -124,13 +155,13 @@ export function extendMarginsForHeaderFooter(
     return out;
   };
 
-  const extendedMargins = extend(margins);
-  const extendedFinal = extend(finalMargins);
+  const extendedMargins = extend(margins, perSection?.initialRefs);
+  const extendedFinal = extend(finalMargins, perSection?.finalRefs);
   if (bodyNodes) {
     for (const block of bodyNodes) {
       if (block.kind !== 'sectionBreak') continue;
       const sb = block as SectionMarkerBlock;
-      if (sb.margins) sb.margins = extend(sb.margins);
+      if (sb.margins) sb.margins = extend(sb.margins, sb.headerFooterRefs);
     }
   }
 
@@ -138,7 +169,7 @@ export function extendMarginsForHeaderFooter(
     warn(
       '[layout] header/footer content exceeds page height; clamping margins to ' +
         `preserve a content area. pageHeight=${Math.round(pageSize.h)} ` +
-        `headerBand=${Math.round(headerContentHeight)} footerBand=${Math.round(footerContentHeight)} ` +
+        `headerBand=${Math.round(globalHeaderHeight)} footerBand=${Math.round(globalFooterHeight)} ` +
         `top=${Math.round(extendedMargins.top)} bottom=${Math.round(extendedMargins.bottom)}`
     );
   }
