@@ -237,6 +237,20 @@ function serializeLineNumbers(props: SectionProperties): string {
   return `<w:lnNumType ${attrs.join(' ')}/>`;
 }
 
+function serializePageNumbers(props: SectionProperties): string {
+  if (!props.pageNumbers) return '';
+
+  const attrs: string[] = [];
+  const pg = props.pageNumbers;
+  if (pg.format) attrs.push(`w:fmt="${escapeXml(pg.format)}"`);
+  if (pg.start !== undefined) attrs.push(`w:start="${intAttr(pg.start)}"`);
+  if (pg.chapterStyle !== undefined) attrs.push(`w:chapStyle="${intAttr(pg.chapterStyle)}"`);
+  if (pg.chapterSeparator) attrs.push(`w:chapSep="${escapeXml(pg.chapterSeparator)}"`);
+
+  if (attrs.length === 0) return '<w:pgNumType/>';
+  return `<w:pgNumType ${attrs.join(' ')}/>`;
+}
+
 /**
  * Serialize page borders (w:pgBorders)
  */
@@ -371,6 +385,12 @@ export function serializeSectionProperties(props: SectionProperties | undefined)
   const lnNumXml = serializeLineNumbers(props);
   if (lnNumXml) {
     parts.push(lnNumXml);
+  }
+
+  // Page numbering — CT_SectPr order is lnNumType, pgNumType, cols.
+  const pgNumXml = serializePageNumbers(props);
+  if (pgNumXml) {
+    parts.push(pgNumXml);
   }
 
   // Columns

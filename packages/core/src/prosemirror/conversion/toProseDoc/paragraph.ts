@@ -453,6 +453,9 @@ function paragraphFormattingToAttrs(
   }
   if (paragraphStartsWithPageBreak(paragraph)) {
     attrs.pageBreakBefore = true;
+    if (paragraph.sourceLeadingPageBreak) {
+      attrs.sourceLeadingPageBreak = true;
+    }
   }
 
   // Paragraph-mark tracked-change attrs (w:pPr/w:rPr/w:ins, w:del).

@@ -17,6 +17,7 @@
 
 import type {
   Paragraph,
+  ParagraphContent,
   Theme,
   RelationshipMap,
   MediaFile,
@@ -153,6 +154,9 @@ export function parseParagraph(
   // tracked changes, and fidelity tooling, so parser-level consolidation would
   // erase information before later round-trip stages have a chance to preserve it.
   paragraph.content = rawContent;
+  if (contentStartsWithHardPageBreak(rawContent)) {
+    paragraph.sourceLeadingPageBreak = true;
+  }
 
   // Compute list rendering if this is a list item.
   // numPr can come from inline pPr or from the referenced paragraph style.
@@ -239,6 +243,50 @@ export function parseParagraph(
   }
 
   return paragraph;
+}
+
+function contentStartsWithHardPageBreak(content: readonly ParagraphContent[]): boolean {
+  for (const item of content) {
+    switch (item.type) {
+      case 'run':
+        for (const runContent of item.content) {
+          if (runContent.type === 'break' && runContent.breakType === 'page') return true;
+          // Word commonly emits empty <w:t/> shells; they are invisible, so
+          // keep scanning (mirrors isVisibleRunContent in toProseDoc).
+          if (runContent.type === 'text' && runContent.text.length === 0) continue;
+          if (runContent.type !== 'fieldChar' && runContent.type !== 'instrText') return false;
+        }
+        break;
+      case 'hyperlink':
+        return contentStartsWithHardPageBreak(item.children as ParagraphContent[]);
+      case 'simpleField':
+        return contentStartsWithHardPageBreak(item.content as ParagraphContent[]);
+      case 'complexField':
+        return contentStartsWithHardPageBreak([
+          ...item.fieldCode,
+          ...item.fieldResult,
+        ] as ParagraphContent[]);
+      case 'inlineSdt':
+        return contentStartsWithHardPageBreak(item.content as ParagraphContent[]);
+      case 'insertion':
+      case 'deletion':
+      case 'moveFrom':
+      case 'moveTo':
+        return contentStartsWithHardPageBreak(item.content as ParagraphContent[]);
+      case 'bookmarkStart':
+      case 'bookmarkEnd':
+      case 'commentRangeStart':
+      case 'commentRangeEnd':
+      case 'moveFromRangeStart':
+      case 'moveFromRangeEnd':
+      case 'moveToRangeStart':
+      case 'moveToRangeEnd':
+        continue;
+      default:
+        return false;
+    }
+  }
+  return false;
 }
 
 /**

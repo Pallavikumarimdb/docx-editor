@@ -15,6 +15,7 @@ import { pixelsToEmu } from '../../../docx/imageParser';
 import type {
   Run,
   TextContent,
+  RunContent,
   BreakContent,
   TabContent,
   DrawingContent,
@@ -65,6 +66,8 @@ export function addNodeToHyperlink(hyperlink: Hyperlink, node: PMNode): void {
 
   if (node.isText && node.text) {
     hyperlink.children.push(createRunFromText(node.text, nonLinkMarks));
+  } else if (node.type.name === 'symbol') {
+    hyperlink.children.push(createSymbolRun(node, nonLinkMarks));
   } else if (node.type.name === 'tab') {
     hyperlink.children.push(createTabRun(node));
   } else if (node.type.name === 'hardBreak') {
@@ -77,15 +80,11 @@ export function addNodeToHyperlink(hyperlink: Hyperlink, node: PMNode): void {
  */
 export function createRunFromText(text: string, marks: readonly Mark[]): Run {
   const formatting = marksToTextFormatting(marks);
-  const textContent: TextContent = {
-    type: 'text',
-    text,
-  };
 
   return {
     type: 'run',
     formatting: Object.keys(formatting).length > 0 ? formatting : undefined,
-    content: [textContent],
+    content: textToRunContent(text),
   };
 }
 
@@ -93,12 +92,55 @@ export function createRunFromText(text: string, marks: readonly Mark[]): Run {
  * Append text to an existing run
  */
 export function appendTextToRun(run: Run, text: string): void {
-  const lastContent = run.content[run.content.length - 1];
-  if (lastContent && lastContent.type === 'text') {
-    lastContent.text += text;
-  } else {
-    run.content.push({ type: 'text', text });
+  for (const content of textToRunContent(text)) {
+    const lastContent = run.content[run.content.length - 1];
+    if (content.type === 'text' && lastContent && lastContent.type === 'text') {
+      lastContent.text += content.text;
+    } else {
+      run.content.push(content);
+    }
   }
+}
+
+export function textToRunContent(text: string): RunContent[] {
+  const parts: RunContent[] = [];
+  let buffer = '';
+  const flush = (): void => {
+    if (!buffer) return;
+    const textContent: TextContent = { type: 'text', text: buffer };
+    parts.push(textContent);
+    buffer = '';
+  };
+
+  for (const char of text) {
+    if (char === '\u00ad') {
+      flush();
+      parts.push({ type: 'softHyphen' });
+    } else if (char === '\u2011') {
+      flush();
+      parts.push({ type: 'noBreakHyphen' });
+    } else {
+      buffer += char;
+    }
+  }
+  flush();
+  return parts;
+}
+
+export function createSymbolRun(node: PMNode, marks?: readonly Mark[]): Run {
+  const attrs = node.attrs as { font?: string | null; char?: string | null };
+  const formatting = marks && marks.length > 0 ? marksToTextFormatting(marks) : undefined;
+  return {
+    type: 'run',
+    content: [
+      {
+        type: 'symbol',
+        font: attrs.font || '',
+        char: attrs.char || '',
+      },
+    ],
+    ...(formatting && Object.keys(formatting).length > 0 ? { formatting } : {}),
+  };
 }
 
 /**
@@ -167,7 +209,7 @@ export function createFieldFromNode(
 
   const displayRun: Run = {
     type: 'run',
-    content: [{ type: 'text' as const, text: displayText }],
+    content: textToRunContent(displayText),
     ...(formatting && Object.keys(formatting).length > 0 ? { formatting } : {}),
   };
 

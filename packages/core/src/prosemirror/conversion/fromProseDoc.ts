@@ -294,6 +294,14 @@ function convertPMBlockSdt(node: PMNode): BlockSdt {
   const trailing = attrs.trailingBlockMarkers as BlockSdt['trailingBlockMarkers'];
   if (leading && leading.length > 0) blockSdt.leadingBlockMarkers = leading;
   if (trailing && trailing.length > 0) blockSdt.trailingBlockMarkers = trailing;
+  if (
+    typeof attrs.rawPreserveXml === 'string' &&
+    typeof attrs.rawPreserveText === 'string' &&
+    node.textContent === attrs.rawPreserveText
+  ) {
+    blockSdt.rawPreserveXml = attrs.rawPreserveXml;
+    blockSdt.rawPreserveText = attrs.rawPreserveText;
+  }
   return blockSdt;
 }
 

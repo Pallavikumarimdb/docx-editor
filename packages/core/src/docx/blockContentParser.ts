@@ -28,7 +28,14 @@ import type {
 } from '../types/document';
 import type { StyleMap } from './styleParser';
 import type { NumberingMap } from './numberingParser';
-import { findChild, findDeep, getChildElements, getLocalName, type XmlElement } from './xmlParser';
+import {
+  findChild,
+  findDeep,
+  getChildElements,
+  getLocalName,
+  elementToXml,
+  type XmlElement,
+} from './xmlParser';
 import { parseSdtProperties } from './sdtProperties';
 import { parseParagraph } from './paragraphParser';
 import { parseTable } from './tableParser';
@@ -460,5 +467,58 @@ function parseBlockSdt(
   const content = sdtContent
     ? parseBlockContent(sdtContent, styles, theme, numbering, rels, media, options)
     : [];
-  return { type: 'blockSdt', properties, content };
+  const block: BlockSdt = { type: 'blockSdt', properties, content };
+  if (sdtContent && shouldRawPreserveBlockSdt(sdt, sdtContent)) {
+    block.rawPreserveXml = elementToXml(sdt);
+    block.rawPreserveText = blocksText(content);
+  }
+  return block;
+}
+
+function shouldRawPreserveBlockSdt(sdt: XmlElement, sdtContent: XmlElement): boolean {
+  const paragraphs = getChildElements(sdtContent).filter(
+    (el) => getLocalName(el.name ?? '') === 'p'
+  );
+  if (paragraphs.length < 2) return false;
+  const xml = elementToXml(sdt);
+  return (
+    /<w:fldChar\b[^>]*w:fldCharType="begin"/.test(xml) &&
+    /<w:fldChar\b[^>]*w:fldCharType="end"/.test(xml) &&
+    /<w:instrText\b[^>]*>[^<]*TOC\b/i.test(xml)
+  );
+}
+
+function blocksText(blocks: readonly BlockContent[]): string {
+  let text = '';
+  for (const block of blocks) {
+    if (block.type === 'paragraph') {
+      text += paragraphText(block.content);
+    } else if (block.type === 'table') {
+      for (const row of block.rows) {
+        for (const cell of row.cells) text += blocksText(cell.content);
+      }
+    } else if (block.type === 'blockSdt') {
+      text += blocksText(block.content);
+    }
+  }
+  return text;
+}
+
+function paragraphText(content: readonly ParagraphContent[]): string {
+  let text = '';
+  for (const item of content) {
+    if (item.type === 'run') {
+      for (const c of item.content) {
+        if (c.type === 'text' || c.type === 'instrText') text += c.text;
+        else if (c.type === 'tab') text += '\t';
+        else if (c.type === 'softHyphen') text += '\u00ad';
+        else if (c.type === 'noBreakHyphen') text += '\u2011';
+      }
+    } else if ('content' in item && Array.isArray(item.content)) {
+      text += paragraphText(item.content as ParagraphContent[]);
+    } else if ('children' in item && Array.isArray(item.children)) {
+      text += paragraphText(item.children as ParagraphContent[]);
+    }
+  }
+  return text;
 }

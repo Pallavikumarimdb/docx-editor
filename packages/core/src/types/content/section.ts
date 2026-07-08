@@ -131,6 +131,13 @@ export interface SectionProperties {
     distance?: number;
     restart?: LineNumberRestart;
   };
+  /** Page numbering settings (`w:pgNumType`). */
+  pageNumbers?: {
+    start?: number;
+    format?: string;
+    chapterStyle?: number;
+    chapterSeparator?: string;
+  };
 
   // Page borders
   /** Page borders */

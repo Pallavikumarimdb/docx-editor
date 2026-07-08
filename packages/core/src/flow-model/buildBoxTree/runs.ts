@@ -395,6 +395,21 @@ export function paragraphToRuns(
         docFrom: childPos,
         docTo: childPos + child.nodeSize,
       });
+    } else if (child.type.name === 'symbol') {
+      const formatting = extractRunFormatting(child.marks, theme);
+      if (inTocParagraph) stripTocHyperlinkStyle(formatting);
+      const attrs = child.attrs as { text?: string; font?: string | null };
+      const run: TextRun = {
+        kind: 'text',
+        text: attrs.text || '',
+        ...paraDefaults,
+        ...formatting,
+        ...(attrs.font ? { fontFamily: attrs.font } : {}),
+        pmStart: childPos,
+        pmEnd: childPos + child.nodeSize,
+        inlineSdtWidget,
+      };
+      runs.push(run);
     } else if (child.type.name === 'tab') {
       const formatting = extractRunFormatting(child.marks, theme);
       const run: TabRun = {
