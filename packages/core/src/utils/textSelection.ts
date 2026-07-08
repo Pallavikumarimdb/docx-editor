@@ -94,6 +94,30 @@ export function findWordBoundaries(text: string, position: number): [number, num
 }
 
 /**
+ * Find word boundaries for a pointer-derived caret position.
+ *
+ * Hit testing returns insertion points between characters. Near the right edge
+ * of a word that can land on the following space, so prefer the adjacent word
+ * over selecting a whitespace run.
+ */
+export function findWordBoundariesForPointer(text: string, position: number): [number, number] {
+  if (!text || text.length === 0) {
+    return [0, 0];
+  }
+
+  const offset = Math.max(0, Math.min(position, text.length));
+  if (offset < text.length && isWordCharacter(text[offset])) {
+    return findWordBoundaries(text, offset);
+  }
+
+  if (offset > 0 && isWordCharacter(text[offset - 1])) {
+    return findWordBoundaries(text, offset - 1);
+  }
+
+  return findWordBoundaries(text, Math.min(offset, text.length - 1));
+}
+
+/**
  * Get the word at a position in text
  */
 export function getWordAt(text: string, position: number): string {

@@ -8,7 +8,7 @@
  */
 
 import type { ClickPositionResolver } from './ClickPositionResolver';
-import { findWordBoundaries } from '../../utils/textSelection';
+import { findWordBoundariesForPointer } from '../../utils/textSelection';
 
 /**
  * Interface for the editor that the handler controls.
@@ -247,7 +247,7 @@ export class PointerEventHandler {
     const docFrom = Number(element.dataset.docFrom) || 0;
     const offset = pos - docFrom;
 
-    const [start, end] = findWordBoundaries(text, offset);
+    const [start, end] = findWordBoundariesForPointer(text, offset);
 
     // Convert back to PM positions
     const from = docFrom + start;
