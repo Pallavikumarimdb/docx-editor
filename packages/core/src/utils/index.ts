@@ -254,6 +254,7 @@ export type { CellAnchor, SplitTarget, SplitLayoutResult } from './tableSplitAlg
 // Text selection helpers
 export {
   findWordBoundaries,
+  findWordBoundariesForPointer,
   getWordAt,
   findWordAt,
   selectWordAtCursor,

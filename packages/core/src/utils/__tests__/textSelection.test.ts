@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { findWordBoundaries, isWordCharacter } from '../textSelection';
+import {
+  findWordBoundaries,
+  findWordBoundariesForPointer,
+  isWordCharacter,
+} from '../textSelection';
 
 describe('textSelection word boundaries', () => {
   test('treats accented letters, combining marks, and underscores as word characters', () => {
@@ -35,5 +39,20 @@ describe('textSelection word boundaries', () => {
     const [start, end] = findWordBoundaries(text, 3);
 
     expect(text.slice(start, end)).toBe(text);
+  });
+
+  test('pointer offsets prefer the adjacent word over trailing whitespace', () => {
+    const text = 'Nostrudexercitationull ';
+    const [start, end] = findWordBoundariesForPointer(text, text.length - 1);
+
+    expect(text.slice(start, end)).toBe('Nostrudexercitationull');
+  });
+
+  test('placeholder separators keep words across inline atoms distinct', () => {
+    const text = 'qu Nostrudexercitationull';
+    const position = text.indexOf('Nostrud') + 10;
+    const [start, end] = findWordBoundariesForPointer(text, position);
+
+    expect(text.slice(start, end)).toBe('Nostrudexercitationull');
   });
 });
