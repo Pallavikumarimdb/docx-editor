@@ -133,6 +133,8 @@ export interface ParagraphAttrs {
   renderedPageBreakBefore?: boolean;
   /** Source paragraph began with a literal hard page break run. */
   sourceLeadingPageBreak?: boolean;
+  /** Synthetic empty paragraph inserted after a terminal column break. */
+  sourceColumnBreakContinuation?: boolean;
   keepNext?: boolean;
   keepLines?: boolean;
   /** Widow/orphan control. Undefined is Word's enabled default; false disables it. */

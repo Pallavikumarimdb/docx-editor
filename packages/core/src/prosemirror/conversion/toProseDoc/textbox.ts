@@ -72,7 +72,13 @@ function splitParagraphByColumnBreak(paragraph: Paragraph): ParagraphColumnPart[
 
   const pushCurrentParagraph = (preserveEmpty = false) => {
     if (currentContent.length === 0 && !preserveEmpty) return;
-    parts.push({ ...paragraph, content: currentContent });
+    parts.push({
+      ...paragraph,
+      content: currentContent,
+      ...(preserveEmpty && currentContent.length === 0
+        ? { sourceColumnBreakContinuation: true }
+        : {}),
+    });
     currentContent = [];
     lastPartWasColumnBreak = false;
   };

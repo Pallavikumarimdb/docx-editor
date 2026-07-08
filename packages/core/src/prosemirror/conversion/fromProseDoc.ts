@@ -240,6 +240,10 @@ function extractBlocks(pmDoc: PMNode): BlockContent[] {
 
   pmDoc.forEach((node) => {
     if (node.type.name === 'paragraph') {
+      const attrs = node.attrs as { sourceColumnBreakContinuation?: boolean };
+      if (attrs.sourceColumnBreakContinuation && node.childCount === 0) {
+        return;
+      }
       const paragraph = convertPMParagraph(node);
       if (pendingAnchoredTextBoxRuns.length > 0) {
         paragraph.content = [...pendingAnchoredTextBoxRuns, ...paragraph.content];

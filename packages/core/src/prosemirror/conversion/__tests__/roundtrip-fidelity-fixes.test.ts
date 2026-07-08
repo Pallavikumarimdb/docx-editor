@@ -246,6 +246,18 @@ describe('DOCX round-trip fidelity fixes', () => {
     expect(xml).not.toContain('<w:fldChar');
   });
 
+  test('empty simple fields stay self-closing through the PM round-trip', () => {
+    const input = paragraph([
+      { type: 'simpleField', instruction: '[object Object]', fieldType: 'UNKNOWN', content: [] },
+    ]);
+
+    const out = fromProseDoc(toProseDoc(docOf(input))).package.document.content[0] as Paragraph;
+    const xml = serializeParagraph(out);
+
+    expect(xml).toContain('<w:fldSimple w:instr="[object Object]"/>');
+    expect(xml).not.toContain('<w:t xml:space="preserve"> </w:t>');
+  });
+
   test('complex fields still serialize as fldChar begin/separate/end', () => {
     const xml = serializeParagraph(
       paragraph([
@@ -511,6 +523,30 @@ describe('DOCX round-trip fidelity fixes', () => {
     expect(xml).toContain('TOC \\h \\o "1-5"');
     expect(xml).toContain('w:fldCharType="begin"');
     expect(xml).toContain('w:fldCharType="end"');
+  });
+
+  test('synthetic empty paragraph after terminal column break is not exported', () => {
+    const body = parseDocumentBody(`<w:document ${W}><w:body>
+      <w:p><w:r><w:t>Before</w:t><w:br w:type="column"/></w:r></w:p>
+      <w:p><w:r><w:t>After</w:t></w:r></w:p>
+    </w:body></w:document>`);
+
+    const pm = toProseDoc(docOf(...body.content));
+    expect(pm.childCount).toBe(4);
+    expect(pm.child(2).type.name).toBe('paragraph');
+    expect(pm.child(2).childCount).toBe(0);
+    expect(pm.child(2).attrs.sourceColumnBreakContinuation).toBe(true);
+
+    const roundTripped = fromProseDoc(pm);
+    expect(roundTripped.package.document.content).toHaveLength(3);
+    const xml = serializeDocumentBody(roundTripped.package.document);
+    expect((xml.match(/<w:p(?:\s|>)/g) ?? []).length).toBe(3);
+    expect(roundTripped.package.document.content[2]).toMatchObject({
+      type: 'paragraph',
+      content: [{ type: 'run', content: [{ type: 'text', text: 'After' }] }],
+    });
+    expect(xml).toContain('<w:br w:type="column"/>');
+    expect(xml).toContain('<w:t>After</w:t>');
   });
 
   test('processNewImages reuses unchanged image rels and dedupes new media', async () => {

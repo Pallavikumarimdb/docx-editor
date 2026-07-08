@@ -296,6 +296,7 @@ const paragraphNodeSpec: NodeSpec = {
     // `<w:lastRenderedPageBreak/>` — Word's cached layout marker.
     renderedPageBreakBefore: { default: null },
     sourceLeadingPageBreak: { default: null },
+    sourceColumnBreakContinuation: { default: null },
     keepNext: { default: null },
     keepLines: { default: null },
     widowControl: { default: null },

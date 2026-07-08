@@ -115,6 +115,8 @@ export interface Paragraph {
    * hard-break shape instead of canonicalizing it to paragraph properties.
    */
   sourceLeadingPageBreak?: boolean;
+  /** Synthetic empty paragraph inserted after a terminal column break for PM layout only. */
+  sourceColumnBreakContinuation?: boolean;
   /** Section properties (if this paragraph ends a section) */
   sectionProperties?: SectionProperties;
 }

@@ -191,9 +191,11 @@ export function createFieldFromNode(
 
   const formatting = marks && marks.length > 0 ? marksToTextFormatting(marks) : undefined;
 
-  // Provide fallback display text for dynamic fields so <w:t> is never empty
   let displayText = attrs.displayText || '';
-  if (!displayText) {
+  if (!displayText && attrs.fieldKind === 'complex') {
+    // Complex fields need a cached result run after the separate marker. Simple
+    // fields can be self-closing, and adding a fallback space changes the
+    // visible round-trip output for empty imported fields.
     switch (attrs.fieldType) {
       case 'PAGE':
         displayText = '1';
@@ -207,11 +209,13 @@ export function createFieldFromNode(
     }
   }
 
-  const displayRun: Run = {
-    type: 'run',
-    content: textToRunContent(displayText),
-    ...(formatting && Object.keys(formatting).length > 0 ? { formatting } : {}),
-  };
+  const displayRun: Run | null = displayText
+    ? {
+        type: 'run',
+        content: textToRunContent(displayText),
+        ...(formatting && Object.keys(formatting).length > 0 ? { formatting } : {}),
+      }
+    : null;
 
   if (attrs.fieldKind === 'complex') {
     return {
@@ -219,7 +223,7 @@ export function createFieldFromNode(
       instruction: attrs.instruction,
       fieldType: attrs.fieldType as FieldType,
       fieldCode: [],
-      fieldResult: [displayRun],
+      fieldResult: displayRun ? [displayRun] : [],
       fldLock: attrs.fldLock || undefined,
       dirty: attrs.dirty || undefined,
     };
@@ -229,7 +233,7 @@ export function createFieldFromNode(
     type: 'simpleField',
     instruction: attrs.instruction,
     fieldType: attrs.fieldType as FieldType,
-    content: [displayRun],
+    content: displayRun ? [displayRun] : [],
     fldLock: attrs.fldLock || undefined,
     dirty: attrs.dirty || undefined,
   };
