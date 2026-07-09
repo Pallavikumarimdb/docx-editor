@@ -44,6 +44,20 @@ function tocBlock() {
   );
 }
 
+function rawTocBlock(rawPreserveXml: string, rawPreserveText = 'Heading\t3') {
+  return schema.node(
+    'blockSdt',
+    {
+      sdtType: 'richText',
+      alias: 'Table of Contents',
+      rawPropertiesXml: '<w:sdtPr><w:alias w:val="Table of Contents"/></w:sdtPr>',
+      rawPreserveXml,
+      rawPreserveText,
+    },
+    [paragraph(rawPreserveText)]
+  );
+}
+
 describe('TOC field support', () => {
   test('parses common TOC field instructions and preserves unknown switches', () => {
     const parsed = parseTocInstruction(' TOC \\h \\o "1-5" \\z ');
@@ -242,6 +256,45 @@ describe('TOC field support', () => {
     expect(updated).toBe(true);
     const updatedToc = state.doc.child(1);
     expect(updatedToc.attrs.rawPreserveText).toContain('Table of Contents\t2');
+  });
+
+  test('ignores nested PAGEREF instructions in Word cached TOC results', () => {
+    const raw = [
+      '<w:sdt>',
+      '<w:sdtPr><w:alias w:val="Table of Contents"/></w:sdtPr>',
+      '<w:sdtContent>',
+      '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>',
+      '<w:r><w:instrText>TOC \\o "1-3" \\h \\z \\u</w:instrText></w:r>',
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r></w:p>',
+      '<w:p><w:r><w:t>Heading</w:t></w:r><w:r><w:tab/></w:r>',
+      '<w:r><w:fldChar w:fldCharType="begin"/></w:r>',
+      '<w:r><w:instrText>PAGEREF _Toc1 \\h</w:instrText></w:r>',
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>3</w:t></w:r>',
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>',
+      '<w:p><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>',
+      '</w:sdtContent>',
+      '</w:sdt>',
+    ].join('');
+    let state = EditorState.create({
+      schema,
+      doc: schema.node('doc', null, [
+        rawTocBlock(raw),
+        paragraph('Heading', { styleId: 'Heading1' }),
+      ]),
+    });
+
+    const block = findTableOfContentsBlocks(state.doc)[0];
+    expect(block.instruction.raw).toBe('TOC \\o "1-3" \\h \\z \\u');
+
+    const updated = updateTableOfContents(state, (tr) => {
+      state = state.apply(tr);
+    });
+
+    expect(updated).toBe(true);
+    const regeneratedRaw = findTableOfContentsBlocks(state.doc)[0].node.attrs
+      .rawPreserveXml as string;
+    expect(regeneratedRaw).toContain('TOC \\o &quot;1-3&quot; \\h \\z \\u');
+    expect(regeneratedRaw).not.toContain('PAGEREF');
   });
 
   test('inserts a real dirty TOC field block at the current selection', () => {

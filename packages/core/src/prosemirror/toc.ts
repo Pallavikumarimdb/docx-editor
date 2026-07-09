@@ -135,8 +135,7 @@ export function insertTableOfContents(
     },
     [schema.node('paragraph', {}, [])]
   );
-  const insertPos = state.tr.mapping.map(state.selection.from);
-  dispatch(state.tr.insert(insertPos, toc).scrollIntoView());
+  dispatch(state.tr.insert(state.selection.from, toc).scrollIntoView());
   return true;
 }
 
@@ -238,7 +237,18 @@ function getTocInstruction(node: PMNode): TocInstruction | null {
 
 function extractTocInstructionFromXml(xml: string): string | null {
   if (!xml) return null;
-  const parts = [...xml.matchAll(/<w:instrText\b[^>]*>([\s\S]*?)<\/w:instrText>/g)]
+  const begin = xml.search(/<w:fldChar\b[^>]*w:fldCharType=(["'])begin\1/);
+  if (begin < 0) return null;
+  const afterBegin = xml.slice(begin);
+  const separate = afterBegin.search(/<w:fldChar\b[^>]*w:fldCharType=(["'])separate\1/);
+  const end = afterBegin.search(/<w:fldChar\b[^>]*w:fldCharType=(["'])end\1/);
+  const instructionXml =
+    separate >= 0
+      ? afterBegin.slice(0, separate)
+      : end >= 0
+        ? afterBegin.slice(0, end)
+        : afterBegin;
+  const parts = [...instructionXml.matchAll(/<w:instrText\b[^>]*>([\s\S]*?)<\/w:instrText>/g)]
     .map((match) => decodeBasicXml(match[1]))
     .join('');
   return /\bTOC\b/i.test(parts) ? parts.trim() : null;
