@@ -405,8 +405,8 @@ export function paragraphToRuns(
         ...paraDefaults,
         ...formatting,
         ...(attrs.font ? { fontFamily: attrs.font } : {}),
-        pmStart: childPos,
-        pmEnd: childPos + child.nodeSize,
+        docFrom: childPos,
+        docTo: childPos + child.nodeSize,
         inlineSdtWidget,
       };
       runs.push(run);

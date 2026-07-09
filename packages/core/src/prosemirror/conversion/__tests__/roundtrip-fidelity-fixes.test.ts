@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import JSZip from 'jszip';
-import { toFlowBlocks } from '../../../layout-bridge/toFlowBlocks';
+import { buildBoxTree } from '../../../flow-model/buildBoxTree';
 import { parseDocumentBody } from '../../../docx/documentParser';
 import { serializeDocumentBody } from '../../../docx/serializer/documentSerializer';
 import { serializeParagraph } from '../../../docx/serializer/paragraphSerializer';
@@ -93,7 +93,7 @@ describe('DOCX round-trip fidelity fixes', () => {
     const symbol = pm.child(0).child(0);
     expect(symbol.type.name).toBe('symbol');
 
-    const flows = toFlowBlocks(pm);
+    const flows = buildBoxTree(pm);
     expect(flows[0].kind).toBe('paragraph');
     if (flows[0].kind !== 'paragraph') return;
     expect(flows[0].runs[0]).toMatchObject({ kind: 'text', text: '☒', fontFamily: 'MS Gothic' });
@@ -383,7 +383,7 @@ describe('DOCX round-trip fidelity fixes', () => {
       const pm = toProseDoc(doc);
 
       // Layout must still see the break-only paragraph as a structural page break.
-      const blocks = toFlowBlocks(pm);
+      const blocks = buildBoxTree(pm);
       expect(blocks.map((b) => b.kind)).toEqual(['paragraph', 'pageBreak', 'paragraph']);
 
       const roundTripped = fromProseDoc(pm, doc);
@@ -397,7 +397,7 @@ describe('DOCX round-trip fidelity fixes', () => {
       const body = parseDocumentBody(`<w:document ${W}><w:body>
         <w:p><w:r><w:br w:type="page"/></w:r><w:r><w:t>Chapter</w:t></w:r></w:p>
       </w:body></w:document>`);
-      const blocks = toFlowBlocks(toProseDoc(docOf(...body.content)));
+      const blocks = buildBoxTree(toProseDoc(docOf(...body.content)));
       expect(blocks[0].kind).toBe('paragraph');
       if (blocks[0].kind !== 'paragraph') return;
       expect(blocks[0].attrs?.pageBreakBefore).toBe(true);

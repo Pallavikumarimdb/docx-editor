@@ -594,6 +594,7 @@ function paragraphAttrsToFormatting(attrs: ParagraphAttrs): ParagraphFormatting 
     attrs.outlineLevel != null ||
     attrs.contextualSpacing ||
     (!hasEffectiveSourceLeadingPageBreak(attrs) && attrs.pageBreakBefore) ||
+    attrs.widowControl != null ||
     attrs.bidi;
 
   if (!hasFormatting) {
@@ -620,6 +621,7 @@ function paragraphAttrsToFormatting(attrs: ParagraphAttrs): ParagraphFormatting 
     pageBreakBefore: hasEffectiveSourceLeadingPageBreak(attrs)
       ? undefined
       : attrs.pageBreakBefore || undefined,
+    widowControl: attrs.widowControl ?? undefined,
     bidi: attrs.bidi || undefined,
   };
 }

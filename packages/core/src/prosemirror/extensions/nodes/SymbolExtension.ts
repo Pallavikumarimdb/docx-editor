@@ -23,7 +23,7 @@ export const SymbolExtension = createNodeExtension({
     },
     // Surface the glyph through node.textContent / textBetween so consumers
     // that look at paragraph text (e.g. the checkbox-SDT glyph detection in
-    // toFlowBlocks and contentControls) see the symbol exactly as they did
+    // buildBoxTree and contentControls) see the symbol exactly as they did
     // when `w:sym` was lowered to a plain text node.
     leafText(node) {
       return (node.attrs.text as string) || '';
