@@ -268,7 +268,7 @@ function extractTocInstructionFromNode(node: PMNode): string | null {
 
 function tocNeedsUpdate(node: PMNode): boolean {
   const rawXml = typeof node.attrs.rawPreserveXml === 'string' ? node.attrs.rawPreserveXml : '';
-  if (/w:dirty=(["'])true\1/.test(rawXml)) return true;
+  if (/w:dirty=(["'])(?:true|1)\1/.test(rawXml)) return true;
   let dirtyField = false;
   node.descendants((child) => {
     if (child.type.name === 'field' && child.attrs.dirty) {

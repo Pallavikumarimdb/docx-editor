@@ -82,6 +82,22 @@ describe('TOC field support', () => {
     expect(hasTableOfContentsNeedingUpdate(doc)).toBe(true);
   });
 
+  test('detects Word numeric dirty TOC fields in raw SDT XML', () => {
+    const raw = [
+      '<w:sdt><w:sdtPr><w:alias w:val="Table of Contents"/></w:sdtPr><w:sdtContent>',
+      '<w:p><w:r><w:fldChar w:fldCharType="begin" w:dirty="1"/></w:r>',
+      '<w:r><w:instrText>TOC \\o "1-3" \\h</w:instrText></w:r>',
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r></w:p>',
+      '<w:p><w:r><w:t>Heading</w:t></w:r></w:p>',
+      '<w:p><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>',
+      '</w:sdtContent></w:sdt>',
+    ].join('');
+    const doc = schema.node('doc', null, [rawTocBlock(raw)]);
+
+    expect(findTableOfContentsBlocks(doc)[0].needsUpdate).toBe(true);
+    expect(hasTableOfContentsNeedingUpdate(doc)).toBe(true);
+  });
+
   test('updates cached TOC result while preserving the field envelope', () => {
     let state = EditorState.create({
       schema,
