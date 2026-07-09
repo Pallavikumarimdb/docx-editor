@@ -34,6 +34,7 @@ import { getDocumentWatermark, setDocumentWatermark } from '../../docx/watermark
 import type { TextBoxAttrs } from '../extensions/nodes/TextBoxExtension';
 import { shouldExportTextBoxInsideFollowingParagraph } from './textBoxAnchors';
 import { sdtAttrsToProps } from './sdtAttrs';
+import { preserveTextFingerprint } from './preserveText';
 import { convertPMParagraph } from './fromProseDoc/paragraph';
 import { convertPMTable } from './fromProseDoc/tables';
 import { convertPMTextBox, convertPMTextBoxRun } from './fromProseDoc/textbox';
@@ -301,7 +302,7 @@ function convertPMBlockSdt(node: PMNode): BlockSdt {
   if (
     typeof attrs.rawPreserveXml === 'string' &&
     typeof attrs.rawPreserveText === 'string' &&
-    node.textContent === attrs.rawPreserveText
+    preserveTextFingerprint(node) === attrs.rawPreserveText
   ) {
     blockSdt.rawPreserveXml = attrs.rawPreserveXml;
     blockSdt.rawPreserveText = attrs.rawPreserveText;
