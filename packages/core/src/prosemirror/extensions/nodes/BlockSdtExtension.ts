@@ -63,6 +63,8 @@ export const BlockSdtExtension = createNodeExtension({
        */
       leadingBlockMarkers: { default: null },
       trailingBlockMarkers: { default: null },
+      rawPreserveXml: { default: null },
+      rawPreserveText: { default: null },
     },
     parseDOM: [
       {
@@ -85,6 +87,8 @@ export const BlockSdtExtension = createNodeExtension({
               el.dataset.checked === 'true' ? true : el.dataset.checked === 'false' ? false : null,
             rawPropertiesXml: el.dataset.rawPropertiesXml || null,
             rawEndPropertiesXml: el.dataset.rawEndPropertiesXml || null,
+            rawPreserveXml: el.dataset.rawPreserveXml || null,
+            rawPreserveText: el.dataset.rawPreserveText || null,
           };
         },
       },
@@ -109,6 +113,9 @@ export const BlockSdtExtension = createNodeExtension({
         dataAttrs['data-raw-properties-xml'] = String(attrs.rawPropertiesXml);
       if (attrs.rawEndPropertiesXml)
         dataAttrs['data-raw-end-properties-xml'] = String(attrs.rawEndPropertiesXml);
+      if (attrs.rawPreserveXml) dataAttrs['data-raw-preserve-xml'] = String(attrs.rawPreserveXml);
+      if (attrs.rawPreserveText)
+        dataAttrs['data-raw-preserve-text'] = String(attrs.rawPreserveText);
 
       return ['div', dataAttrs, 0];
     },

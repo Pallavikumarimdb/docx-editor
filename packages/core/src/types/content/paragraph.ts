@@ -109,6 +109,14 @@ export interface Paragraph {
   listRendering?: ListRendering;
   /** Word's cached layout says this paragraph started on a new rendered page. */
   renderedPageBreakBefore?: boolean;
+  /**
+   * Source paragraph began with a literal `<w:br w:type="page"/>`. Layout treats
+   * it like `pageBreakBefore`; serialization uses this flag to keep the original
+   * hard-break shape instead of canonicalizing it to paragraph properties.
+   */
+  sourceLeadingPageBreak?: boolean;
+  /** Synthetic empty paragraph inserted after a terminal column break for PM layout only. */
+  sourceColumnBreakContinuation?: boolean;
   /** Section properties (if this paragraph ends a section) */
   sectionProperties?: SectionProperties;
 }

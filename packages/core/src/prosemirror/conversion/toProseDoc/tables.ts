@@ -809,6 +809,10 @@ function convertCellBlockSdt(
   if (sdt.trailingBlockMarkers && sdt.trailingBlockMarkers.length > 0) {
     attrs.trailingBlockMarkers = sdt.trailingBlockMarkers;
   }
+  if (sdt.rawPreserveXml) {
+    attrs.rawPreserveXml = sdt.rawPreserveXml;
+    attrs.rawPreserveText = sdt.rawPreserveText ?? '';
+  }
   const inner = childNodes.length > 0 ? childNodes : [schema.node('paragraph', {}, [])];
   return schema.node('blockSdt', attrs, inner);
 }

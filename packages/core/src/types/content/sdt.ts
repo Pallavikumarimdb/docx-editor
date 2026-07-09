@@ -147,4 +147,8 @@ export interface BlockSdt {
    * {@link Paragraph.leadingBlockMarkers}.
    */
   trailingBlockMarkers?: (BookmarkStart | BookmarkEnd)[];
+  /** Opaque source XML for unsupported block SDTs that must round-trip untouched. */
+  rawPreserveXml?: string;
+  /** Text fingerprint used to drop raw preservation once the SDT content changes. */
+  rawPreserveText?: string;
 }

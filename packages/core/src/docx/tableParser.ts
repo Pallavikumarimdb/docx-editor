@@ -163,10 +163,15 @@ export function parseTableProperties(tblPrElement: XmlElement | null): TableForm
   const shading = parseShading(findChild(tblPrElement, 'w', 'shd'));
   if (shading) formatting.shading = shading;
 
-  // Table overlap (w:tblOverlap)
+  // Table overlap (w:tblOverlap). Some producers nest it under tblpPr; the
+  // direct sibling is canonical and wins if both are present.
   const overlapElement = findChild(tblPrElement, 'w', 'tblOverlap');
-  if (overlapElement) {
-    const overlapVal = getAttribute(overlapElement, 'w', 'val');
+  const nestedOverlapElement = overlapElement
+    ? null
+    : findChild(findChild(tblPrElement, 'w', 'tblpPr'), 'w', 'tblOverlap');
+  const resolvedOverlapElement = overlapElement ?? nestedOverlapElement;
+  if (resolvedOverlapElement) {
+    const overlapVal = getAttribute(resolvedOverlapElement, 'w', 'val');
     if (overlapVal === 'never' || overlapVal === 'overlap') {
       formatting.overlap = overlapVal;
     }

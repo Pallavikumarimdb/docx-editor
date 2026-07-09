@@ -8,7 +8,6 @@
 
 import type {
   ParagraphContent,
-  Run,
   Hyperlink,
   BookmarkStart,
   BookmarkEnd,
@@ -109,48 +108,25 @@ export function serializeHyperlink(hyperlink: Hyperlink): string {
 }
 
 /**
- * Serialize a simple field as a complex field (fldChar begin/separate/end).
- * Complex field format is more widely supported by OOXML consumers
- * (Google Docs, Apple Pages) than w:fldSimple.
+ * Serialize a simple field back as `<w:fldSimple>` so the source form is
+ * preserved on round-trip (complex fields stay complex — see
+ * serializeComplexField).
  */
 export function serializeSimpleField(field: SimpleField): string {
-  const parts: string[] = [];
-
-  // Extract formatting from the first content run
-  const firstRun = field.content.find((c): c is Run => c.type === 'run');
-  const rPrXml = firstRun?.formatting ? serializeTextFormatting(firstRun.formatting) : '';
-
-  // Begin field character
-  const beginAttrs: string[] = ['w:fldCharType="begin"'];
+  const attrs: string[] = [`w:instr="${escapeXml(field.instruction)}"`];
   if (field.fldLock) {
-    beginAttrs.push('w:fldLock="true"');
+    attrs.push('w:fldLock="true"');
   }
-  parts.push(`<w:r>${rPrXml}<w:fldChar ${beginAttrs.join(' ')}/></w:r>`);
-
-  // Field code (instrText)
-  const needsPreserve =
-    field.instruction.startsWith(' ') ||
-    field.instruction.endsWith(' ') ||
-    field.instruction.includes('  ');
-  const spaceAttr = needsPreserve ? ' xml:space="preserve"' : '';
-  parts.push(
-    `<w:r>${rPrXml}<w:instrText${spaceAttr}>${escapeXml(field.instruction)}</w:instrText></w:r>`
-  );
-
-  // Separate field character
-  parts.push(`<w:r>${rPrXml}<w:fldChar w:fldCharType="separate"/></w:r>`);
-
-  // Field result (the display runs)
-  for (const item of field.content) {
-    if (item.type === 'run') {
-      parts.push(serializeRun(item));
-    }
+  if (field.dirty) {
+    attrs.push('w:dirty="true"');
   }
 
-  // End field character
-  parts.push(`<w:r>${rPrXml}<w:fldChar w:fldCharType="end"/></w:r>`);
+  const contentXml = field.content
+    .map((item) => (item.type === 'run' ? serializeRun(item) : serializeHyperlink(item)))
+    .join('');
 
-  return parts.join('');
+  if (!contentXml) return `<w:fldSimple ${attrs.join(' ')}/>`;
+  return `<w:fldSimple ${attrs.join(' ')}>${contentXml}</w:fldSimple>`;
 }
 
 /**

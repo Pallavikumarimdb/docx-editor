@@ -29,6 +29,7 @@ export function serializeBlockSdt(
   block: BlockSdt,
   serializeChild: (child: BlockContent) => string
 ): string {
+  if (block.rawPreserveXml) return block.rawPreserveXml;
   const sdtContentXml = block.content.map(serializeChild).join('');
   // Replay the captured properties verbatim. A `BlockSdt` without captured
   // raw can only arise from a source `w:sdt` that had no `w:sdtPr` at all

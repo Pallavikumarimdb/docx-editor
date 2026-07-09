@@ -377,6 +377,34 @@ export function parseSectionProperties(
   }
 
   // ============================================================================
+  // PAGE NUMBERING (w:pgNumType)
+  // ============================================================================
+  const pgNumType = findChild(sectPr, 'w', 'pgNumType');
+  if (pgNumType) {
+    props.pageNumbers = {};
+
+    const start = parseNumericAttribute(pgNumType, 'w', 'start');
+    if (start !== undefined) {
+      props.pageNumbers.start = start;
+    }
+
+    const format = getAttribute(pgNumType, 'w', 'fmt');
+    if (format) {
+      props.pageNumbers.format = format;
+    }
+
+    const chapterStyle = parseNumericAttribute(pgNumType, 'w', 'chapStyle');
+    if (chapterStyle !== undefined) {
+      props.pageNumbers.chapterStyle = chapterStyle;
+    }
+
+    const chapterSeparator = getAttribute(pgNumType, 'w', 'chapSep');
+    if (chapterSeparator) {
+      props.pageNumbers.chapterSeparator = chapterSeparator;
+    }
+  }
+
+  // ============================================================================
   // PAGE BORDERS (w:pgBorders)
   // ============================================================================
   const pgBorders = findChild(sectPr, 'w', 'pgBorders');
@@ -724,6 +752,7 @@ export function mergeSectionProperties(
   if (override.evenAndOddHeaders !== undefined)
     result.evenAndOddHeaders = override.evenAndOddHeaders;
   if (override.lineNumbers !== undefined) result.lineNumbers = override.lineNumbers;
+  if (override.pageNumbers !== undefined) result.pageNumbers = override.pageNumbers;
   if (override.pageBorders !== undefined) result.pageBorders = override.pageBorders;
   if (override.background !== undefined) result.background = override.background;
   if (override.footnotePr !== undefined) result.footnotePr = override.footnotePr;

@@ -37,6 +37,8 @@ import {
   createMathFromNode,
   createImageRun,
   createShapeRun,
+  createSymbolRun,
+  textToRunContent,
 } from './runs';
 
 /**
@@ -80,6 +82,15 @@ export function convertPMParagraph(node: PMNode): Paragraph {
     formatting: paragraphAttrsToFormatting(attrs),
     content,
   };
+  if (hasEffectiveSourceLeadingPageBreak(attrs)) {
+    paragraph.sourceLeadingPageBreak = true;
+    if (!paragraphStartsWithHardPageBreak(paragraph)) {
+      paragraph.content = [
+        { type: 'run', content: [{ type: 'break', breakType: 'page' }] },
+        ...paragraph.content,
+      ];
+    }
+  }
 
   // Preserve `<w:lastRenderedPageBreak/>` so a save+reload doesn't silently
   // drop the break Word recorded for paginating this paragraph.
@@ -468,7 +479,6 @@ function runContentTextLength(run: Run): number {
       case 'instrText':
         return sum + item.text.length;
       case 'symbol':
-        return sum + item.char.length;
       case 'tab':
       case 'softHyphen':
       case 'noBreakHyphen':
@@ -477,6 +487,29 @@ function runContentTextLength(run: Run): number {
         return sum;
     }
   }, 0);
+}
+
+/**
+ * Provenance only holds while the paragraph still claims a leading page
+ * break. `pageBreakBefore` is the layout-driving attr; when an editor
+ * command clears it (style application, tracked-change rejection), the
+ * visible document no longer breaks here, so save must neither re-insert
+ * the source `<w:br w:type="page"/>` nor suppress an explicit
+ * `pageBreakBefore` diff.
+ */
+function hasEffectiveSourceLeadingPageBreak(attrs: ParagraphAttrs): boolean {
+  return Boolean(attrs.sourceLeadingPageBreak && attrs.pageBreakBefore);
+}
+
+function paragraphStartsWithHardPageBreak(paragraph: Paragraph): boolean {
+  for (const item of paragraph.content) {
+    if (item.type !== 'run') return false;
+    for (const content of item.content) {
+      if (content.type === 'break' && content.breakType === 'page') return true;
+      if (content.type !== 'fieldChar' && content.type !== 'instrText') return false;
+    }
+  }
+  return false;
 }
 
 /**
@@ -527,7 +560,10 @@ function paragraphAttrsToFormatting(attrs: ParagraphAttrs): ParagraphFormatting 
     if (attrs.styleId !== (orig.styleId || undefined)) {
       result.styleId = attrs.styleId || undefined;
     }
-    if (attrs.pageBreakBefore !== (orig.pageBreakBefore || undefined)) {
+    if (
+      !hasEffectiveSourceLeadingPageBreak(attrs) &&
+      attrs.pageBreakBefore !== (orig.pageBreakBefore || undefined)
+    ) {
       result.pageBreakBefore = attrs.pageBreakBefore || undefined;
     }
     if (attrs.widowControl !== (orig.widowControl ?? undefined)) {
@@ -557,7 +593,7 @@ function paragraphAttrsToFormatting(attrs: ParagraphAttrs): ParagraphFormatting 
     attrs.tabs ||
     attrs.outlineLevel != null ||
     attrs.contextualSpacing ||
-    attrs.pageBreakBefore ||
+    (!hasEffectiveSourceLeadingPageBreak(attrs) && attrs.pageBreakBefore) ||
     attrs.widowControl != null ||
     attrs.bidi;
 
@@ -582,7 +618,9 @@ function paragraphAttrsToFormatting(attrs: ParagraphAttrs): ParagraphFormatting 
     tabs: attrs.tabs || undefined,
     outlineLevel: attrs.outlineLevel ?? undefined,
     contextualSpacing: attrs.contextualSpacing || undefined,
-    pageBreakBefore: attrs.pageBreakBefore || undefined,
+    pageBreakBefore: hasEffectiveSourceLeadingPageBreak(attrs)
+      ? undefined
+      : attrs.pageBreakBefore || undefined,
     widowControl: attrs.widowControl ?? undefined,
     bidi: attrs.bidi || undefined,
   };
@@ -652,6 +690,11 @@ function extractParagraphContent(paragraph: PMNode): ParagraphContent[] {
         run = createImageRun(node);
       } else if (node.type.name === 'shape') {
         run = createShapeRun(node);
+      } else if (node.type.name === 'symbol') {
+        const otherMarks = node.marks.filter(
+          (m) => m.type.name !== 'insertion' && m.type.name !== 'deletion'
+        );
+        run = createSymbolRun(node, otherMarks);
       } else {
         // Filter out the tracked change mark for text formatting extraction
         const otherMarks = node.marks.filter(
@@ -660,7 +703,7 @@ function extractParagraphContent(paragraph: PMNode): ParagraphContent[] {
         const formatting = marksToTextFormatting(otherMarks);
         run = {
           type: 'run',
-          content: node.isText && node.text ? [{ type: 'text', text: node.text }] : [],
+          content: node.isText && node.text ? textToRunContent(node.text) : [],
           ...(Object.keys(formatting).length > 0 ? { formatting } : {}),
         };
       }
@@ -753,6 +796,14 @@ function extractParagraphContent(paragraph: PMNode): ParagraphContent[] {
         currentMarksKey = null;
       }
       content.push(createBreakRun());
+    } else if (node.type.name === 'symbol') {
+      // Symbol ends current run
+      if (currentRun) {
+        content.push(currentRun);
+        currentRun = null;
+        currentMarksKey = null;
+      }
+      content.push(createSymbolRun(node, node.marks));
     } else if (node.type.name === 'image') {
       // Image ends current run
       if (currentRun) {

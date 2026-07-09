@@ -51,6 +51,7 @@ import { TabExtension } from './nodes/TabExtension';
 import { ImageExtension } from './nodes/ImageExtension';
 import { TextBoxExtension } from './nodes/TextBoxExtension';
 import { ShapeExtension } from './nodes/ShapeExtension';
+import { SymbolExtension } from './nodes/SymbolExtension';
 import { HorizontalRuleExtension } from './nodes/HorizontalRuleExtension';
 import { PageBreakExtension } from './nodes/PageBreakExtension';
 import { ColumnBreakExtension } from './nodes/ColumnBreakExtension';
@@ -145,6 +146,7 @@ export function createStarterKit(options: StarterKitOptions = {}): AnyExtension[
   add('image', ImageExtension());
   add('textBox', TextBoxExtension());
   add('shape', ShapeExtension());
+  add('symbol', SymbolExtension());
   add('imageDrag', ImageDragExtension());
   add('imagePaste', ImagePasteExtension());
   add('dropCursor', DropCursorExtension());

@@ -137,6 +137,14 @@ export function convertRun(
   return nodes;
 }
 
+function symbolDisplayText(char: string): string {
+  const codePoint = parseInt(char, 16);
+  if (!Number.isInteger(codePoint) || codePoint < 0x20 || codePoint > 0x10ffff) return '';
+  const mapped = codePoint >= 0xf020 && codePoint <= 0xf0ff ? codePoint - 0xf000 : codePoint;
+  if (mapped < 0x20) return '';
+  return String.fromCodePoint(mapped);
+}
+
 /**
  * Convert RunContent to ProseMirror nodes
  */
@@ -165,6 +173,12 @@ function convertRunContent(
       }
       return [];
 
+    case 'softHyphen':
+      return [schema.text('\u00ad', marks)];
+
+    case 'noBreakHyphen':
+      return [schema.text('\u2011', marks)];
+
     case 'break':
       if (content.breakType === 'textWrapping' || !content.breakType) {
         // Carry marks (including any enclosing hyperlink) so the break is
@@ -180,21 +194,20 @@ function convertRunContent(
       return [schema.node('tab', { positional: content.positional ?? null }, undefined, marks)];
 
     case 'symbol': {
-      const codePoint = parseInt(content.char, 16);
-      if (!Number.isInteger(codePoint) || codePoint < 0x20 || codePoint > 0x10ffff) return [];
-      const mapped = codePoint >= 0xf020 && codePoint <= 0xf0ff ? codePoint - 0xf000 : codePoint;
-      if (mapped < 0x20) return [];
-      const symbolMarks = content.font
-        ? schema
-            .mark('fontFamily', {
-              ascii: content.font,
-              hAnsi: content.font,
-              eastAsia: content.font,
-              cs: content.font,
-            })
-            .addToSet(marks)
-        : marks;
-      return [schema.text(String.fromCodePoint(mapped), symbolMarks)];
+      const text = symbolDisplayText(content.char);
+      if (!text) return [];
+      return [
+        schema.node(
+          'symbol',
+          {
+            font: content.font,
+            char: content.char,
+            text,
+          },
+          undefined,
+          marks
+        ),
+      ];
     }
 
     case 'drawing':

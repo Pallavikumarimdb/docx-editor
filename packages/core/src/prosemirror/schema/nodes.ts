@@ -131,6 +131,10 @@ export interface ParagraphAttrs {
    * preserves the marker at the same position Word recorded.
    */
   renderedPageBreakBefore?: boolean;
+  /** Source paragraph began with a literal hard page break run. */
+  sourceLeadingPageBreak?: boolean;
+  /** Synthetic empty paragraph inserted after a terminal column break. */
+  sourceColumnBreakContinuation?: boolean;
   keepNext?: boolean;
   keepLines?: boolean;
   /** Widow/orphan control. Undefined is Word's enabled default; false disables it. */

@@ -82,6 +82,10 @@ function convertBlocksToNodes(
       if (block.trailingBlockMarkers && block.trailingBlockMarkers.length > 0) {
         sdtAttrs.trailingBlockMarkers = block.trailingBlockMarkers;
       }
+      if (block.rawPreserveXml) {
+        sdtAttrs.rawPreserveXml = block.rawPreserveXml;
+        sdtAttrs.rawPreserveText = block.rawPreserveText ?? '';
+      }
       nodes.push(schema.node('blockSdt', sdtAttrs, inner));
     }
   }
