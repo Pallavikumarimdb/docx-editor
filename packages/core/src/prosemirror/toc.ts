@@ -1,12 +1,13 @@
 import { Fragment, type Node as PMNode, type Schema } from 'prosemirror-model';
 import type { EditorState, Transaction } from 'prosemirror-state';
-import type { Layout } from '../layout-engine/types';
+import { findPageIndexContainingPmPos } from '../pagination-model/findPageIndexContainingPmPos';
+import type { PageLayout } from '../pagination-model/types';
 import type {
   Paragraph,
   ParagraphFormatting,
   Run,
   SdtProperties,
-  TabStop,
+  TabMark,
 } from '../types/document';
 import { serializeParagraph } from '../docx/serializer/paragraphSerializer';
 import { synthesizeSdtPr } from '../docx/serializer/paragraphSerializer/content';
@@ -41,7 +42,7 @@ export interface UpdateTableOfContentsOptions {
   /** Update the TOC containing this position. Omit to update every detected TOC. */
   position?: number | null;
   /** Current layout for resolving heading page numbers. */
-  layout?: Layout | null;
+  layout?: PageLayout | null;
 }
 
 const DEFAULT_INSTRUCTION = 'TOC \\h \\o "1-5"';
@@ -56,7 +57,7 @@ const INSERTED_TOC_RAW_XML = [
   '</w:sdtContent>',
   '</w:sdt>',
 ].join('');
-const TOC_TAB: TabStop = { position: 9350, alignment: 'right', leader: 'dot' };
+const TOC_TAB: TabMark = { position: 9350, alignment: 'right', leader: 'dot' };
 const TOC_LEVEL_INDENT_TWIPS = 240;
 const TOC_LINE_SPACING_TWIPS = 276;
 
@@ -296,7 +297,7 @@ function hasEmptyTocResultXml(xml: string): boolean {
 function collectTocHeadings(
   doc: PMNode,
   tocBlocks: TocBlockInfo[],
-  layout: Layout | null
+  layout: PageLayout | null
 ): TocHeading[] {
   const headings: TocHeading[] = [];
   doc.descendants((node, pos) => {
@@ -331,26 +332,18 @@ function resolvePageNumber(
   doc: PMNode,
   pmPos: number,
   node: PMNode,
-  layout: Layout | null
+  layout: PageLayout | null
 ): number | null {
   if (!layout) return null;
-  for (const page of layout.pages) {
-    if (
-      page.fragments.some(
-        (fragment) =>
-          fragment.pmStart != null &&
-          fragment.pmEnd != null &&
-          pmPos >= fragment.pmStart &&
-          pmPos <= fragment.pmEnd
-      )
-    ) {
-      return page.number;
-    }
+  const pageIndex = findPageIndexContainingPmPos(layout, pmPos);
+  if (pageIndex != null) {
+    return layout.pages[pageIndex].number;
   }
+  // Fallback when fragments lack doc ranges (e.g. page-break-before stubs in tests).
   const blockIndex = topLevelBlockIndexAt(doc, pmPos);
   if (blockIndex == null) return null;
   const candidates = layout.pages.filter((page) =>
-    page.fragments.some((fragment) => String(fragment.blockId) === String(blockIndex))
+    page.fragments.some((fragment) => String(fragment.nodeId) === String(blockIndex))
   );
   if (candidates.length === 0) return null;
   if (startsAfterPageBreak(node)) {

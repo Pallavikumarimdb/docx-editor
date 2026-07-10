@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { EditorState, TextSelection } from 'prosemirror-state';
 import { parseDocumentBody } from '../../docx/documentParser';
 import { serializeDocumentBody } from '../../docx/serializer/documentSerializer';
-import type { Layout } from '../../layout-engine/types';
+import type { PageLayout } from '../../pagination-model/types';
 import type { BlockSdt } from '../../types/document';
 import { fromProseDoc } from '../conversion/fromProseDoc';
 import { schema } from '../schema';
@@ -117,7 +117,7 @@ describe('TOC field support', () => {
       return true;
     });
 
-    const layout: Layout = {
+    const layout: PageLayout = {
       pageSize: { w: 816, h: 1056 },
       pages: [
         {
@@ -125,15 +125,15 @@ describe('TOC field support', () => {
           fragments: [
             {
               kind: 'paragraph',
-              blockId: 1,
+              nodeId: 1,
               x: 0,
               y: 0,
               width: 500,
               height: 24,
               fromLine: 0,
               toLine: 1,
-              pmStart: firstHeadingPos,
-              pmEnd: firstHeadingPos + 20,
+              docFrom: firstHeadingPos,
+              docTo: firstHeadingPos + 20,
             },
           ],
           margins: { top: 0, right: 0, bottom: 0, left: 0 },
@@ -221,7 +221,7 @@ describe('TOC field support', () => {
       ]),
     });
 
-    const layout: Layout = {
+    const layout: PageLayout = {
       pageSize: { w: 816, h: 1056 },
       pages: [
         {
@@ -229,7 +229,7 @@ describe('TOC field support', () => {
           fragments: [
             {
               kind: 'paragraph',
-              blockId: 0,
+              nodeId: 0,
               x: 0,
               y: 1000,
               width: 500,
@@ -246,7 +246,7 @@ describe('TOC field support', () => {
           fragments: [
             {
               kind: 'paragraph',
-              blockId: 0,
+              nodeId: 0,
               x: 0,
               y: 100,
               width: 500,
