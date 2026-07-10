@@ -489,6 +489,23 @@ describe('DOCX round-trip fidelity fixes', () => {
       chapterSeparator: 'hyphen',
     });
 
+    const source: Document = { package: { document: body } };
+    const pm = toProseDoc(source);
+    const firstParagraph = pm.child(0);
+    const edited = schema.node('doc', null, [
+      schema.node('paragraph', firstParagraph.attrs, [schema.text('Edited before save')]),
+    ]);
+    const saved = fromProseDoc(edited, source);
+    expect(saved.package.document.finalSectionProperties?.pageNumbers).toEqual({
+      format: 'upperRoman',
+      start: 3,
+      chapterStyle: 2,
+      chapterSeparator: 'hyphen',
+    });
+    expect(serializeDocumentBody(saved.package.document)).toContain(
+      '<w:pgNumType w:fmt="upperRoman" w:start="3" w:chapStyle="2" w:chapSep="hyphen"/>'
+    );
+
     const xml = serializeSectionProperties({
       lineNumbers: { countBy: 1 },
       pageNumbers: {},
