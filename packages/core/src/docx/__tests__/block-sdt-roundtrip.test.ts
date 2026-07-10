@@ -221,15 +221,17 @@ describe('block SDT serialization round-trip', () => {
           <w:tag w:val="dd"/>
           <w:dropDownList w:lastValue="2">
             <w:listItem w:displayText="One" w:value="1"/>
-            <w:listItem w:displayText="Two" w:value="2"/>
+            <w:listItem w:displayText="Commercial, corporate and M&amp;A" w:value="M&amp;A"/>
           </w:dropDownList>
         </w:sdtPr>
-        <w:sdtContent><w:p><w:r><w:t>Two</w:t></w:r></w:p></w:sdtContent>
+        <w:sdtContent><w:p><w:r><w:t>Commercial, corporate and M&amp;A</w:t></w:r></w:p></w:sdtContent>
       </w:sdt>
     `);
     expect(out).toContain('w:lastValue="2"');
     expect(out).toContain('w:displayText="One"');
-    expect(out).toContain('w:displayText="Two"');
+    expect(out).toContain('w:displayText="Commercial, corporate and M&amp;A"');
+    expect(out).toContain('w:value="M&amp;A"');
+    expect(() => parseDocumentBody(out)).not.toThrow();
   });
 
   test('w:sdtEndPr is preserved', () => {

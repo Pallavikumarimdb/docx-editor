@@ -29,6 +29,30 @@ function getInlineSdt(xml: string): InlineSdt {
  * content instead of silently dropping them on save.
  */
 describe('inline SDT serialization round-trip', () => {
+  test('escapes dropdown list item attributes through parse → serialize', () => {
+    const xml = `
+      <w:p xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+        <w:sdt>
+          <w:sdtPr>
+            <w:dropDownList>
+              <w:listItem
+                w:displayText="Commercial, corporate and M&amp;A"
+                w:value="M&amp;A"
+              />
+            </w:dropDownList>
+          </w:sdtPr>
+          <w:sdtContent><w:r><w:t>Commercial, corporate and M&amp;A</w:t></w:r></w:sdtContent>
+        </w:sdt>
+      </w:p>
+    `;
+
+    const serialized = serializeParagraph(parseParagraphXml(xml));
+
+    expect(serialized).toContain('w:displayText="Commercial, corporate and M&amp;A"');
+    expect(serialized).toContain('w:value="M&amp;A"');
+    expect(parseXmlDocument(serialized)).not.toBeNull();
+  });
+
   test('preserves a simple field inside SDT content through parse → serialize', () => {
     const xml = `
       <w:p xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">

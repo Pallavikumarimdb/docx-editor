@@ -123,7 +123,35 @@ export function parseXml(xml: string): XmlElement {
  * Serialize an XmlElement back to an XML string
  */
 export function elementToXml(element: XmlElement): string {
-  return js2xml({ elements: [element] }, { compact: false, spaces: 0 });
+  return js2xml({ elements: [escapeElementAttributes(element)] }, { compact: false, spaces: 0 });
+}
+
+function escapeElementAttributes(element: XmlElement): XmlElement {
+  if (element.type !== 'element') return element;
+  const attributes = element.attributes
+    ? Object.fromEntries(
+        Object.entries(element.attributes).map(([key, value]) => [
+          key,
+          escapeXmlAttribute(String(value)),
+        ])
+      )
+    : undefined;
+  return {
+    ...element,
+    ...(attributes ? { attributes } : {}),
+    ...(element.elements
+      ? { elements: element.elements.map((child) => escapeElementAttributes(child)) }
+      : {}),
+  };
+}
+
+function escapeXmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 }
 
 /**
