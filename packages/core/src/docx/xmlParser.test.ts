@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test';
-import { parseXml, getTextContent, findChild } from './xmlParser';
+import { xml2js } from 'xml-js';
+import { parseXml, getTextContent, findChild, elementToXml } from './xmlParser';
 
 describe('parseXml — stray ampersand tolerance', () => {
   test('parses text with a literal & followed by a space', () => {
@@ -31,5 +32,20 @@ describe('parseXml — stray ampersand tolerance', () => {
     // with a "Near: ..." snippet so callers know which bytes broke the parse.
     const xml = `<?xml version="1.0"?><root><a><b></root>`;
     expect(() => parseXml(xml)).toThrow(/Near: /);
+  });
+});
+
+describe('elementToXml', () => {
+  test('escapes parsed attribute values when reserializing raw OOXML', () => {
+    const xml =
+      '<w:sdtPr><w:dropDownList><w:listItem w:displayText="Commercial, corporate and M&amp;A" w:value="A&lt;B"/></w:dropDownList></w:sdtPr>';
+    const parsed = parseXml(xml);
+    const sdtPr = (parsed.elements ?? []).find((e) => e.name === 'w:sdtPr');
+
+    const out = elementToXml(sdtPr!);
+
+    expect(out).toContain('w:displayText="Commercial, corporate and M&amp;A"');
+    expect(out).toContain('w:value="A&lt;B"');
+    expect(() => xml2js(out, { compact: false })).not.toThrow();
   });
 });
