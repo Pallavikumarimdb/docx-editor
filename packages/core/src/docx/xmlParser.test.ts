@@ -36,16 +36,26 @@ describe('parseXml — stray ampersand tolerance', () => {
 });
 
 describe('elementToXml', () => {
-  test('escapes parsed attribute values when reserializing raw OOXML', () => {
+  test('escapes parsed attributes once across quote delimiters and XML entities', () => {
     const xml =
-      '<w:sdtPr><w:dropDownList><w:listItem w:displayText="Commercial, corporate and M&amp;A" w:value="A&lt;B"/></w:dropDownList></w:sdtPr>';
+      `<w:sdtPr><w:dropDownList><w:listItem ` +
+      `w:single='He said &quot;R&amp;D&quot; > A&lt;B' ` +
+      `w:double="O&apos;Brien &amp; Sons &gt; Co" ` +
+      `w:existing="Commercial, corporate and M&amp;A"` +
+      `/></w:dropDownList></w:sdtPr>`;
     const parsed = parseXml(xml);
     const sdtPr = (parsed.elements ?? []).find((e) => e.name === 'w:sdtPr');
 
     const out = elementToXml(sdtPr!);
 
-    expect(out).toContain('w:displayText="Commercial, corporate and M&amp;A"');
-    expect(out).toContain('w:value="A&lt;B"');
+    expect(out).toContain('w:single="He said &quot;R&amp;D&quot; &gt; A&lt;B"');
+    expect(out).toContain('w:double="O&apos;Brien &amp; Sons &gt; Co"');
+    expect(out).toContain('w:existing="Commercial, corporate and M&amp;A"');
+    expect(out).not.toContain('&amp;amp;');
+    expect(out).not.toContain('&amp;quot;');
+    expect(out).not.toContain('&amp;apos;');
+    expect(out).not.toContain('&amp;gt;');
+    expect(out).not.toContain('&amp;lt;');
     expect(() => xml2js(out, { compact: false })).not.toThrow();
   });
 });
