@@ -24,6 +24,7 @@ import type {
 import type { TableAttrs, TableRowAttrs, TableCellAttrs } from '../../schema/nodes';
 import { convertPMParagraph } from './paragraph';
 import { sdtAttrsToProps } from '../sdtAttrs';
+import { preserveTextFingerprint } from '../preserveText';
 
 function inferTableBorders(rows: TableRow[]): TableBorders | undefined {
   for (const row of rows) {
@@ -581,7 +582,7 @@ function convertPMTableCellBlockSdt(node: PMNode): BlockSdt {
   if (
     typeof attrs.rawPreserveXml === 'string' &&
     typeof attrs.rawPreserveText === 'string' &&
-    node.textContent === attrs.rawPreserveText
+    preserveTextFingerprint(node) === attrs.rawPreserveText
   ) {
     blockSdt.rawPreserveXml = attrs.rawPreserveXml;
     blockSdt.rawPreserveText = attrs.rawPreserveText;

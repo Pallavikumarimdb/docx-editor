@@ -181,6 +181,17 @@ export {
   type PMContentControl,
 } from './contentControls';
 
+/** Table-of-contents detection and regeneration helpers. */
+export {
+  findTableOfContentsBlocks,
+  hasTableOfContentsNeedingUpdate,
+  insertTableOfContents,
+  isPositionInsideTableOfContents,
+  parseTocInstruction,
+  updateTableOfContents,
+} from './toc';
+export type { TocBlockInfo, TocHeading, TocInstruction, UpdateTableOfContentsOptions } from './toc';
+
 /** Word `w14:paraId` → ProseMirror position before matching paragraph. */
 export { findStartPosForParaId } from './utils/findStartPosForParaId';
 export { findParagraphByParaId } from './utils/findParagraphByParaId';

@@ -525,6 +525,29 @@ describe('DOCX round-trip fidelity fixes', () => {
     expect(xml).toContain('w:fldCharType="end"');
   });
 
+  test('untouched TOC with tab leaders in the cached result keeps raw preservation', () => {
+    // The parser-side fingerprint counts tabs as \t; PM textContent skips tab
+    // leaf nodes. The preservation guard must use the tab-aware fingerprint or
+    // every TOC with page-number tab leaders loses its raw XML on save.
+    const body = parseDocumentBody(`<w:document ${W}><w:body>
+      <w:sdt><w:sdtPr><w:alias w:val="toc"/></w:sdtPr><w:sdtContent>
+        <w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText>TOC \\h \\o "1-5"</w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r></w:p>
+        <w:p><w:r><w:t>Heading One</w:t></w:r><w:r><w:tab/></w:r><w:r><w:t>3</w:t></w:r></w:p>
+        <w:p><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>
+      </w:sdtContent></w:sdt>
+    </w:body></w:document>`);
+
+    const parsedSdt = body.content[0] as BlockSdt;
+    expect(parsedSdt.rawPreserveText).toBe('Heading One\t3');
+
+    const roundTripped = fromProseDoc(toProseDoc(docOf(...body.content)));
+    const outSdt = roundTripped.package.document.content[0] as BlockSdt;
+    expect(outSdt.rawPreserveXml).toBe(parsedSdt.rawPreserveXml);
+    const xml = serializeDocumentBody(roundTripped.package.document);
+    expect(xml).toContain('w:fldCharType="separate"');
+    expect(xml).toContain('<w:tab/>');
+  });
+
   test('synthetic empty paragraph after terminal column break is not exported', () => {
     const body = parseDocumentBody(`<w:document ${W}><w:body>
       <w:p><w:r><w:t>Before</w:t><w:br w:type="column"/></w:r></w:p>
