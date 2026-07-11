@@ -317,6 +317,7 @@ const paragraphNodeSpec: NodeSpec = {
     leadingBlockMarkers: { default: null },
     trailingBlockMarkers: { default: null },
     _originalFormatting: { default: null },
+    _originalWidowControl: { default: null },
     _originalRunBoundaries: { default: null },
     _sectionProperties: { default: null },
     // Tracked structural revisions on the paragraph mark itself.

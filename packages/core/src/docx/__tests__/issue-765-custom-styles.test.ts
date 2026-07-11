@@ -134,8 +134,20 @@ describe('style-attached numbering and indentation (#765)', () => {
       null,
       numbering
     );
-    expect(para.formatting?.indentLeft).toBe(360);
-    expect(para.formatting?.indentFirstLine).toBe(-360);
+    expect(para.formatting?.indentLeft).toBeUndefined();
+    expect(para.formatting?.indentFirstLine).toBeUndefined();
+
+    const styleDefs = { styles: [...styles.values()] };
+    const doc = {
+      package: {
+        document: { content: [para] },
+        styles: styleDefs,
+      },
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const attrs = toProseDoc(doc as any, { styles: styleDefs as any }).child(0).attrs;
+    expect(attrs.indentLeft).toBe(360);
+    expect(attrs.indentFirstLine).toBe(-360);
   });
 
   test('numbering level ind still applies for direct (non-style) numPr', () => {
@@ -145,7 +157,12 @@ describe('style-attached numbering and indentation (#765)', () => {
       null,
       numbering
     );
-    expect(para.formatting?.indentLeft).toBe(360);
+    expect(para.formatting?.indentLeft).toBeUndefined();
+
+    const doc = { package: { document: { content: [para] } } };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const attrs = toProseDoc(doc as any).child(0).attrs;
+    expect(attrs.indentLeft).toBe(360);
   });
 
   test('style-attached numbering records numPrFromStyle provenance', () => {
@@ -167,6 +184,36 @@ describe('style-attached numbering and indentation (#765)', () => {
       numbering
     );
     expect(para.formatting?.numPrFromStyle).toBeUndefined();
+  });
+
+  test('composite zeros keep style-attached list left but clear its hanging', () => {
+    const parsed = parseParagraph(
+      paragraphXml(
+        '<w:pPr><w:pStyle w:val="AppBody-Claim"/><w:ind w:left="0" w:firstLine="0"/></w:pPr>'
+      ),
+      styles,
+      null,
+      numbering
+    );
+    const styleDefs = { styles: [...styles.values()] };
+
+    for (const para of [
+      parsed,
+      structuredClone(parsed),
+      JSON.parse(JSON.stringify(parsed)) as typeof parsed,
+    ]) {
+      const doc = {
+        package: {
+          document: { content: [para] },
+          styles: styleDefs,
+        },
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const attrs = toProseDoc(doc as any, { styles: styleDefs as any }).child(0).attrs;
+      expect(attrs.indentLeft).toBe(1134);
+      expect(attrs.indentFirstLine).toBe(0);
+      expect(attrs.hangingIndent).toBe(false);
+    }
   });
 });
 

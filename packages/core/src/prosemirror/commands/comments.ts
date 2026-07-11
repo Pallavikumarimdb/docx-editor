@@ -512,6 +512,7 @@ function applyPriorParagraphFormattingToAttrs(
   //     SKIPPED.
   //   - `runProperties` — model rPr; PM uses resolved `defaultTextFormatting`
   //     via a style cascade — SKIPPED (would overwrite resolved data).
+  //   - `widowControl` — same boolean shape — IS safe and IS included below.
   //   - `suppressLineNumbers`, `suppressAutoHyphens` — model has them but PM
   //     does not surface them as attrs — SKIPPED until plumbed.
   //
@@ -548,6 +549,18 @@ function applyPriorParagraphFormattingToAttrs(
     if (Object.prototype.hasOwnProperty.call(prior, f)) {
       next[f as string] = prior[f] ?? null;
     }
+  }
+  // A tracked change may introduce an explicit widowControl value where the
+  // prior pPr omitted it. Reject must restore omission/default, not leave the
+  // post-change boolean behind. This is field-specific because most absent
+  // fields mean "unrelated to this change"; currentFormatting proves this
+  // particular field was introduced by the rejected change.
+  if (
+    current &&
+    Object.prototype.hasOwnProperty.call(current, 'widowControl') &&
+    !Object.prototype.hasOwnProperty.call(prior, 'widowControl')
+  ) {
+    next.widowControl = null;
   }
   // Numbering added by the change must be removed on reject. When `prior` has
   // no `numPr` the loop above leaves the current numbering in place — correct

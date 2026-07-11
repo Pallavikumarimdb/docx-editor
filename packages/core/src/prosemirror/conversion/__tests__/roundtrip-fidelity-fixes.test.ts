@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import JSZip from 'jszip';
-import { buildBoxTree } from '../../../flow-model/buildBoxTree';
+import { EditorState } from 'prosemirror-state';
+import { toFlowBlocks } from '../../../layout-bridge/toFlowBlocks';
 import { parseDocumentBody } from '../../../docx/documentParser';
 import { serializeDocumentBody } from '../../../docx/serializer/documentSerializer';
 import { serializeParagraph } from '../../../docx/serializer/paragraphSerializer';
@@ -11,6 +12,7 @@ import { processNewImages } from '../../../docx/rezip/images';
 import type {
   Document,
   Paragraph,
+  ParagraphFormatting,
   Run,
   Hyperlink,
   Insertion,
@@ -20,6 +22,7 @@ import type {
   BlockSdt,
 } from '../../../types/document';
 import { schema } from '../../schema';
+import { rejectChangeById } from '../../commands/comments';
 import { fromProseDoc } from '../fromProseDoc';
 import { toProseDoc } from '../toProseDoc';
 
@@ -56,6 +59,113 @@ function IMAGE_REL(id: string, target: string): string {
 }
 
 describe('DOCX round-trip fidelity fixes', () => {
+  test('widowControl survives PM and defaults on only in layout', () => {
+    for (const value of [false, true, undefined] as const) {
+      const input: Paragraph = {
+        type: 'paragraph',
+        ...(value === undefined ? {} : { formatting: { widowControl: value } }),
+        content: [{ type: 'run', content: [{ type: 'text', text: 'x' }] }],
+      };
+      const pm = toProseDoc(docOf(input));
+      expect(pm.child(0).attrs.widowControl).toBe(value ?? null);
+
+      const flow = toFlowBlocks(pm)[0];
+      expect(flow.kind).toBe('paragraph');
+      if (flow.kind !== 'paragraph') throw new Error('expected paragraph');
+      expect(flow.attrs?.widowControl).toBe(value !== false);
+
+      const output = fromProseDoc(pm).package.document.content[0] as Paragraph;
+      expect(output.formatting?.widowControl).toBe(value);
+      const xml = serializeParagraph(output);
+      expect(xml.includes('<w:widowControl')).toBe(value !== undefined);
+      if (value === false) expect(xml).toContain('w:val="0"');
+    }
+  });
+
+  test('serializes PM widowControl overrides without materializing an unchanged default', () => {
+    const override = (source: boolean, current: boolean): Paragraph => {
+      const pm = toProseDoc(
+        docOf({
+          type: 'paragraph',
+          formatting: { widowControl: source },
+          content: [{ type: 'run', content: [{ type: 'text', text: 'x' }] }],
+        })
+      );
+      const sourceParagraph = pm.child(0);
+      const changed = schema.node('doc', pm.attrs, [
+        schema.node(
+          'paragraph',
+          { ...sourceParagraph.attrs, widowControl: current },
+          sourceParagraph.content
+        ),
+      ]);
+      return fromProseDoc(changed).package.document.content[0] as Paragraph;
+    };
+
+    const disabled = override(true, false);
+    expect(disabled.formatting?.widowControl).toBe(false);
+    expect(serializeParagraph(disabled)).toContain('<w:widowControl w:val="0"/>');
+
+    const enabled = override(false, true);
+    expect(enabled.formatting?.widowControl).toBe(true);
+    expect(serializeParagraph(enabled)).toContain('<w:widowControl/>');
+
+    const omitted = paragraph([{ type: 'run', content: [{ type: 'text', text: 'x' }] }]);
+    const unchanged = fromProseDoc(toProseDoc(docOf(omitted))).package.document
+      .content[0] as Paragraph;
+    expect(unchanged.formatting?.widowControl).toBeUndefined();
+    expect(serializeParagraph(unchanged)).not.toContain('<w:widowControl');
+  });
+
+  test('paragraph-property rejection restores and serializes widowControl', () => {
+    const rejectWidowChange = (
+      current: boolean,
+      previousFormatting: ParagraphFormatting
+    ): { paragraph: Paragraph; pmWidowControl: unknown } => {
+      const input: Paragraph = {
+        type: 'paragraph',
+        formatting: { widowControl: current },
+        propertyChanges: [
+          {
+            type: 'paragraphPropertyChange',
+            info: { id: 77, author: 'Reviewer' },
+            previousFormatting,
+            currentFormatting: { widowControl: current },
+          },
+        ],
+        content: [{ type: 'run', content: [{ type: 'text', text: 'x' }] }],
+      };
+      let state = EditorState.create({ schema, doc: toProseDoc(docOf(input)) });
+      expect(
+        rejectChangeById(77)(state, (transaction) => {
+          state = state.apply(transaction);
+        })
+      ).toBe(true);
+      return {
+        paragraph: fromProseDoc(state.doc).package.document.content[0] as Paragraph,
+        pmWidowControl: state.doc.child(0).attrs.widowControl,
+      };
+    };
+
+    const { paragraph: output } = rejectWidowChange(false, { widowControl: true });
+    expect(output.formatting?.widowControl).toBe(true);
+    expect(output.propertyChanges).toBeUndefined();
+    expect(serializeParagraph(output)).toContain('<w:widowControl/>');
+
+    const { paragraph: restoredFalse } = rejectWidowChange(true, { widowControl: false });
+    expect(restoredFalse.formatting?.widowControl).toBe(false);
+    expect(restoredFalse.propertyChanges).toBeUndefined();
+    expect(serializeParagraph(restoredFalse)).toContain('<w:widowControl w:val="0"/>');
+
+    for (const current of [false, true]) {
+      const restored = rejectWidowChange(current, {});
+      expect(restored.pmWidowControl).toBeNull();
+      expect(restored.paragraph.formatting?.widowControl).toBeUndefined();
+      expect(restored.paragraph.propertyChanges).toBeUndefined();
+      expect(serializeParagraph(restored.paragraph)).not.toContain('<w:widowControl');
+    }
+  });
+
   test('soft and no-break hyphens survive PM round trip in runs, hyperlinks, and insertions', () => {
     const plain: Run = {
       type: 'run',

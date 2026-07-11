@@ -236,6 +236,15 @@ export function parseParagraphProperties(
   // === Indentation ===
   const ind = findChild(pPr, 'w', 'ind');
   if (ind) {
+    const sourceIndent: NonNullable<
+      NonNullable<ParagraphFormatting['_indentProvenance']>['source']
+    > = {};
+    for (const name of ['left', 'start', 'right', 'end', 'firstLine', 'hanging'] as const) {
+      const raw = getAttribute(ind, 'w', name);
+      if (raw !== null) sourceIndent[name] = raw;
+    }
+    formatting._indentProvenance = { source: sourceIndent };
+
     const left = parseNumericAttribute(ind, 'w', 'left');
     if (left !== undefined) formatting.indentLeft = left;
 
@@ -262,6 +271,13 @@ export function parseParagraphProperties(
     if (end !== undefined && formatting.indentRight === undefined) {
       formatting.indentRight = end;
     }
+
+    formatting._indentProvenance!.sourceValues = {
+      indentLeft: formatting.indentLeft,
+      indentRight: formatting.indentRight,
+      indentFirstLine: formatting.indentFirstLine,
+      hangingIndent: formatting.hangingIndent,
+    };
   }
 
   // === Borders ===

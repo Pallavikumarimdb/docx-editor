@@ -137,7 +137,7 @@ export interface ParagraphAttrs {
   sourceColumnBreakContinuation?: boolean;
   keepNext?: boolean;
   keepLines?: boolean;
-  /** Widow/orphan control. Undefined is Word's enabled default; false disables it. */
+  /** Widow/orphan control; omitted means enabled by Word. */
   widowControl?: boolean;
   /** Contextual spacing — suppress space between same-style paragraphs */
   contextualSpacing?: boolean;
@@ -185,6 +185,8 @@ export interface ParagraphAttrs {
   /** Original inline paragraph formatting from DOCX (pre-style-resolution).
    *  Used by fromProseDoc for lossless round-trip serialization. */
   _originalFormatting?: ParagraphFormatting;
+  /** Effective widowControl value when imported; transport-only change baseline. */
+  _originalWidowControl?: boolean;
 
   /**
    * Source run boundaries captured during DOCX → PM conversion. ProseMirror

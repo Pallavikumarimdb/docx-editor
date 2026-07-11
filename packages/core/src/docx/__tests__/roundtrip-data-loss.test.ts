@@ -45,6 +45,24 @@ describe('round-trip data loss sweep', () => {
       expect((reparsed.content[0] as Paragraph).formatting?.keepNext).toBe(false);
     });
 
+    test('widowControl preserves explicit false, true, and omission', () => {
+      const disabled = roundtrip(
+        '<w:p><w:pPr><w:widowControl w:val="0"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p>'
+      );
+      expect(disabled.xml).toContain('<w:widowControl w:val="0"/>');
+      expect((disabled.reparsed.content[0] as Paragraph).formatting?.widowControl).toBe(false);
+
+      const enabled = roundtrip(
+        '<w:p><w:pPr><w:widowControl/></w:pPr><w:r><w:t>x</w:t></w:r></w:p>'
+      );
+      expect(enabled.xml).toContain('<w:widowControl/>');
+      expect((enabled.reparsed.content[0] as Paragraph).formatting?.widowControl).toBe(true);
+
+      const omitted = roundtrip('<w:p><w:r><w:t>x</w:t></w:r></w:p>');
+      expect(omitted.xml).not.toContain('<w:widowControl');
+      expect((omitted.reparsed.content[0] as Paragraph).formatting?.widowControl).toBeUndefined();
+    });
+
     test('explicit true still emits the bare element (no regression)', () => {
       const { xml } = roundtrip(
         '<w:p><w:pPr><w:keepNext/></w:pPr><w:r><w:rPr><w:strike/></w:rPr><w:t>x</w:t></w:r></w:p>'

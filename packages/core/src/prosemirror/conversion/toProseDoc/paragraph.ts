@@ -14,6 +14,7 @@ import { schema } from '../../schema';
 import type { ParagraphAttrs } from '../../schema/nodes';
 import type {
   Paragraph,
+  ParagraphFormatting,
   Run,
   TextFormatting,
   Hyperlink,
@@ -25,6 +26,7 @@ import type {
   RunContent,
 } from '../../../types/document';
 import { mergeTextFormatting } from '../../../utils/textFormattingMerge';
+import { getDirectIndentSemantics } from '../../../docx/paragraphParser/directIndentSemantics';
 import type { StyleResolver } from '../../styles';
 import { getMarkSetKey, RUN_BOUNDARY_MARK_EXCLUSIONS } from '../markKeys';
 import { resolveTextFormatting } from './marks';
@@ -36,6 +38,59 @@ import {
   type NoteRefDisplayFormatter,
 } from './runs';
 import { sdtPropsToAttrs } from '../sdtAttrs';
+
+type IndentProvenance = NonNullable<ParagraphFormatting['_indentProvenance']>;
+type ResolvedNumberingIndent = NonNullable<IndentProvenance['resolvedNumbering']>;
+
+function sameNumPr(
+  left: ParagraphFormatting['numPr'],
+  right: ParagraphFormatting['numPr']
+): boolean {
+  return left?.numId === right?.numId && left?.ilvl === right?.ilvl;
+}
+
+function sameSourceIndent(
+  left: IndentProvenance['source'],
+  right: IndentProvenance['source']
+): boolean {
+  return (
+    left?.left === right?.left &&
+    left?.start === right?.start &&
+    left?.right === right?.right &&
+    left?.end === right?.end &&
+    left?.firstLine === right?.firstLine &&
+    left?.hanging === right?.hanging
+  );
+}
+
+function numberingIndentStillMatchesSource(
+  resolved: ResolvedNumberingIndent | undefined,
+  formatting: ParagraphFormatting | undefined
+): resolved is ResolvedNumberingIndent {
+  if (!resolved || !formatting) return false;
+  const source = resolved.sourceIdentity;
+  return (
+    source.styleId === formatting.styleId &&
+    sameNumPr(source.numPr, formatting.numPr) &&
+    sameNumPr(source.numPrFromStyle, formatting.numPrFromStyle) &&
+    source.indentLeft === formatting.indentLeft &&
+    source.indentRight === formatting.indentRight &&
+    source.indentFirstLine === formatting.indentFirstLine &&
+    source.hangingIndent === formatting.hangingIndent &&
+    sameSourceIndent(source.sourceIndent, formatting._indentProvenance?.source)
+  );
+}
+
+function directIndentStillMatchesSource(formatting: ParagraphFormatting | undefined): boolean {
+  const values = formatting?._indentProvenance?.sourceValues;
+  if (!formatting?._indentProvenance?.source || !values) return false;
+  return (
+    values.indentLeft === formatting.indentLeft &&
+    values.indentRight === formatting.indentRight &&
+    values.indentFirstLine === formatting.indentFirstLine &&
+    values.hangingIndent === formatting.hangingIndent
+  );
+}
 
 /**
  * Convert a Paragraph to a ProseMirror paragraph node
@@ -316,6 +371,19 @@ function paragraphFormattingToAttrs(
 ): ParagraphAttrs {
   const formatting = paragraph.formatting;
   const styleId = formatting?.styleId;
+  const directIndent = getDirectIndentSemantics(
+    directIndentStillMatchesSource(formatting) ? formatting?._indentProvenance?.source : undefined
+  );
+  const rememberedNumberingIndent = formatting?._indentProvenance?.resolvedNumbering;
+  const numberingIndent = numberingIndentStillMatchesSource(rememberedNumberingIndent, formatting)
+    ? rememberedNumberingIndent
+    : undefined;
+  const directLeft = directIndent?.allZeroComposite ? undefined : formatting?.indentLeft;
+  const directRight = directIndent?.allZeroComposite ? undefined : formatting?.indentRight;
+  const numberingSuppliesFirstLine = numberingIndent?.indentFirstLine !== undefined;
+  const directFirstLine = numberingSuppliesFirstLine ? undefined : formatting?.indentFirstLine;
+  const directFirstLineIsExactZero =
+    directIndent?.hasFirstLineAttribute === true && directIndent.hasFirstLine === false;
 
   // Start with base attrs
   const attrs: ParagraphAttrs = {
@@ -335,8 +403,6 @@ function paragraphFormattingToAttrs(
     listLevelNumFmts: paragraph.listRendering?.levelNumFmts || undefined,
     listAbstractNumId: paragraph.listRendering?.abstractNumId,
     listStartOverride: paragraph.listRendering?.startOverride,
-    // Store original inline formatting for lossless serialization round-trip
-    _originalFormatting: formatting || undefined,
   };
 
   // If we have a style resolver, resolve the style and get base properties
@@ -352,9 +418,9 @@ function paragraphFormattingToAttrs(
     attrs.lineSpacing = formatting?.lineSpacing ?? stylePpr?.lineSpacing;
     attrs.lineSpacingRule = formatting?.lineSpacingRule ?? stylePpr?.lineSpacingRule;
     // Carry through only the inline-explicit flags (never style-resolved).
-    if (formatting?.spacingOverrides) attrs.spacingOverrides = formatting.spacingOverrides;
-    attrs.indentLeft = formatting?.indentLeft ?? stylePpr?.indentLeft;
-    attrs.indentRight = formatting?.indentRight ?? stylePpr?.indentRight;
+    if (formatting?.spacingExplicit) attrs.spacingExplicit = formatting.spacingExplicit;
+    attrs.indentLeft = directLeft ?? numberingIndent?.indentLeft ?? stylePpr?.indentLeft;
+    attrs.indentRight = directRight ?? numberingIndent?.indentRight ?? stylePpr?.indentRight;
     // When the paragraph explicitly removes the style's numbering (direct
     // numId=0 under a numbered style), Word also drops the style's
     // marker-positioning firstLine/hanging — the paragraph keeps only the
@@ -365,8 +431,15 @@ function paragraphFormattingToAttrs(
     const numberingRemoved =
       formatting?.numPr?.numId === 0 && stylePpr?.numPr && stylePpr.numPr.numId !== 0;
     const styleFirstLine = numberingRemoved ? undefined : stylePpr;
-    attrs.indentFirstLine = formatting?.indentFirstLine ?? styleFirstLine?.indentFirstLine;
-    attrs.hangingIndent = formatting?.hangingIndent ?? styleFirstLine?.hangingIndent;
+    attrs.indentFirstLine =
+      directFirstLine ?? numberingIndent?.indentFirstLine ?? styleFirstLine?.indentFirstLine;
+    if (directFirstLine !== undefined) {
+      attrs.hangingIndent = directFirstLineIsExactZero ? false : formatting?.hangingIndent;
+    } else if (numberingIndent?.indentFirstLine !== undefined) {
+      attrs.hangingIndent = numberingIndent.hangingIndent;
+    } else {
+      attrs.hangingIndent = styleFirstLine?.hangingIndent;
+    }
     attrs.borders = formatting?.borders ?? stylePpr?.borders;
     attrs.shading = formatting?.shading ?? stylePpr?.shading;
     attrs.tabs = formatting?.tabs ?? stylePpr?.tabs;
@@ -415,11 +488,16 @@ function paragraphFormattingToAttrs(
     attrs.spaceAfter = formatting?.spaceAfter;
     attrs.lineSpacing = formatting?.lineSpacing;
     attrs.lineSpacingRule = formatting?.lineSpacingRule;
-    if (formatting?.spacingOverrides) attrs.spacingOverrides = formatting.spacingOverrides;
-    attrs.indentLeft = formatting?.indentLeft;
-    attrs.indentRight = formatting?.indentRight;
-    attrs.indentFirstLine = formatting?.indentFirstLine;
-    attrs.hangingIndent = formatting?.hangingIndent;
+    if (formatting?.spacingExplicit) attrs.spacingExplicit = formatting.spacingExplicit;
+    attrs.indentLeft = directLeft ?? numberingIndent?.indentLeft;
+    attrs.indentRight = directRight ?? numberingIndent?.indentRight;
+    attrs.indentFirstLine = directFirstLine ?? numberingIndent?.indentFirstLine;
+    attrs.hangingIndent =
+      directFirstLine !== undefined
+        ? directFirstLineIsExactZero
+          ? false
+          : formatting?.hangingIndent
+        : numberingIndent?.hangingIndent;
     attrs.borders = formatting?.borders;
     attrs.shading = formatting?.shading;
     attrs.tabs = formatting?.tabs;
@@ -482,6 +560,43 @@ function paragraphFormattingToAttrs(
   if (paragraph.propertyChanges && paragraph.propertyChanges.length > 0) {
     attrs.pPrChange = paragraph.propertyChanges;
   }
+
+  if (formatting) {
+    attrs._originalFormatting = {
+      ...formatting,
+      _indentProvenance: {
+        source: formatting._indentProvenance?.source
+          ? {
+              left: formatting._indentProvenance.source.left,
+              start: formatting._indentProvenance.source.start,
+              right: formatting._indentProvenance.source.right,
+              end: formatting._indentProvenance.source.end,
+              firstLine: formatting._indentProvenance.source.firstLine,
+              hanging: formatting._indentProvenance.source.hanging,
+            }
+          : undefined,
+        sourceValues: formatting._indentProvenance?.sourceValues
+          ? {
+              indentLeft: formatting._indentProvenance.sourceValues.indentLeft,
+              indentRight: formatting._indentProvenance.sourceValues.indentRight,
+              indentFirstLine: formatting._indentProvenance.sourceValues.indentFirstLine,
+              hangingIndent: formatting._indentProvenance.sourceValues.hangingIndent,
+            }
+          : undefined,
+        resolvedNumbering: formatting._indentProvenance?.resolvedNumbering,
+        baseline: {
+          indentLeft: attrs.indentLeft ?? undefined,
+          indentRight: attrs.indentRight ?? undefined,
+          indentFirstLine: attrs.indentFirstLine ?? undefined,
+          hangingIndent: attrs.hangingIndent ?? undefined,
+        },
+      },
+    };
+  }
+  // Preserve the effective import-time value separately from direct OOXML
+  // formatting. This lets save distinguish an unchanged omitted/default value
+  // from a later PM true/false override.
+  attrs._originalWidowControl = attrs.widowControl ?? true;
 
   return attrs;
 }
