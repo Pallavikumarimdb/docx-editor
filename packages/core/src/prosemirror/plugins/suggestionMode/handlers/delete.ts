@@ -9,7 +9,12 @@ import type { Node as PMNode, MarkType } from 'prosemirror-model';
 
 import { findAdjacentRevisionForRange } from '../adjacency';
 import { makeMarkAttrs } from '../markAttrs';
-import { suggestionModeKey, SUGGESTION_META, type SuggestionModeState } from '../state';
+import {
+  suggestionModeKey,
+  SUGGESTION_META,
+  type MarkAttrs,
+  type SuggestionModeState,
+} from '../state';
 
 /**
  * Walk a text range and either mark as deletion or retract own insertions.
@@ -23,12 +28,9 @@ export function markRangeAsDeleted(
   insertionType: MarkType,
   deletionType: MarkType,
   pluginState: SuggestionModeState,
-  /** When the caller is a replace op, pass the insertion's date so the
-   * deletion shares the (author, date) triple — that's what the sidebar
-   * uses to detect replace pairs and fold them into one 'replacement'
-   * card. The `w:id` stays distinct so we don't trip the OOXML move-pair
-   * serializer (fromProseDoc/paragraph.ts:340). */
-  shareDate?: string
+  /** When the caller is a replace op, pass the insertion attrs so both
+   * halves share one unambiguous logical revision identity. */
+  replacementAttrs?: MarkAttrs
 ): void {
   const ranges: { from: number; to: number; isOwnInsert: boolean }[] = [];
 
@@ -49,8 +51,9 @@ export function markRangeAsDeleted(
   if (ranges.length === 0) return;
 
   const delAttrs =
+    replacementAttrs ??
     findAdjacentRevisionForRange(doc, from, to, 'deletion', pluginState.author) ??
-    makeMarkAttrs(pluginState, shareDate);
+    makeMarkAttrs(pluginState);
 
   for (let i = ranges.length - 1; i >= 0; i--) {
     const range = ranges[i];

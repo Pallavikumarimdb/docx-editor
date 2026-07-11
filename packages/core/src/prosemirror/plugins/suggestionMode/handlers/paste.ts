@@ -3,7 +3,7 @@
  * replace op: the selected text is marked as a tracked deletion and the
  * pasted content is inserted after it as a tracked insertion — mirroring
  * what `applySuggestionInsert` does for a typed-over selection. The deletion
- * and insertion share the (author, date) triple so `extractTrackedChanges`
+ * and insertion share one revision id so `extractTrackedChanges`
  * folds them into a single "replacement" card. Pasting at a collapsed cursor
  * (or a non-text selection) is left to the default paste plus the plugin's
  * append-transaction catch-all, which already marks the inserted content.
@@ -46,7 +46,7 @@ export function applySuggestionPaste(
     findAdjacentRevision(view.state.doc, from, 'insertion', pluginState.author) ||
     makeMarkAttrs(pluginState);
 
-  // Mark the replaced selection as deleted, sharing the insertion's date so
+  // Mark the replaced selection as deleted, sharing the insertion's identity so
   // the del+ins pair folds into one replacement entry. The text stays in the
   // doc (struck through); own-author insertions inside the range are retracted.
   markRangeAsDeleted(
@@ -57,7 +57,7 @@ export function applySuggestionPaste(
     insertionType,
     deletionType,
     pluginState,
-    insertAttrs.date
+    insertAttrs
   );
 
   // Insert the pasted slice immediately after the now-deleted text.

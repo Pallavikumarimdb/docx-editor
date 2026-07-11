@@ -29,7 +29,7 @@ describe('fromProseDoc: replace produces ins/del, not move (regression for #614)
       date: '2026-05-28T00:00:00Z',
     });
     const deletionMark = schema.marks.deletion.create({
-      revisionId: 101, // DIFFERENT id — sidebar groups by (author, date)
+      revisionId: 101,
       author: 'Jane',
       date: '2026-05-28T00:00:00Z',
     });

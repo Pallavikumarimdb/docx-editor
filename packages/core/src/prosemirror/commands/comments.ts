@@ -7,6 +7,11 @@
 import type { Command, Transaction } from 'prosemirror-state';
 import type { EditorState } from 'prosemirror-state';
 import { SUGGESTION_BYPASS_META } from '../plugins/suggestionMode';
+import {
+  clearResolvedRunPropertyChanges,
+  findRunPropertyChangeSites,
+  restoreRejectedRunPropertyFormatting,
+} from './runPropertyChanges';
 
 /**
  * Add a comment mark to the current selection.
@@ -158,6 +163,15 @@ function collectAllRevisionIds(state: EditorState): number[] {
       add((node.attrs.pPrDel as { revisionId: number } | null)?.revisionId);
       const pPrChange = node.attrs.pPrChange as Array<{ info: { id: number } }> | null;
       if (Array.isArray(pPrChange)) for (const e of pPrChange) add(e.info.id);
+      const boundaries = node.attrs._originalRunBoundaries as Array<{
+        propertyChanges?: Array<{ info: { id: number } }>;
+      }> | null;
+      if (Array.isArray(boundaries)) {
+        for (const boundary of boundaries) {
+          if (!Array.isArray(boundary.propertyChanges)) continue;
+          for (const change of boundary.propertyChanges) add(change.info.id);
+        }
+      }
     }
     // Table row revisions.
     if (node.type.name === 'tableRow') {
@@ -631,12 +645,14 @@ function resolveById(revisionId: number, mode: 'accept' | 'reject'): Command {
     const paragraphMarkSites = findParagraphMarkSites(state, revisionId);
     const inlineSites = findInlineMarkSites(state, revisionId);
     const propChangeSites = findParagraphPropertyChangeSites(state, revisionId);
+    const runPropChangeSites = findRunPropertyChangeSites(state, revisionId);
     const tableRowSites = findTableRowSites(state, revisionId);
     const tableCellSites = findTableCellMarkerSites(state, revisionId);
     if (
       paragraphMarkSites.length === 0 &&
       inlineSites.length === 0 &&
       propChangeSites.length === 0 &&
+      runPropChangeSites.length === 0 &&
       tableRowSites.length === 0 &&
       tableCellSites.length === 0
     ) {
@@ -647,6 +663,12 @@ function resolveById(revisionId: number, mode: 'accept' | 'reject'): Command {
 
     const tr = state.tr;
     tr.setMeta(SUGGESTION_BYPASS_META, true);
+
+    // Reject run-property changes before any position-shifting inline
+    // resolution. Accept keeps current marks and only clears the metadata.
+    if (mode === 'reject') {
+      restoreRejectedRunPropertyFormatting(tr, state, runPropChangeSites);
+    }
 
     // Process inline marks FIRST (positions still valid in original doc), in
     // reverse order so deletions don't shift earlier positions.
@@ -736,6 +758,8 @@ function resolveById(revisionId: number, mode: 'accept' | 'reject'): Command {
         clearParagraphPropertyChangeEntry(tr, mappedPos, liveIndex);
       }
     }
+
+    clearResolvedRunPropertyChanges(tr, revisionId, mode, runPropChangeSites);
 
     // Table-cell markers (cellIns / cellDel / cellMerge).
     //   accept ins  → clear marker (cell stays in its new form)
