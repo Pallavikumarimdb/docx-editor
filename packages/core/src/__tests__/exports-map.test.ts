@@ -147,6 +147,7 @@ describe('package.json exports map', () => {
       './prosemirror/commentOps',
       './prosemirror/commentIdAllocator',
       './utils/autoScroll',
+      './internal/paintedPagesGuard',
     ]);
     const unexpected = Object.keys(pkg.exports).filter((subpath) => !approved.has(subpath));
     expect(unexpected).toEqual([]);
