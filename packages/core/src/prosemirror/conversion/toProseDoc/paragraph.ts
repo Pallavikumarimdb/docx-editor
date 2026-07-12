@@ -399,8 +399,17 @@ function paragraphFormattingToAttrs(
   const numberingIndent = numberingIndentStillMatchesSource(rememberedNumberingIndent, formatting)
     ? rememberedNumberingIndent
     : undefined;
-  const directLeft = directIndent?.allZeroComposite ? undefined : formatting?.indentLeft;
-  const directRight = directIndent?.allZeroComposite ? undefined : formatting?.indentRight;
+  const hasEffectiveNumbering =
+    paragraph.listRendering !== undefined ||
+    (formatting?.numPr?.numId !== undefined && formatting.numPr.numId !== 0) ||
+    (formatting?.numPrFromStyle?.numId !== undefined && formatting.numPrFromStyle.numId !== 0);
+  // A direct zero clears paragraph-style indentation. Numbered paragraphs are
+  // the exception: Word emits an all-zero composite while continuing to use
+  // the list style/numbering level's marker position, so only active numbering
+  // may treat the direct left zero as neutral.
+  const directLeft =
+    directIndent?.allZeroComposite && hasEffectiveNumbering ? undefined : formatting?.indentLeft;
+  const directRight = formatting?.indentRight;
   const numberingSuppliesFirstLine = numberingIndent?.indentFirstLine !== undefined;
   const directFirstLine = numberingSuppliesFirstLine ? undefined : formatting?.indentFirstLine;
   const directFirstLineIsExactZero =

@@ -12,6 +12,9 @@ export const HardBreakExtension = createNodeExtension({
     inline: true,
     group: 'inline',
     selectable: false,
+    // Imported breaks can sit inside tracked insertions/deletions. Without
+    // marks, a deleted w:cr loses its revision state and becomes a live break.
+    marks: '_',
     attrs: {
       breakType: { default: 'textWrapping' },
     },

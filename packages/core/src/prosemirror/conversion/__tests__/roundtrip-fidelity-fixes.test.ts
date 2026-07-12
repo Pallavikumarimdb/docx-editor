@@ -503,7 +503,7 @@ describe('DOCX round-trip fidelity fixes', () => {
       expect(breakXml).not.toContain('<w:pageBreakBefore/>');
     });
 
-    test('deleted hard page breaks round-trip without entering effective layout', () => {
+    test('deleted text and page breaks round-trip without entering effective layout', () => {
       const body = parseDocumentBody(`<w:document ${W}><w:body>
         <w:p><w:r><w:t>Before</w:t></w:r><w:del w:id="803" w:author="Author">
           <w:r><w:cr/></w:r><w:r><w:br w:type="page"/></w:r>
@@ -513,10 +513,27 @@ describe('DOCX round-trip fidelity fixes', () => {
       const doc = docOf(...body.content);
       const pm = toProseDoc(doc);
 
-      expect(buildBoxTree(pm).map((block) => block.kind)).toEqual(['paragraph', 'paragraph']);
+      const hardBreaks: (typeof pm)[] = [];
+      pm.child(0).forEach((node) => {
+        if (node.type.name === 'hardBreak') hardBreaks.push(node);
+      });
+      expect(hardBreaks).toHaveLength(2);
       expect(
-        serializeParagraph(fromProseDoc(pm, doc).package.document.content[0] as Paragraph)
-      ).toContain('<w:br w:type="page"/>');
+        hardBreaks.every((node) => node.marks.some((mark) => mark.type.name === 'deletion'))
+      ).toBe(true);
+
+      expect(toFlowBlocks(pm).map((block) => block.kind)).toEqual(['paragraph', 'paragraph']);
+      const firstFlow = toFlowBlocks(pm)[0];
+      expect(firstFlow.kind).toBe('paragraph');
+      if (firstFlow.kind !== 'paragraph') return;
+      expect(firstFlow.runs.some((run) => run.kind === 'lineBreak')).toBe(false);
+
+      const xml = serializeParagraph(
+        fromProseDoc(pm, doc).package.document.content[0] as Paragraph
+      );
+      expect(xml).toContain('<w:del w:id="803"');
+      expect(xml).toContain('<w:br w:type="textWrapping"/>');
+      expect(xml).toContain('<w:br w:type="page"/>');
     });
 
     test('paragraph with text keeps driving layout pagination via pageBreakBefore attr', () => {

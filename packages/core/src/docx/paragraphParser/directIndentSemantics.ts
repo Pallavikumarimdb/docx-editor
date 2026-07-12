@@ -19,10 +19,12 @@ function isExactIntegerZero(raw: string | null): boolean {
 /**
  * Interpret raw direct indentation without changing the source formatting.
  *
- * In an all-zero composite, left/start is neutral for style inheritance while
- * firstLine/hanging remains an explicit zero that clears a style hanging
- * indent. Numbering fallback separately treats exact zero first-line values as
- * absent. Malformed values such as "0oops" and "0.5" are never neutral.
+ * Numbered paragraphs sometimes carry an all-zero composite while retaining
+ * their numbering level's marker geometry. `allZeroComposite` lets numbering
+ * fallback recognize that case; paragraph styles must still be cleared by the
+ * direct zero values. Exact zero first-line values clear style hanging indents,
+ * while numbering fallback treats them as absent. Malformed values such as
+ * "0oops" and "0.5" are never neutral.
  */
 export function getDirectIndentSemantics(
   source: DirectIndentSource | undefined

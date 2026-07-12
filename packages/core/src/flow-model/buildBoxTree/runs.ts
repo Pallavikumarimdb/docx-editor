@@ -390,6 +390,10 @@ export function paragraphToRuns(
       };
       runs.push(run);
     } else if (child.type.name === 'hardBreak' && child.attrs.breakType !== 'page') {
+      // Keep deleted breaks in PM for review and round-trip, but Word's current
+      // layout does not let a deleted w:cr force a visible line break.
+      const formatting = extractRunFormatting(child.marks, theme);
+      if (formatting.isDeletion) return;
       runs.push({
         kind: 'lineBreak',
         docFrom: childPos,
