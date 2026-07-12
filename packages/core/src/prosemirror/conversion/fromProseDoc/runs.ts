@@ -71,7 +71,7 @@ export function addNodeToHyperlink(hyperlink: Hyperlink, node: PMNode): void {
   } else if (node.type.name === 'tab') {
     hyperlink.children.push(createTabRun(node));
   } else if (node.type.name === 'hardBreak') {
-    hyperlink.children.push(createBreakRun());
+    hyperlink.children.push(createBreakRun(node));
   }
 }
 
@@ -146,10 +146,10 @@ export function createSymbolRun(node: PMNode, marks?: readonly Mark[]): Run {
 /**
  * Create a Run containing a line break
  */
-export function createBreakRun(): Run {
+export function createBreakRun(node?: PMNode): Run {
   const breakContent: BreakContent = {
     type: 'break',
-    breakType: 'textWrapping',
+    breakType: node?.attrs.breakType === 'page' ? 'page' : 'textWrapping',
   };
 
   return {

@@ -7,6 +7,11 @@
 import type { Command, Transaction } from 'prosemirror-state';
 import type { EditorState } from 'prosemirror-state';
 import { SUGGESTION_BYPASS_META } from '../plugins/suggestionMode';
+import {
+  clearResolvedRunPropertyChanges,
+  findRunPropertyChangeSites,
+  restoreRejectedRunPropertyFormatting,
+} from './runPropertyChanges';
 
 /**
  * Add a comment mark to the current selection.
@@ -158,6 +163,15 @@ function collectAllRevisionIds(state: EditorState): number[] {
       add((node.attrs.pPrDel as { revisionId: number } | null)?.revisionId);
       const pPrChange = node.attrs.pPrChange as Array<{ info: { id: number } }> | null;
       if (Array.isArray(pPrChange)) for (const e of pPrChange) add(e.info.id);
+      const boundaries = node.attrs._originalRunBoundaries as Array<{
+        propertyChanges?: Array<{ info: { id: number } }>;
+      }> | null;
+      if (Array.isArray(boundaries)) {
+        for (const boundary of boundaries) {
+          if (!Array.isArray(boundary.propertyChanges)) continue;
+          for (const change of boundary.propertyChanges) add(change.info.id);
+        }
+      }
     }
     // Table row revisions.
     if (node.type.name === 'tableRow') {
@@ -512,6 +526,7 @@ function applyPriorParagraphFormattingToAttrs(
   //     SKIPPED.
   //   - `runProperties` — model rPr; PM uses resolved `defaultTextFormatting`
   //     via a style cascade — SKIPPED (would overwrite resolved data).
+  //   - `widowControl` — same boolean shape — IS safe and IS included below.
   //   - `suppressLineNumbers`, `suppressAutoHyphens` — model has them but PM
   //     does not surface them as attrs — SKIPPED until plumbed.
   //
@@ -548,6 +563,18 @@ function applyPriorParagraphFormattingToAttrs(
     if (Object.prototype.hasOwnProperty.call(prior, f)) {
       next[f as string] = prior[f] ?? null;
     }
+  }
+  // A tracked change may introduce an explicit widowControl value where the
+  // prior pPr omitted it. Reject must restore omission/default, not leave the
+  // post-change boolean behind. This is field-specific because most absent
+  // fields mean "unrelated to this change"; currentFormatting proves this
+  // particular field was introduced by the rejected change.
+  if (
+    current &&
+    Object.prototype.hasOwnProperty.call(current, 'widowControl') &&
+    !Object.prototype.hasOwnProperty.call(prior, 'widowControl')
+  ) {
+    next.widowControl = null;
   }
   // Numbering added by the change must be removed on reject. When `prior` has
   // no `numPr` the loop above leaves the current numbering in place — correct
@@ -618,12 +645,14 @@ function resolveById(revisionId: number, mode: 'accept' | 'reject'): Command {
     const paragraphMarkSites = findParagraphMarkSites(state, revisionId);
     const inlineSites = findInlineMarkSites(state, revisionId);
     const propChangeSites = findParagraphPropertyChangeSites(state, revisionId);
+    const runPropChangeSites = findRunPropertyChangeSites(state, revisionId);
     const tableRowSites = findTableRowSites(state, revisionId);
     const tableCellSites = findTableCellMarkerSites(state, revisionId);
     if (
       paragraphMarkSites.length === 0 &&
       inlineSites.length === 0 &&
       propChangeSites.length === 0 &&
+      runPropChangeSites.length === 0 &&
       tableRowSites.length === 0 &&
       tableCellSites.length === 0
     ) {
@@ -634,6 +663,12 @@ function resolveById(revisionId: number, mode: 'accept' | 'reject'): Command {
 
     const tr = state.tr;
     tr.setMeta(SUGGESTION_BYPASS_META, true);
+
+    // Reject run-property changes before any position-shifting inline
+    // resolution. Accept keeps current marks and only clears the metadata.
+    if (mode === 'reject') {
+      restoreRejectedRunPropertyFormatting(tr, state, runPropChangeSites);
+    }
 
     // Process inline marks FIRST (positions still valid in original doc), in
     // reverse order so deletions don't shift earlier positions.
@@ -723,6 +758,8 @@ function resolveById(revisionId: number, mode: 'accept' | 'reject'): Command {
         clearParagraphPropertyChangeEntry(tr, mappedPos, liveIndex);
       }
     }
+
+    clearResolvedRunPropertyChanges(tr, revisionId, mode, runPropChangeSites);
 
     // Table-cell markers (cellIns / cellDel / cellMerge).
     //   accept ins  → clear marker (cell stays in its new form)

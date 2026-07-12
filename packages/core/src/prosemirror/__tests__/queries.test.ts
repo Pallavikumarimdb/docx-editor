@@ -184,12 +184,11 @@ describe('findChangeRange', () => {
     expect(findChangeRange(null, 42)).toBeNull();
   });
 
-  test('matches a replacement via its insertionRevisionId, not just the primary id', () => {
-    // An adjacent deletion (id 10) + insertion (id 11) with the same author/date
-    // coalesces into one `replacement` entry: revisionId 10, insertionRevisionId
-    // 11, range spanning both. Resolving either id must hit the same span.
+  test('matches both halves of a same-identity replacement', () => {
+    // An adjacent deletion + insertion carrying one id coalesces into a
+    // replacement range spanning both halves.
     const del = schema.marks.deletion.create({ revisionId: 10, author: 'A', date: null });
-    const ins = schema.marks.insertion.create({ revisionId: 11, author: 'A', date: null });
+    const ins = schema.marks.insertion.create({ revisionId: 10, author: 'A', date: null });
     const doc = schema.nodes.doc.create(null, [
       schema.nodes.paragraph.create({ paraId: 'AAA' }, [
         schema.text('old', [del]),
@@ -199,10 +198,8 @@ describe('findChangeRange', () => {
     const view = asView(EditorState.create({ schema, doc }));
 
     const byPrimary = findChangeRange(view, 10);
-    const byInsertion = findChangeRange(view, 11);
     expect(byPrimary).not.toBeNull();
-    expect(byInsertion).toEqual(byPrimary!);
-    expect(view.state.doc.textBetween(byInsertion!.from, byInsertion!.to)).toBe('oldnew');
+    expect(view.state.doc.textBetween(byPrimary!.from, byPrimary!.to)).toBe('oldnew');
   });
 });
 

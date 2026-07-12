@@ -88,14 +88,16 @@ export interface TrackedChangeEntry {
    *
    * - `insertion` — text was added (`<w:ins>`).
    * - `deletion` — text was struck through but not removed (`<w:del>`).
-   * - `replacement` — a deletion + insertion by the same author at the
-   *   same position+time; sidebar shows one combined card. `deletedText`
+   * - `replacement` — an adjacent deletion + insertion carrying the same
+   *   revision identity; sidebar shows one combined card. `deletedText`
    *   and `insertionRevisionId` are set on this variant.
    * - `paragraphMarkInsertion` / `paragraphMarkDeletion` — Enter /
    *   Backspace produced a tracked paragraph break (`<w:pPr><w:rPr><w:ins/>` /
    *   `<w:del/>`).
    * - `paragraphPropertiesChanged` — formatting (alignment, spacing,
    *   etc.) on the paragraph was changed (`<w:pPrChange>`).
+   * - `runPropertiesChanged` — formatting on an exact text run was changed
+   *   (`<w:rPrChange>`).
    * - `rowInserted` / `rowDeleted` / `rowPropertiesChanged` — table
    *   row authored / removed / formatted (`<w:trPr><w:ins/>` / `<w:del/>`
    *   / `<w:trPrChange>`).
@@ -112,6 +114,7 @@ export interface TrackedChangeEntry {
     | 'paragraphMarkInsertion'
     | 'paragraphMarkDeletion'
     | 'paragraphPropertiesChanged'
+    | 'runPropertiesChanged'
     | 'rowInserted'
     | 'rowDeleted'
     | 'rowPropertiesChanged'
@@ -160,18 +163,16 @@ export interface TrackedChangeEntry {
    */
   revisionId: number;
   /**
-   * Only set when `type === 'replacement'` — the insertion half carries
-   * a DIFFERENT `w:id` from the deletion (sharing would trip the OOXML
-   * move-pair serializer). Card Accept handlers dispatch BOTH ids to
-   * clear the deletion and the insertion + any coalesced paragraph-marks.
+   * Only set when `type === 'replacement'`. Editor-authored replacements
+   * normally share one id, but this remains available for explicitly linked
+   * legacy replacements whose insertion half has a distinct id.
    */
   insertionRevisionId?: number;
   /**
    * Extra `w:id`s that map to the same logical revision as this card.
-   * Populated when the extractor coalesces a burst of distinct ids by
-   * (author, date) — e.g. a foreign document where the source editor
-   * minted a fresh id per atomic edit. Accept/reject handlers must
-   * resolve every id in this list in addition to {@link revisionId}.
+   * Populated only for structural revisions that intentionally group several
+   * OOXML ids (for example, all rows of one inserted table). Inline revisions
+   * remain independently actionable by `w:id`.
    */
   coalescedRevisionIds?: number[];
 }

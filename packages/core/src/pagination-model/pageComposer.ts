@@ -49,7 +49,7 @@ import {
 import { collapsedGap } from './blockSpacingRules';
 import { isFloatingTextBoxBlock } from './textBoxFlow';
 import { layoutTable } from './tableLayout';
-import { balancedColumnBottom } from './columnBalancing';
+import { planContinuousSectionBalance } from './columnBalancing';
 
 /** Word's default gap painted between pages, px. */
 const DEFAULT_PAGE_GAP_PX = 24;
@@ -100,15 +100,28 @@ export function layOutPages(
   };
 
   // An empty document is still one page. Word shows a blank sheet, not nothing.
-  let cursor: LayoutCursor = {
-    ...startPage(ctx),
-    suppressInheritedSpaceBeforeAtTop: true,
-  };
+  // Document-start paragraphs keep inherited space-before (Word does). Only a
+  // standalone hard page break suppresses inherited top spacing on the next page.
+  let cursor: LayoutCursor = startPage(ctx);
   let sectionIndex = 0;
 
   for (let i = 0; i < nodes.length; i++) {
     const node = nodes[i];
     const nodeMetrics = metrics[i];
+
+    const balanceBreaks = ctx.pages[cursor.pageIndex]?.columnBalanceBreakBefore;
+    if (
+      balanceBreaks?.has(i) &&
+      (node.kind === 'paragraph' ||
+        node.kind === 'table' ||
+        node.kind === 'image' ||
+        node.kind === 'textBox')
+    ) {
+      // A balance-forced column start must not inherit the previous column's
+      // trailing spacing via collapsedGap — that spacing was already budgeted
+      // into the prior column's partition height.
+      cursor = { ...nextColumn(ctx, cursor), prev: null };
+    }
 
     switch (node.kind) {
       case 'sectionBreak': {
@@ -197,11 +210,25 @@ function crossSectionBoundary(
 ): LayoutCursor {
   switch (next.startType) {
     case 'continuous': {
+      // Word/LibreOffice cannot place two page sizes/orientations on one physical
+      // sheet. When the next section's pageSize differs, promote continuous to a
+      // page break so the new geometry starts on a fresh page.
+      const currentPage = ctx.pages[cursor.pageIndex];
+      const nextSize = next.pageSize;
+      const sizeChanged =
+        nextSize != null &&
+        (nextSize.w !== currentPage.size.w || nextSize.h !== currentPage.size.h);
+      if (sizeChanged) {
+        ctx.section = next;
+        ctx.sectionIndex = nextSectionIndex;
+        return startPage(ctx, cursor.prev);
+      }
+
       ctx.section = next;
       ctx.sectionIndex = nextSectionIndex;
       // Re-columnise the current page from the pen down. The page keeps the size
       // it was born with — a page cannot change dimensions halfway.
-      const page = ctx.pages[cursor.pageIndex];
+      const page = currentPage;
 
       // The pen is wherever the last column left it, which is somewhere up inside
       // that column. Content after the region has to resume BELOW the whole
@@ -216,6 +243,7 @@ function crossSectionBoundary(
       // to one column must not inherit the previous section's balanced bottom, or
       // its text would break to a new page a third of the way down.
       page.columnBalanceBottom = undefined;
+      page.columnBalanceBreakBefore = undefined;
       page.columnRegionTop = undefined;
 
       cursor = { ...cursor, y: resumeY, columnIndex: 0 };
@@ -225,12 +253,26 @@ function crossSectionBoundary(
         // sit side by side BELOW whatever single-column text precedes them.
         page.columnRegionTop = cursor.y;
 
-        const bottom = balancedColumnBottom(ctx.nodes, ctx.metrics, sectionStart, sectionEnd, {
-          top: cursor.y,
-          bottom: page.size.h - page.margins.bottom - (page.footnoteReservedHeight ?? 0),
-          columns: page.columns,
-        });
-        if (bottom !== null) page.columnBalanceBottom = bottom;
+        // Only balance non-terminal continuous multi-column sections. A
+        // terminal multi-column stretch (no following section break) stays in
+        // ordinary sequential column flow — matching Word.
+        if (sectionEnd < ctx.nodes.length) {
+          const plan = planContinuousSectionBalance(
+            ctx.nodes,
+            ctx.metrics,
+            sectionStart,
+            sectionEnd,
+            {
+              top: cursor.y,
+              bottom: page.size.h - page.margins.bottom - (page.footnoteReservedHeight ?? 0),
+              columns: page.columns,
+            }
+          );
+          if (plan) {
+            page.columnBalanceBottom = cursor.y + plan.height;
+            page.columnBalanceBreakBefore = plan.breakBeforeBlocks;
+          }
+        }
       }
 
       return cursor;

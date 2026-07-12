@@ -2,6 +2,10 @@ import { describe, test, expect } from 'bun:test';
 import { parseNumbering } from '../numberingParser';
 import { parseParagraph } from '../paragraphParser';
 import { parseXmlDocument, type XmlElement } from '../xmlParser';
+import { serializeParagraph } from '../serializer/paragraphSerializer';
+import { toProseDoc } from '../../prosemirror/conversion/toProseDoc';
+import { fromProseDoc } from '../../prosemirror/conversion/fromProseDoc';
+import type { Document, Paragraph } from '../../types/document';
 
 const NUMBERING_MULTI_LEVEL = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
@@ -31,6 +35,11 @@ function parseParagraphXml(xml: string, numbering: ReturnType<typeof parseNumber
   const root = parseXmlDocument(xml) as XmlElement | null;
   if (!root) throw new Error('Failed to parse paragraph XML');
   return parseParagraph(root, null, null, numbering, null, null);
+}
+
+function pmAttrs(paragraph: Paragraph): Record<string, unknown> {
+  const document: Document = { package: { document: { content: [paragraph] } } };
+  return toProseDoc(document).child(0).attrs;
 }
 
 describe('paragraphParser populates listRendering.levelNumFmts', () => {
@@ -99,9 +108,13 @@ describe('paragraphParser applies numbering indentation defaults', () => {
       numbering
     );
 
-    expect(para.formatting?.indentLeft).toBe(360);
-    expect(para.formatting?.indentFirstLine).toBe(-360);
-    expect(para.formatting?.hangingIndent).toBe(true);
+    expect(para.formatting?.indentLeft).toBeUndefined();
+    expect(para.formatting?.indentFirstLine).toBe(0);
+    expect(pmAttrs(para)).toMatchObject({
+      indentLeft: 360,
+      indentFirstLine: -360,
+      hangingIndent: true,
+    });
   });
 
   test('keeps level hanging indent when paragraph writes neutral hanging zero', () => {
@@ -115,9 +128,77 @@ describe('paragraphParser applies numbering indentation defaults', () => {
       numbering
     );
 
-    expect(para.formatting?.indentLeft).toBe(360);
-    expect(para.formatting?.indentFirstLine).toBe(-360);
+    expect(para.formatting?.indentLeft).toBeUndefined();
+    expect(para.formatting?.indentFirstLine).toBe(-0);
     expect(para.formatting?.hangingIndent).toBe(true);
+    expect(pmAttrs(para)).toMatchObject({
+      indentLeft: 360,
+      indentFirstLine: -360,
+      hangingIndent: true,
+    });
+  });
+
+  test('all-zero direct indent keeps both numbering indent groups', () => {
+    const para = parseParagraphXml(
+      `<w:p xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+        <w:pPr>
+          <w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>
+          <w:ind w:left="0" w:firstLine="0"/>
+        </w:pPr>
+      </w:p>`,
+      numbering
+    );
+
+    expect(para.formatting?.indentLeft).toBe(0);
+    expect(para.formatting?.indentFirstLine).toBe(0);
+    expect(pmAttrs(para)).toMatchObject({
+      indentLeft: 360,
+      indentFirstLine: -360,
+      hangingIndent: true,
+    });
+
+    const input: Document = { package: { document: { content: [para] } } };
+    const roundTripped = fromProseDoc(toProseDoc(input), input);
+    const output = roundTripped.package.document.content[0] as Paragraph;
+    const xml = serializeParagraph(output);
+    expect(xml).toContain('<w:ind w:left="0" w:firstLine="0"/>');
+    expect(xml).not.toContain('w:left="360"');
+    expect(xml).not.toContain('w:hanging="360"');
+
+    for (const transported of [
+      structuredClone(para),
+      JSON.parse(JSON.stringify(para)) as Paragraph,
+    ]) {
+      expect(pmAttrs(transported)).toMatchObject({
+        indentLeft: 360,
+        indentFirstLine: -360,
+        hangingIndent: true,
+      });
+      const transportedInput: Document = {
+        package: { document: { content: [transported] } },
+      };
+      const transportedOutput = fromProseDoc(toProseDoc(transportedInput), transportedInput).package
+        .document.content[0] as Paragraph;
+      const transportedXml = serializeParagraph(transportedOutput);
+      expect(transportedXml).toContain('<w:ind w:left="0" w:firstLine="0"/>');
+      expect(transportedXml).not.toContain('w:left="360"');
+      expect(transportedXml).not.toContain('w:hanging="360"');
+    }
+
+    const mutations: Array<Partial<NonNullable<Paragraph['formatting']>>> = [
+      { styleId: 'ChangedStyle' },
+      { indentLeft: 720 },
+      { indentRight: 240 },
+      { indentFirstLine: 180 },
+      { indentFirstLine: -180, hangingIndent: true },
+    ];
+    for (const patch of mutations) {
+      const mutated = structuredClone(para);
+      Object.assign(mutated.formatting!, patch);
+      const attrs = pmAttrs(mutated);
+      expect(attrs.indentLeft).not.toBe(360);
+      expect(attrs.indentFirstLine).not.toBe(-360);
+    }
   });
 
   test('non-zero direct firstLine still overrides the level hanging indent', () => {
@@ -134,8 +215,12 @@ describe('paragraphParser applies numbering indentation defaults', () => {
     // Direct firstLine="180" wins over the level's hanging — the
     // paragraph keeps the level's left indent and the direct positive
     // first-line offset, with no hanging flag inherited.
-    expect(para.formatting?.indentLeft).toBe(360);
+    expect(para.formatting?.indentLeft).toBeUndefined();
     expect(para.formatting?.indentFirstLine).toBe(180);
     expect(para.formatting?.hangingIndent).toBeUndefined();
+    expect(pmAttrs(para)).toMatchObject({
+      indentLeft: 360,
+      indentFirstLine: 180,
+    });
   });
 });

@@ -4,7 +4,7 @@
  */
 
 import type { ParagraphFormatting, TabMark, ShadingProperties } from '../../../types/document';
-import { intAttr } from '../xmlUtils';
+import { escapeXml, intAttr } from '../xmlUtils';
 import { serializeBorder } from '../borderSerializer';
 
 const BORDER_SIDES = ['top', 'left', 'bottom', 'right', 'between', 'bar'] as const;
@@ -130,6 +130,26 @@ export function serializeSpacing(formatting: ParagraphFormatting): string {
  * Serialize indentation properties (w:ind)
  */
 export function serializeIndentation(formatting: ParagraphFormatting): string {
+  const provenance = formatting._indentProvenance;
+  const source = provenance?.source;
+  const values = provenance?.sourceValues;
+  const sourceStillMatches =
+    source != null &&
+    values != null &&
+    values.indentLeft === formatting.indentLeft &&
+    values.indentRight === formatting.indentRight &&
+    values.indentFirstLine === formatting.indentFirstLine &&
+    values.hangingIndent === formatting.hangingIndent;
+
+  if (sourceStillMatches) {
+    const sourceAttrs: string[] = [];
+    for (const name of ['left', 'start', 'right', 'end', 'firstLine', 'hanging'] as const) {
+      const raw = source[name];
+      if (raw !== undefined) sourceAttrs.push(`w:${name}="${escapeXml(raw)}"`);
+    }
+    if (sourceAttrs.length > 0) return `<w:ind ${sourceAttrs.join(' ')}/>`;
+  }
+
   const attrs: string[] = [];
 
   if (formatting.indentLeft !== undefined) {
@@ -144,7 +164,7 @@ export function serializeIndentation(formatting: ParagraphFormatting): string {
     if (formatting.hangingIndent) {
       // Hanging indent is stored as positive value but uses w:hanging attribute
       attrs.push(`w:hanging="${intAttr(Math.abs(formatting.indentFirstLine))}"`);
-    } else if (formatting.indentFirstLine !== 0) {
+    } else {
       attrs.push(`w:firstLine="${intAttr(formatting.indentFirstLine)}"`);
     }
   }

@@ -78,6 +78,7 @@ export type {
   MoveToRangeStart,
   MoveToRangeEnd,
   TrackedRunChange,
+  TrackedChangeContent,
   RunPropertyChange,
   ParagraphPropertyChange,
   TablePropertyChange,

@@ -14,6 +14,8 @@
 import { parseRelationships } from '../docx/relsParser';
 import { deobfuscateFont, isValidFontKey } from './fontDeobfuscation';
 import { loadFontFromBuffer } from './fontLoader';
+import { registerDocumentFontSingleLineRatio } from './fontResolver';
+import { readSfntSingleLineRatio } from './sfntMetrics';
 import type { FontTable, FontInfo, FontEmbed } from '../types/styles';
 
 /**
@@ -162,6 +164,22 @@ export async function loadEmbeddedFonts(
   const faces = getEmbeddedFontFaces(fontTable, rawFonts, fontTableRelsXml);
   const families = new Set<string>();
   if (faces.length === 0) return families;
+
+  // Measurement starts after parse completes, so register exact line metrics
+  // before waiting for browser font loading. Prefer each family's regular
+  // upright face; fall back to another face when that is all the DOCX embeds.
+  const metricFaces = new Map<string, EmbeddedFontFace>();
+  for (const face of faces) {
+    const key = face.family.trim().toLowerCase();
+    const current = metricFaces.get(key);
+    if (!current || (face.weight === 'normal' && face.style === 'normal')) {
+      metricFaces.set(key, face);
+    }
+  }
+  for (const face of metricFaces.values()) {
+    const ratio = readSfntSingleLineRatio(face.data);
+    if (ratio !== null) registerDocumentFontSingleLineRatio(face.family, ratio);
+  }
 
   await Promise.all(
     faces.map(async (face) => {

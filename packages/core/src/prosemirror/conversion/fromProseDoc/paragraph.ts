@@ -539,6 +539,8 @@ function paragraphAttrsToFormatting(attrs: ParagraphAttrs): ParagraphFormatting 
   if (attrs._originalFormatting) {
     const orig = attrs._originalFormatting;
     const result = { ...orig };
+    const indentProvenance = orig._indentProvenance;
+    const baseline = indentProvenance?.baseline;
 
     // Override properties that user may have changed via editor commands.
     // Only override if the PM attr differs from the original value.
@@ -566,11 +568,88 @@ function paragraphAttrsToFormatting(attrs: ParagraphAttrs): ParagraphFormatting 
     ) {
       result.pageBreakBefore = attrs.pageBreakBefore || undefined;
     }
-    if (attrs.widowControl !== (orig.widowControl ?? undefined)) {
-      result.widowControl = attrs.widowControl ?? undefined;
+    const importedWidowControl = attrs._originalWidowControl ?? orig.widowControl ?? true;
+    const currentWidowControl = attrs.widowControl ?? true;
+    if (attrs.widowControl === null) {
+      // Null is an explicit PM clear (not merely the schema default) when an
+      // imported paragraph still has original formatting metadata. Restore
+      // OOXML omission so Word's default/style cascade applies again.
+      delete result.widowControl;
+    } else if (currentWidowControl !== importedWidowControl) {
+      // A changed effective value must become direct formatting so it can
+      // override both an explicit source value and a style-inherited value.
+      result.widowControl = currentWidowControl;
     }
     if (attrs.bidi !== (orig.bidi || undefined)) {
       result.bidi = attrs.bidi || undefined;
+    }
+
+    const numericIndentChanged = (
+      current: number | null | undefined,
+      loaded: number | undefined
+    ): boolean =>
+      current !== undefined && (current === null ? loaded !== undefined : current !== loaded);
+    const hangingChanged =
+      attrs.hangingIndent !== undefined &&
+      (attrs.hangingIndent === null
+        ? baseline?.hangingIndent === true
+        : attrs.hangingIndent !== (baseline?.hangingIndent ?? false));
+    const indentationChanged =
+      baseline != null &&
+      (numericIndentChanged(attrs.indentLeft, baseline.indentLeft) ||
+        numericIndentChanged(attrs.indentRight, baseline.indentRight) ||
+        numericIndentChanged(attrs.indentFirstLine, baseline.indentFirstLine) ||
+        hangingChanged);
+
+    if (indentationChanged && baseline) {
+      const explicitlyCleared =
+        attrs.indentLeft === null || attrs.indentRight === null || attrs.indentFirstLine === null;
+      if (explicitlyCleared) {
+        // A complete canonical zero triplet is distinguishable from the
+        // source-neutral left=0/firstLine=0 pair and suppresses every inherited
+        // style indent when this paragraph is parsed again.
+        result.indentLeft = attrs.indentLeft == null ? 0 : attrs.indentLeft;
+        result.indentRight = attrs.indentRight == null ? 0 : attrs.indentRight;
+        result.indentFirstLine = attrs.indentFirstLine == null ? 0 : attrs.indentFirstLine;
+        result.hangingIndent = attrs.hangingIndent || undefined;
+        delete result._indentProvenance;
+        return result;
+      }
+
+      if (attrs.indentLeft === null) {
+        if (baseline.indentLeft !== undefined) result.indentLeft = 0;
+        else delete result.indentLeft;
+      } else if (attrs.indentLeft !== undefined) {
+        result.indentLeft = attrs.indentLeft;
+      }
+      if (attrs.indentRight === null) {
+        if (baseline.indentRight !== undefined) result.indentRight = 0;
+        else delete result.indentRight;
+      } else if (attrs.indentRight !== undefined) {
+        result.indentRight = attrs.indentRight;
+      }
+      if (attrs.indentFirstLine === null) {
+        if (baseline.indentFirstLine !== undefined || baseline.hangingIndent) {
+          result.indentFirstLine = 0;
+          result.hangingIndent = undefined;
+        } else {
+          delete result.indentFirstLine;
+          delete result.hangingIndent;
+        }
+      } else if (attrs.indentFirstLine !== undefined) {
+        result.indentFirstLine = attrs.indentFirstLine;
+        result.hangingIndent = attrs.hangingIndent || undefined;
+      }
+      delete result._indentProvenance;
+    } else if (indentProvenance?.source && indentProvenance.sourceValues) {
+      // Keep only the raw source identity required for lossless w:ind
+      // serialization. Resolved numbering and PM baseline are transport-only.
+      result._indentProvenance = {
+        source: indentProvenance.source,
+        sourceValues: indentProvenance.sourceValues,
+      };
+    } else {
+      delete result._indentProvenance;
     }
 
     return result;
@@ -593,6 +672,7 @@ function paragraphAttrsToFormatting(attrs: ParagraphAttrs): ParagraphFormatting 
     attrs.tabs ||
     attrs.outlineLevel != null ||
     attrs.contextualSpacing ||
+    attrs.widowControl != null ||
     (!hasEffectiveSourceLeadingPageBreak(attrs) && attrs.pageBreakBefore) ||
     attrs.widowControl != null ||
     attrs.bidi;
@@ -618,10 +698,10 @@ function paragraphAttrsToFormatting(attrs: ParagraphAttrs): ParagraphFormatting 
     tabs: attrs.tabs || undefined,
     outlineLevel: attrs.outlineLevel ?? undefined,
     contextualSpacing: attrs.contextualSpacing || undefined,
+    widowControl: attrs.widowControl ?? undefined,
     pageBreakBefore: hasEffectiveSourceLeadingPageBreak(attrs)
       ? undefined
       : attrs.pageBreakBefore || undefined,
-    widowControl: attrs.widowControl ?? undefined,
     bidi: attrs.bidi || undefined,
   };
 }
@@ -706,6 +786,25 @@ function extractParagraphContent(paragraph: PMNode): ParagraphContent[] {
           content: node.isText && node.text ? textToRunContent(node.text) : [],
           ...(Object.keys(formatting).length > 0 ? { formatting } : {}),
         };
+      }
+
+      if (insertionMark && deletionMark) {
+        const insertionInfo: TrackedChangeInfo = {
+          id: insertionMark.attrs.revisionId as number,
+          author: (insertionMark.attrs.author as string) || 'Unknown',
+          date: (insertionMark.attrs.date as string) || undefined,
+        };
+        const deletionInfo: TrackedChangeInfo = {
+          id: deletionMark.attrs.revisionId as number,
+          author: (deletionMark.attrs.author as string) || 'Unknown',
+          date: (deletionMark.attrs.date as string) || undefined,
+        };
+        content.push({
+          type: 'insertion',
+          info: insertionInfo,
+          content: [{ type: 'deletion', info: deletionInfo, content: [run] }],
+        });
+        return;
       }
 
       const info: TrackedChangeInfo = {
@@ -795,7 +894,7 @@ function extractParagraphContent(paragraph: PMNode): ParagraphContent[] {
         currentRun = null;
         currentMarksKey = null;
       }
-      content.push(createBreakRun());
+      content.push(createBreakRun(node));
     } else if (node.type.name === 'symbol') {
       // Symbol ends current run
       if (currentRun) {

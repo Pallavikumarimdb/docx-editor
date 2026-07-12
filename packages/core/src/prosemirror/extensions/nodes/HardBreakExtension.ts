@@ -12,9 +12,19 @@ export const HardBreakExtension = createNodeExtension({
     inline: true,
     group: 'inline',
     selectable: false,
-    parseDOM: [{ tag: 'br' }],
-    toDOM() {
-      return ['br'];
+    attrs: {
+      breakType: { default: 'textWrapping' },
+    },
+    parseDOM: [
+      {
+        tag: 'br',
+        getAttrs: (dom) => ({
+          breakType: (dom as HTMLElement).dataset.docxBreakType || 'textWrapping',
+        }),
+      },
+    ],
+    toDOM(node) {
+      return ['br', node.attrs.breakType === 'page' ? { 'data-docx-break-type': 'page' } : {}];
     },
   },
   onSchemaReady(ctx: ExtensionContext): ExtensionRuntime {

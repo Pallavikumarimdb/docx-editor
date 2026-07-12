@@ -344,7 +344,7 @@ function serializeTrackedChange(
         return xml;
       }
       if (item.type === 'hyperlink') return serializeHyperlink(item);
-      return '';
+      return serializeParagraphContent(item);
     })
     .join('');
 

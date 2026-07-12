@@ -30,6 +30,7 @@ import { normalizeLongHexId } from '../utils/hexId';
 import { parseSectionProperties } from './sectionParser';
 
 import { parseParagraphProperties } from './paragraphParser/properties';
+import { getDirectIndentSemantics } from './paragraphParser/directIndentSemantics';
 import {
   paragraphStartsWithRenderedPageBreak,
   parseParagraphContents,
@@ -205,38 +206,60 @@ export function parseParagraph(
         if (!paragraph.formatting) {
           paragraph.formatting = {};
         }
-        const directInd = pPr ? findChild(pPr, 'w', 'ind') : null;
-        const hasDirectLeft =
-          directInd != null &&
-          (getAttribute(directInd, 'w', 'left') !== null ||
-            getAttribute(directInd, 'w', 'start') !== null);
-        // Per ECMA-376 §17.3.1.12 (CT_Ind), `w:firstLine` and `w:hanging`
-        // are ST_TwipsMeasure values; a value of `0` is semantically
-        // identical to omitting the attribute. Treat both `firstLine="0"`
-        // and `hanging="0"` as no-op so the numbering level's indent
-        // still applies. A non-numeric value parses to NaN and falls
-        // through as an override, preserving prior behavior on
-        // malformed input.
-        const hasNonZeroDirectAttr = (name: 'firstLine' | 'hanging'): boolean => {
-          const raw = directInd ? getAttribute(directInd, 'w', name) : null;
-          if (raw === null) return false;
-          const value = parseInt(raw, 10);
-          return Number.isNaN(value) || value !== 0;
+        const sourceIndent = paragraph.formatting._indentProvenance?.source;
+        const directIndent = getDirectIndentSemantics(sourceIndent);
+        const numberingIndent: NonNullable<
+          NonNullable<
+            NonNullable<Paragraph['formatting']>['_indentProvenance']
+          >['resolvedNumbering']
+        > = {
+          sourceIdentity: {
+            styleId: paragraph.formatting.styleId,
+            numPr: {
+              numId: effectiveNumPr.numId,
+              ilvl: effectiveNumPr.ilvl,
+            },
+            numPrFromStyle: paragraph.formatting.numPrFromStyle
+              ? {
+                  numId: paragraph.formatting.numPrFromStyle.numId,
+                  ilvl: paragraph.formatting.numPrFromStyle.ilvl,
+                }
+              : undefined,
+            indentLeft: paragraph.formatting.indentLeft,
+            indentRight: paragraph.formatting.indentRight,
+            indentFirstLine: paragraph.formatting.indentFirstLine,
+            hangingIndent: paragraph.formatting.hangingIndent,
+            sourceIndent: sourceIndent
+              ? {
+                  left: sourceIndent.left,
+                  start: sourceIndent.start,
+                  right: sourceIndent.right,
+                  end: sourceIndent.end,
+                  firstLine: sourceIndent.firstLine,
+                  hanging: sourceIndent.hanging,
+                }
+              : undefined,
+          },
         };
-        const hasDirectFirstLineOrHanging =
-          directInd != null &&
-          (hasNonZeroDirectAttr('firstLine') || hasNonZeroDirectAttr('hanging'));
 
-        if (!hasDirectLeft && !chainInd.left && level.pPr.indentLeft !== undefined) {
-          paragraph.formatting.indentLeft = level.pPr.indentLeft;
+        if (!directIndent.hasLeft && !chainInd.left && level.pPr.indentLeft !== undefined) {
+          numberingIndent.indentLeft = level.pPr.indentLeft;
         }
-        if (!hasDirectFirstLineOrHanging && !chainInd.firstLine) {
+        if (!directIndent.hasFirstLine && !chainInd.firstLine) {
           if (level.pPr.indentFirstLine !== undefined) {
-            paragraph.formatting.indentFirstLine = level.pPr.indentFirstLine;
+            numberingIndent.indentFirstLine = level.pPr.indentFirstLine;
           }
           if (level.pPr.hangingIndent !== undefined) {
-            paragraph.formatting.hangingIndent = level.pPr.hangingIndent;
+            numberingIndent.hangingIndent = level.pPr.hangingIndent;
           }
+        }
+        if (
+          numberingIndent.indentLeft !== undefined ||
+          numberingIndent.indentRight !== undefined ||
+          numberingIndent.indentFirstLine !== undefined
+        ) {
+          paragraph.formatting._indentProvenance ??= {};
+          paragraph.formatting._indentProvenance.resolvedNumbering = numberingIndent;
         }
       }
     }

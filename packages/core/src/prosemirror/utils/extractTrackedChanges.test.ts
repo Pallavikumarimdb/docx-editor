@@ -1,11 +1,4 @@
-/**
- * Regression: foreign editors (MS Word Online, in particular) emit a
- * fresh `w:id` per atomic edit even when the edits share an author and
- * timestamp. The extractor must coalesce by (author, date) so a single
- * logical revision burst surfaces as ONE sidebar card, and the dropped
- * ids must be tucked into `coalescedRevisionIds` so Accept/Reject still
- * clear every site in one click.
- */
+/** Inline revisions are independently actionable by OOXML `w:id`. */
 
 import { describe, test, expect } from 'bun:test';
 import { Schema } from 'prosemirror-model';
@@ -18,7 +11,11 @@ const schema = new Schema({
     paragraph: {
       group: 'block',
       content: 'inline*',
-      attrs: { pPrIns: { default: null }, pPrDel: { default: null } },
+      attrs: {
+        pPrIns: { default: null },
+        pPrDel: { default: null },
+        _originalRunBoundaries: { default: null },
+      },
       toDOM: () => ['p', 0],
     },
     tableRow: {
@@ -57,8 +54,8 @@ function makeState(doc: ReturnType<typeof schema.node>): EditorState {
   return EditorState.create({ doc });
 }
 
-describe('extractTrackedChanges: foreign-doc coalescing by (author, date)', () => {
-  test('5 insertions with distinct w:ids but same (author, date) collapse to ONE card', () => {
+describe('extractTrackedChanges: inline revision identity', () => {
+  test('non-adjacent insertions with distinct w:ids and one timestamp stay independent', () => {
     const ins = (id: number, text: string) =>
       schema.text(text, [
         schema.marks.insertion.create({ revisionId: id, author: AUTHOR, date: DATE }),
@@ -69,32 +66,117 @@ describe('extractTrackedChanges: foreign-doc coalescing by (author, date)', () =
       schema.nodes.paragraph.create({}, [ins(1323221525, 'dsfsd')]),
       schema.nodes.paragraph.create({}, [ins(737865714, 'fds')]),
       schema.nodes.paragraph.create({}, [ins(186027604, 'fsd')]),
+      schema.nodes.paragraph.create({}, [ins(902100301, 'last')]),
     ]);
     const { entries } = extractTrackedChanges(makeState(doc));
-    expect(entries).toHaveLength(1);
-    const e = entries[0]!;
-    expect(e.type).toBe('insertion');
-    expect(e.author).toBe(AUTHOR);
-    expect(e.date).toBe(DATE);
-    // Coalesced ids cover the 4 absorbed entries (the primary lives on `revisionId`).
-    expect(new Set([e.revisionId, ...(e.coalescedRevisionIds ?? [])])).toEqual(
-      new Set([1388975360, 47262383, 1323221525, 737865714, 186027604])
-    );
+    expect(entries).toHaveLength(6);
+    expect(entries.map((entry) => entry.revisionId)).toEqual([
+      1388975360, 47262383, 1323221525, 737865714, 186027604, 902100301,
+    ]);
+    expect(entries.every((entry) => entry.coalescedRevisionIds == null)).toBe(true);
   });
 
-  test('paragraph-mark insertions with distinct ids but same (author, date) hide behind one inline card', () => {
+  test('paragraph-mark insertions sharing each inline id hide behind their inline cards', () => {
     const ins = (id: number, text: string) =>
       schema.text(text, [
         schema.marks.insertion.create({ revisionId: id, author: AUTHOR, date: DATE }),
       ]);
     const pPrIns = (id: number) => ({ revisionId: id, author: AUTHOR, date: DATE });
     const doc = schema.nodes.doc.create({}, [
-      schema.nodes.paragraph.create({ pPrIns: pPrIns(1694997150) }, [ins(1388975360, 'fdsfsd')]),
-      schema.nodes.paragraph.create({ pPrIns: pPrIns(1254058768) }, [ins(47262383, 'fdsfsdf')]),
+      schema.nodes.paragraph.create({ pPrIns: pPrIns(1388975360) }, [ins(1388975360, 'fdsfsd')]),
+      schema.nodes.paragraph.create({ pPrIns: pPrIns(47262383) }, [ins(47262383, 'fdsfsdf')]),
+    ]);
+    const { entries } = extractTrackedChanges(makeState(doc));
+    expect(entries).toHaveLength(2);
+    expect(entries.every((entry) => entry.type === 'insertion')).toBe(true);
+  });
+
+  test('adjacent deletion and insertion with distinct ids stay separate', () => {
+    const deletion = schema.text('old', [
+      schema.marks.deletion.create({ revisionId: 11, author: AUTHOR, date: DATE }),
+    ]);
+    const insertion = schema.text('new', [
+      schema.marks.insertion.create({ revisionId: 12, author: AUTHOR, date: DATE }),
+    ]);
+    const doc = schema.nodes.doc.create({}, [
+      schema.nodes.paragraph.create({}, [deletion, insertion]),
+    ]);
+    const { entries } = extractTrackedChanges(makeState(doc));
+    expect(entries.map((entry) => entry.type)).toEqual(['deletion', 'insertion']);
+    expect(entries.map((entry) => entry.revisionId)).toEqual([11, 12]);
+  });
+
+  test('adjacent deletion and insertion with the same id form a replacement', () => {
+    const deletion = schema.text('old', [
+      schema.marks.deletion.create({ revisionId: 20, author: AUTHOR, date: DATE }),
+    ]);
+    const insertion = schema.text('new', [
+      schema.marks.insertion.create({ revisionId: 20, author: AUTHOR, date: DATE }),
+    ]);
+    const doc = schema.nodes.doc.create({}, [
+      schema.nodes.paragraph.create({}, [deletion, insertion]),
     ]);
     const { entries } = extractTrackedChanges(makeState(doc));
     expect(entries).toHaveLength(1);
-    expect(entries[0]!.type).toBe('insertion');
+    expect(entries[0]).toMatchObject({
+      type: 'replacement',
+      revisionId: 20,
+      deletedText: 'old',
+      text: 'new',
+    });
+  });
+
+  test('extracts one exact run-property entry per source boundary change', () => {
+    const doc = schema.nodes.doc.create({}, [
+      schema.nodes.paragraph.create(
+        {
+          _originalRunBoundaries: [
+            {
+              text: 'first',
+              propertyChanges: [
+                {
+                  type: 'runPropertyChange',
+                  info: { id: 31, author: 'A', date: DATE },
+                  previousFormatting: { bold: false },
+                },
+              ],
+            },
+            {
+              text: ' second',
+              propertyChanges: [
+                {
+                  type: 'runPropertyChange',
+                  info: { id: 32, author: 'B', date: DATE },
+                  previousFormatting: { italic: false },
+                },
+              ],
+            },
+          ],
+        },
+        [schema.text('first second')]
+      ),
+    ]);
+    const { entries } = extractTrackedChanges(makeState(doc));
+    expect(entries).toEqual([
+      {
+        type: 'runPropertiesChanged',
+        text: 'first',
+        author: 'A',
+        date: DATE,
+        from: 1,
+        to: 6,
+        revisionId: 31,
+      },
+      {
+        type: 'runPropertiesChanged',
+        text: ' second',
+        author: 'B',
+        date: DATE,
+        from: 6,
+        to: 13,
+        revisionId: 32,
+      },
+    ]);
   });
 
   test('whole-table insert: rows with distinct trIns ids but same (author, date) surface "Inserted table"', () => {

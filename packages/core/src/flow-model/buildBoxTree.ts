@@ -1,12 +1,7 @@
 /**
- * ProseMirror to ContentNode Converter
- *
- * Converts a ProseMirror document into ContentNode[] for the layout engine.
- * Tracks docFrom/docTo positions for click-to-position mapping.
- *
- * The deep import `@eigenpal/.../flow-model/buildBoxTree` is part of the
- * public surface (Vue adapter + tests), so the per-domain helpers under
- * ./buildBoxTree/ are re-exported from here to keep that path stable.
+ * ProseMirror → ContentNode[] for pagination. Tracks docFrom/docTo.
+ * Per-domain helpers under ./buildBoxTree/ are re-exported for the public
+ * `@eigenpal/.../flow-model/buildBoxTree` deep import.
  * @packageDocumentation
  * @public
  */
@@ -41,6 +36,11 @@ import type { BuildBoxTreeOptions } from './buildBoxTree/shared';
 import { paragraphToRuns } from './buildBoxTree/runs';
 import { convertBorderSpecToLayout, readBorderAttrs } from './buildBoxTree/borders';
 import { computeListMarker } from './buildBoxTree/listMarkers';
+import {
+  hasAuthoredNonRevisionVisualContent,
+  isStructuralPageBreakParagraph,
+  suppressDeletedListMarkerRun,
+} from './buildBoxTree/revisionLayout';
 
 export type { BuildBoxTreeOptions } from './buildBoxTree/shared';
 export { resetBoxIds } from './buildBoxTree/shared';
@@ -225,9 +225,8 @@ function convertParagraphAttrs(
   if (pmAttrs.keepLines) {
     attrs.keepLines = true;
   }
-  if (pmAttrs.widowControl != null) {
-    attrs.widowControl = pmAttrs.widowControl;
-  }
+  // OOXML defaults widowControl to enabled when omitted.
+  attrs.widowControl = pmAttrs.widowControl !== false;
   if (pmAttrs.contextualSpacing) {
     attrs.contextualSpacing = true;
   }
@@ -351,7 +350,6 @@ function convertParagraph(
   config: BuildBoxTreeOptions
 ): ParagraphBlock {
   const pmAttrs = node.attrs as PMParagraphAttrs;
-  const runs = paragraphToRuns(node, startPos, config);
   const attrs = convertParagraphAttrs(
     pmAttrs,
     config.theme,
@@ -359,6 +357,7 @@ function convertParagraph(
     config.listSeenNumIds,
     config.defaultTabMarkTwips
   );
+  const runs = suppressDeletedListMarkerRun(paragraphToRuns(node, startPos, config), attrs);
 
   return {
     kind: 'paragraph',
@@ -371,17 +370,14 @@ function convertParagraph(
   };
 }
 
-function isStructuralPageBreakParagraph(node: PMNode): boolean {
-  const pmAttrs = node.attrs as PMParagraphAttrs;
-  return pmAttrs.pageBreakBefore === true && node.childCount === 0;
-}
-
 function hasAuthoredVisualContent(block: ContentNode): boolean {
   if (block.kind !== 'paragraph') return false;
   const attrs = block.attrs;
   if (!attrs) return false;
-  if (attrs.borders?.top || attrs.borders?.bottom) return true;
+  if (attrs.shading) return true;
+  if (attrs.borders && Object.values(attrs.borders).some(Boolean)) return true;
   if (attrs.spacingOverrides?.before || attrs.spacingOverrides?.after) return true;
+  if (attrs.pPrIns || attrs.pPrDel) return true;
   return false;
 }
 
@@ -839,13 +835,30 @@ export function buildBoxTree(doc: PMNode, config: BuildBoxTreeOptions = {}): Con
             nodes.push(pb);
             break;
           }
-          const contentNode = convertParagraph(node, pos, normalizedConfig);
           const pmAttrs = node.attrs as PMParagraphAttrs;
+          const secProps = pmAttrs._sectionProperties as SectionProperties | undefined;
+          const isEmptyContinuousSectionCarrier =
+            node.childCount === 0 &&
+            (pmAttrs.sectionBreakType === 'continuous' || secProps?.sectionStart === 'continuous');
+          const isRevisionOnlyEmptyParagraph =
+            node.childCount === 0 && (pmAttrs.pPrDel != null || pmAttrs.pPrIns != null);
+          const convertedBlock = convertParagraph(node, pos, normalizedConfig);
+          const contentNode: ParagraphBlock =
+            (isRevisionOnlyEmptyParagraph &&
+              !hasAuthoredNonRevisionVisualContent(convertedBlock)) ||
+            (isEmptyContinuousSectionCarrier && !hasAuthoredVisualContent(convertedBlock))
+              ? {
+                  ...convertedBlock,
+                  attrs: {
+                    ...(convertedBlock.attrs ?? {}),
+                    suppressEmptyParagraphHeight: true,
+                  },
+                }
+              : convertedBlock;
 
           nodes.push(contentNode);
 
           // Emit section break block if this paragraph ends a section
-          const secProps = pmAttrs._sectionProperties as SectionProperties | undefined;
           if (secProps || pmAttrs.sectionBreakType) {
             const sectionBreak: SectionMarkerBlock = {
               kind: 'sectionBreak',

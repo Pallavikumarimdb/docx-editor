@@ -67,11 +67,9 @@ export function applySuggestionInsert(
   if (from !== to) {
     const deletionType = view.state.schema.marks.deletion;
     if (deletionType) {
-      // Replace op: pass the insertion's date down so the deletion shares
-      // the (author, date) triple — that's what extractTrackedChanges
-      // uses to detect adjacent del+ins and fold them into one
-      // 'replacement' card. The `w:id` stays distinct so we don't trip
-      // the OOXML move-pair serializer (fromProseDoc/paragraph.ts:340).
+      // Replace op: both halves share one revision id, making the logical
+      // identity explicit. The serializer uses `isMovePair`, not id equality,
+      // to distinguish true OOXML moves from replacements.
       markRangeAsDeleted(
         tr,
         view.state.doc,
@@ -80,7 +78,7 @@ export function applySuggestionInsert(
         insertionType,
         deletionType,
         pluginState,
-        insertAttrs.date
+        insertAttrs
       );
     }
   }

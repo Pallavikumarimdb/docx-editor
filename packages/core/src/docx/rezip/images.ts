@@ -81,6 +81,8 @@ function collectNewImages(blocks: BlockContent[]): Image[] {
       case 'deletion':
       case 'moveFrom':
       case 'moveTo':
+        for (const sub of item.content) collectFromInline(sub);
+        break;
       case 'simpleField':
         for (const sub of item.content) collectFromRunOrHyperlink(sub);
         break;

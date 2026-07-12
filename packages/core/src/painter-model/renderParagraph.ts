@@ -28,6 +28,7 @@ import {
   getListMarkerInlineWidth,
   resolveListMarkerFont,
 } from '../flow-model/metrics/listMarkerWidth';
+import { resolveParagraphFirstLineGeometry } from '../flow-model/metrics/paragraphFirstLineGeometry';
 
 export { PARAGRAPH_CLASS_NAMES } from './renderParagraph/shared';
 export { runsWithinLine, paintLine } from './renderParagraph/line';
@@ -346,6 +347,12 @@ export function paintParagraphFragment(
   // Calculate available width for justify
   // Subtract indentation since those are applied as CSS margins on the fragment
   const availableWidth = fragment.width - indentLeft - indentRight;
+  const markerInlineWidth = getListMarkerInlineWidth(block);
+  const firstLineGeometry = resolveParagraphFirstLineGeometry(
+    fragment.width,
+    indent,
+    markerInlineWidth
+  );
 
   // Check if paragraph ends with line break (for justify last line handling)
   const lastRun = block.runs[block.runs.length - 1];
@@ -378,16 +385,10 @@ export function paintParagraphFragment(
     const lineLeftOffset = line.leftOffset ?? 0;
     const lineRightOffset = line.rightOffset ?? 0;
 
-    // The justify box width (and float constraint) is the full content width on
-    // every line, including the first. The first line's hanging/firstLine shift
-    // is realized purely by `text-indent` below: text-indent moves the line's
-    // START, but justify still stretches to the content box's right edge. If we
-    // also narrowed the box by `firstLine` (or widened it by `hanging`) the
-    // double-count would leave the first line's right edge short of (or past)
-    // the margin while body lines reached it. Measurement already accounts for
-    // the indent when deciding how much text fits on the first line; that is a
-    // separate concern from the stretch target used here.
-    const lineAvailableWidth = availableWidth;
+    // Marker-bearing first lines use the helper's inline width; content-box
+    // sizing keeps marker/right padding from reducing that measured width.
+    // Other first-line offsets use text-indent inside the regular body box.
+    const lineAvailableWidth = isFirstLine ? firstLineGeometry.painterLineWidth : availableWidth;
 
     if (canRenderSplitLineAroundFloatingObject(line, block)) {
       const splitLineEl = doc.createElement('div');
@@ -540,16 +541,18 @@ export function paintParagraphFragment(
     // the first inline-block's box, overriding the marker's min-width and
     // breaking tab-stop alignment).
     if (isFirstLine && block.attrs?.listMarker && !block.attrs?.listMarkerHidden) {
-      const hanging = indent?.hanging ?? 0;
-      const firstLine = indent?.firstLine ?? 0;
-      const markerStart = hanging > 0 ? indentLeft - hanging : indentLeft + firstLine;
+      const markerStart = firstLineGeometry.markerStart;
+      // `availableWidth` is the inner inline width shared with measurement.
+      // Override the global border-box rule so marker/right padding sit outside
+      // that width instead of silently reducing the text area.
+      lineEl.style.boxSizing = 'content-box';
       lineEl.style.paddingLeft = `${Math.max(0, markerStart)}px`;
       lineEl.style.textIndent = '0';
 
       const { fontFamily, fontSize } = resolveListMarkerFont(block);
       const marker = renderListMarker(
         block.attrs.listMarker,
-        getListMarkerInlineWidth(block),
+        markerInlineWidth,
         doc,
         fontFamily,
         fontSize,

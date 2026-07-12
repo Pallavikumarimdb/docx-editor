@@ -25,6 +25,7 @@ import type {
   Size,
 } from './types';
 import { collapsedGap } from './blockSpacingRules';
+import { getMinimumParagraphFragmentLineCount } from './paragraphPagination';
 
 /**
  * Sub-pixel slack when asking "does this fit". Measured heights come from
@@ -73,6 +74,8 @@ export interface PageDraft {
    * region comes out balanced. See `columnBalancing.ts`.
    */
   columnBalanceBottom?: number;
+  /** Block indexes that must open a new column under the current balance plan. */
+  columnBalanceBreakBefore?: Set<number>;
   /**
    * Where this page's column region begins. Defaults to the top margin; a
    * `continuous` section break that opens columns mid-page moves it down to the
@@ -319,8 +322,8 @@ export function keepNextChainHeight(ctx: FlowContext, cursor: LayoutCursor, inde
     need += collapsedGap(prev, node);
 
     if (!hasKeepNext(node)) {
-      // The chain ends here: we only need its first unit on this page.
-      need += leadingUnitHeight(metrics);
+      // The chain ends here: budget the minimum legal first fragment.
+      need += leadingAnchorHeight(node, metrics);
       return need;
     }
 
@@ -377,6 +380,26 @@ function leadingUnitHeight(metrics: LayoutMetrics | undefined): number {
     default:
       return 0;
   }
+}
+function leadingAnchorHeight(node: ContentNode, metrics: LayoutMetrics | undefined): number {
+  if (!metrics) return 0;
+  if (node.kind === 'paragraph' && metrics.kind === 'paragraph') {
+    const lineCount = metrics.lines.length;
+    if (lineCount === 0) return 0;
+    const allHeight = metrics.lines.reduce(
+      (h, line) => h + line.lineHeight + (line.floatSkipBefore ?? 0),
+      0
+    );
+    if (node.attrs?.keepLines) return allHeight;
+    const minLines = getMinimumParagraphFragmentLineCount(node, lineCount);
+    let height = 0;
+    for (let i = 0; i < Math.min(minLines, metrics.lines.length); i++) {
+      const line = metrics.lines[i];
+      height += line.lineHeight + (line.floatSkipBefore ?? 0);
+    }
+    return height;
+  }
+  return leadingUnitHeight(metrics);
 }
 
 /**

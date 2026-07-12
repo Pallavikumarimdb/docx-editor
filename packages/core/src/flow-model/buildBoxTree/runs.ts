@@ -389,7 +389,7 @@ export function paragraphToRuns(
         inlineSdtWidget,
       };
       runs.push(run);
-    } else if (child.type.name === 'hardBreak') {
+    } else if (child.type.name === 'hardBreak' && child.attrs.breakType !== 'page') {
       runs.push({
         kind: 'lineBreak',
         docFrom: childPos,
@@ -423,6 +423,12 @@ export function paragraphToRuns(
       runs.push(run);
     } else if (child.type.name === 'image') {
       const attrs = child.attrs;
+      if (typeof attrs.src !== 'string' || attrs.src.length === 0) {
+        // Keep unresolved relationship metadata in PM for round-trip, but do
+        // not create a measurable/paintable image without bytes. This is
+        // especially important for inert External ooxWord:// VML targets.
+        return;
+      }
       const constrained = constrainImageToPage(
         (attrs.width as number) || 100,
         (attrs.height as number) || 100,

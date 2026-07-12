@@ -1,9 +1,8 @@
 /**
  * Walk the PM doc once and derive (a) the tracked-change list and (b) a
- * comment→revision overlap map for threading. Adjacent entries from the
- * same revision are merged; deletion+insertion pairs from the same
- * author/date become a single `replacement` entry (matches Word's UX
- * for replace ops).
+ * comment→revision overlap map for threading. Inline entries carrying the
+ * same revision id are merged; adjacent deletion+insertion pairs become a
+ * single `replacement` only when they share that logical identity.
  *
  * Pure function — no React, no Vue, no side effects. Single O(N) walk
  * over text nodes. Consumers building custom sidebars should prefer the
@@ -43,9 +42,9 @@ const EMPTY_RESULT: TrackedChangesResult = {
 /**
  * Walk the PM doc and extract every tracked change as a flat list of
  * `TrackedChangeEntry` plus a comment→revision overlap map. Adjacent
- * inline marks coalesce by `(type, revisionId, author, date)`; a
- * deletion immediately followed by an insertion (same author + same
- * date) collapses into a single `replacement` entry; paragraph-mark
+ * inline marks coalesce by `(type, revisionId)`; a deletion immediately
+ * followed by an insertion with the same revision id collapses into a
+ * single `replacement` entry; paragraph-mark
  * cards (`paragraphMarkInsertion` / `paragraphMarkDeletion`) are
  * hidden when an inline entry already covers their revision triple
  * (one Accept clears every site of one conceptual change).
@@ -70,7 +69,6 @@ export function extractTrackedChanges(state: EditorState | null): TrackedChanges
   const insertionType = schema.marks.insertion;
   const deletionType = schema.marks.deletion;
   const commentType = schema.marks.comment;
-  if (!insertionType && !deletionType) return EMPTY_RESULT;
 
   const raw: TrackedChangeEntry[] = [];
   const commentToRevision = new Map<number, number>();
@@ -128,6 +126,39 @@ export function extractTrackedChanges(state: EditorState | null): TrackedChanges
             to: pos + node.nodeSize,
             revisionId: entry.info.id,
           });
+        }
+      }
+      // Run-property changes are retained on source-run boundaries because PM
+      // normalizes adjacent text nodes. Each boundary's text length maps
+      // directly to paragraph-content PM positions (the side channel is only
+      // retained for text-only runs), so every w:rPrChange gets an exact range.
+      const boundaries = node.attrs._originalRunBoundaries as Array<{
+        text: string;
+        propertyChanges?: Array<{
+          info: { id: number; author: string; date?: string };
+        }>;
+      }> | null;
+      if (Array.isArray(boundaries)) {
+        let offset = 0;
+        for (const boundary of boundaries) {
+          const from = pos + 1 + offset;
+          const text = typeof boundary.text === 'string' ? boundary.text : '';
+          const to = from + text.length;
+          if (Array.isArray(boundary.propertyChanges)) {
+            for (const change of boundary.propertyChanges) {
+              if (!change?.info || typeof change.info.id !== 'number') continue;
+              raw.push({
+                type: 'runPropertiesChanged',
+                text,
+                author: change.info.author || '',
+                date: change.info.date,
+                from,
+                to,
+                revisionId: change.info.id,
+              });
+            }
+          }
+          offset += text.length;
         }
       }
       // Descend into paragraph content; do not return here.
@@ -454,12 +485,10 @@ export function extractTrackedChanges(state: EditorState | null): TrackedChanges
     }
   }
 
-  // Merge inline insertion/deletion entries that share a logical revision
-  // burst (same type, author, date) into a single sidebar card. The
-  // suggesting-mode plugin coalesces a continuous editing run under one
-  // revisionId — including runs split across paragraph boundaries — but
-  // foreign editors mint a fresh id per atomic edit, so dropping the
-  // revisionId from the key keeps both cases consistent.
+  // Merge inline insertion/deletion entries only when they carry the same
+  // revision identity. Word can assign the same author/timestamp to several
+  // independent edits, and each distinct w:id must remain separately
+  // actionable even when the segments are adjacent or non-adjacent.
   const inlineGroups = new Map<string, TrackedChangeEntry>();
   const merged: TrackedChangeEntry[] = [];
   for (const entry of ordered) {
@@ -468,7 +497,7 @@ export function extractTrackedChanges(state: EditorState | null): TrackedChanges
       merged.push({ ...entry });
       continue;
     }
-    const key = `${entry.type}|${entry.author}|${entry.date ?? ''}`;
+    const key = `${entry.type}|${entry.revisionId}`;
     const group = inlineGroups.get(key);
     if (group) {
       // Cross-paragraph runs get a space separator; literally adjacent runs
@@ -476,13 +505,6 @@ export function extractTrackedChanges(state: EditorState | null): TrackedChanges
       const sep = group.to === entry.from ? '' : ' ';
       group.text += sep + entry.text;
       group.to = entry.to;
-      if (entry.revisionId !== group.revisionId) {
-        const ids = new Set<number>(group.coalescedRevisionIds ?? []);
-        for (const id of entry.coalescedRevisionIds ?? []) ids.add(id);
-        ids.add(entry.revisionId);
-        ids.delete(group.revisionId);
-        group.coalescedRevisionIds = ids.size > 0 ? [...ids] : undefined;
-      }
     } else {
       const copy = { ...entry };
       inlineGroups.set(key, copy);
@@ -490,9 +512,9 @@ export function extractTrackedChanges(state: EditorState | null): TrackedChanges
     }
   }
 
-  // Detect replacement pairs: adjacent deletion + insertion from the
-  // same author/date. Word assigns different w:id values but same
-  // author+date for a single replace.
+  // Detect replacement pairs only when both adjacent halves share one
+  // revision identity. Author/date adjacency alone is ambiguous in foreign
+  // documents and must not merge independently actionable w:id values.
   const final: TrackedChangeEntry[] = [];
   for (let i = 0; i < merged.length; i++) {
     const curr = merged[i]!;
@@ -501,8 +523,7 @@ export function extractTrackedChanges(state: EditorState | null): TrackedChanges
       curr.type === 'deletion' &&
       next &&
       next.type === 'insertion' &&
-      curr.author === next.author &&
-      curr.date === next.date &&
+      curr.revisionId === next.revisionId &&
       curr.to === next.from
     ) {
       final.push({
@@ -514,7 +535,7 @@ export function extractTrackedChanges(state: EditorState | null): TrackedChanges
         from: curr.from,
         to: next.to,
         revisionId: curr.revisionId,
-        insertionRevisionId: next.revisionId,
+        insertionRevisionId: next.revisionId === curr.revisionId ? undefined : next.revisionId,
       });
       i++;
     } else {
@@ -523,7 +544,7 @@ export function extractTrackedChanges(state: EditorState | null): TrackedChanges
   }
 
   // Final pass: if a paragraph-mark entry (pPrIns / pPrDel) shares its
-  // (author, date) with an inline entry (insertion / deletion / replacement),
+  // revision id with an inline entry (insertion / deletion / replacement),
   // the inline entry already represents the whole conceptual edit — hide
   // the structural sibling so the sidebar shows ONE card per change.
   // Migrate the hidden entry's `coalescedRevisionIds` (and primary id) to
@@ -531,13 +552,13 @@ export function extractTrackedChanges(state: EditorState | null): TrackedChanges
   const inlineByKey = new Map<string, TrackedChangeEntry>();
   for (const e of final) {
     if (e.type === 'insertion' || e.type === 'deletion' || e.type === 'replacement') {
-      const k = `${e.author}|${e.date ?? ''}`;
+      const k = String(e.revisionId);
       if (!inlineByKey.has(k)) inlineByKey.set(k, e);
     }
   }
   for (const e of final) {
     if (e.type !== 'paragraphMarkInsertion' && e.type !== 'paragraphMarkDeletion') continue;
-    const survivor = inlineByKey.get(`${e.author}|${e.date ?? ''}`);
+    const survivor = inlineByKey.get(String(e.revisionId));
     if (!survivor) continue;
     const ids = new Set<number>(survivor.coalescedRevisionIds ?? []);
     for (const id of e.coalescedRevisionIds ?? []) ids.add(id);
@@ -626,7 +647,7 @@ export function extractTrackedChanges(state: EditorState | null): TrackedChanges
       return emptyTableEntries.has(e);
     }
     if (e.type === 'paragraphMarkInsertion' || e.type === 'paragraphMarkDeletion') {
-      return !inlineByKey.has(key) && !tableByKey.has(key);
+      return !inlineByKey.has(String(e.revisionId)) && !tableByKey.has(key);
     }
     if (e.type === 'paragraphPropertiesChanged') {
       return !foldedPropChanges.has(e);

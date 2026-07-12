@@ -280,6 +280,63 @@ export interface ParagraphFormatting {
   indentFirstLine?: number;
   /** Whether first line is hanging indent */
   hangingIndent?: boolean;
+  /**
+   * Clone-safe parser/PM provenance for indentation. The OOXML serializer
+   * deliberately ignores this envelope, and fromProseDoc strips it from its
+   * returned public Document.
+   * @internal
+   */
+  _indentProvenance?: {
+    source?: {
+      left?: string;
+      start?: string;
+      right?: string;
+      end?: string;
+      firstLine?: string;
+      hanging?: string;
+    };
+    sourceValues?: {
+      indentLeft?: number;
+      indentRight?: number;
+      indentFirstLine?: number;
+      hangingIndent?: boolean;
+    };
+    resolvedNumbering?: {
+      sourceIdentity: {
+        styleId?: string;
+        numPr?: {
+          numId?: number;
+          ilvl?: number;
+        };
+        numPrFromStyle?: {
+          numId?: number;
+          ilvl?: number;
+        };
+        indentLeft?: number;
+        indentRight?: number;
+        indentFirstLine?: number;
+        hangingIndent?: boolean;
+        sourceIndent?: {
+          left?: string;
+          start?: string;
+          right?: string;
+          end?: string;
+          firstLine?: string;
+          hanging?: string;
+        };
+      };
+      indentLeft?: number;
+      indentRight?: number;
+      indentFirstLine?: number;
+      hangingIndent?: boolean;
+    };
+    baseline?: {
+      indentLeft?: number;
+      indentRight?: number;
+      indentFirstLine?: number;
+      hangingIndent?: boolean;
+    };
+  };
 
   // Borders
   /** Paragraph borders (w:pBdr) */

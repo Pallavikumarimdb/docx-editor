@@ -23,7 +23,7 @@ export type { SectionPlan } from './sectionPlan';
 export { spaceBefore, spaceAfter, collapsedGap } from './blockSpacingRules';
 
 // Column balancing (best-effort — see the module note).
-export { balancedColumnBottom } from './columnBalancing';
+export { balancedColumnBottom, planContinuousSectionBalance } from './columnBalancing';
 export type { BalancingRegion } from './columnBalancing';
 
 // Table row-break geometry: where a row may be cut without slicing a glyph.
@@ -49,3 +49,24 @@ export type { InlineSdtWidget } from './inlineSdtWidgets';
 // Page lookup for a document position, when the painted DOM can't answer
 // (virtualized pages have no DOM yet).
 export { findPageIndexContainingPmPos } from './findPageIndexContainingPmPos';
+
+// Paragraph pagination predicates and minimum-fragment geometry.
+export {
+  getMinimumParagraphFragmentLineCount,
+  hasKeepLines,
+  hasPageBreakBefore,
+} from './paragraphPagination';
+
+// Continuous-section unit partitioner (also used by cost tests).
+export {
+  createSegmentCostIndex,
+  partitionUnits,
+  MAX_BALANCE_UNITS,
+  MAX_BALANCE_COLUMNS,
+  MAX_BALANCE_EVALUATIONS,
+} from './columnBalancing';
+export type {
+  BalanceUnit,
+  ContinuousSectionBalancePlan,
+  SegmentCostIndex,
+} from './columnBalancing';
