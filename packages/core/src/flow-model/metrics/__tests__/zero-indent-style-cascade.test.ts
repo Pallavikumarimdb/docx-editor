@@ -135,20 +135,20 @@ function lineText(block: ParagraphBlock, line: MeasuredLine): string {
   return text.trimEnd();
 }
 
-describe('composite zero direct w:ind preserves style left and clears hanging', () => {
+describe('direct zero w:ind clears paragraph-style indentation', () => {
   for (const [boundary, clone] of [
     ['structuredClone', (paragraph: Paragraph) => structuredClone(paragraph)],
     ['JSON', (paragraph: Paragraph) => JSON.parse(JSON.stringify(paragraph)) as Paragraph],
   ] as const) {
-    test(`style cascade survives ${boundary} transport`, () => {
+    test(`explicit clear survives ${boundary} transport`, () => {
       const paragraph = clone(parseBodyTextParagraph('w:left="0" w:firstLine="0"'));
       expect(toParagraphAttrs(paragraph)).toMatchObject({
-        indentLeft: 1440,
+        indentLeft: 0,
         indentFirstLine: 0,
         hangingIndent: false,
       });
       expect(toParagraphBlock(paragraph).attrs?.indent).toEqual({
-        left: 96,
+        left: 0,
         firstLine: 0,
       });
     });
@@ -166,7 +166,7 @@ describe('composite zero direct w:ind preserves style left and clears hanging', 
     expect(output.formatting?._indentProvenance?.resolvedNumbering).toBeUndefined();
   });
 
-  test('edited PM indentation replaces neutral source formatting on save', () => {
+  test('edited PM indentation replaces source formatting on save', () => {
     const input = documentWithParagraph(parseBodyTextParagraph('w:left="0" w:firstLine="0"'));
     const output = editParagraphAttrs(input, {
       indentLeft: 720,
@@ -243,22 +243,22 @@ describe('composite zero direct w:ind preserves style left and clears hanging', 
     expect(serializeParagraph(output)).toContain(expected);
   });
 
-  test('real parse → PM → flow measurement wraps before consectetur with aligned lines', () => {
+  test('real parse → PM → flow measurement uses the cleared style indent', () => {
     const paragraph = parseBodyTextParagraph('w:left="0" w:firstLine="0"');
     expect(paragraph.formatting?.indentLeft).toBe(0);
     expect(paragraph.formatting?.indentFirstLine).toBe(0);
     expect(toParagraphAttrs(paragraph)).toMatchObject({
-      indentLeft: 1440,
+      indentLeft: 0,
       indentFirstLine: 0,
       hangingIndent: false,
     });
 
     const block = toParagraphBlock(paragraph);
-    expect(block.attrs?.indent).toEqual({ left: 96, firstLine: 0 });
+    expect(block.attrs?.indent).toEqual({ left: 0, firstLine: 0 });
 
     const throughAmet = measureTextWidth('Lorem ipsum dolor sit Amet,', STYLE);
     const throughConsectetur = measureTextWidth('Lorem ipsum dolor sit Amet, consectetur', STYLE);
-    const containerWidth = (throughAmet + throughConsectetur) / 2 + 96;
+    const containerWidth = (throughAmet + throughConsectetur) / 2;
     const measured = paragraphLayout(block, containerWidth);
     expect(lineText(block, measured.lines[0])).toBe('Lorem ipsum dolor sit Amet,');
     expect(lineText(block, measured.lines[1]).startsWith('consectetur')).toBe(true);
@@ -277,7 +277,7 @@ describe('composite zero direct w:ind preserves style left and clears hanging', 
     const painted = paintParagraphFragment(fragment, block, measured, context);
     const lines = [...painted.querySelectorAll<HTMLElement>(':scope > .layout-line')];
     expect(lines.length).toBeGreaterThan(1);
-    expect(lines.every((line) => line.style.paddingLeft === '96px')).toBe(true);
+    expect(lines.every((line) => parseFloat(line.style.paddingLeft || '0') === 0)).toBe(true);
     expect(lines.every((line) => parseFloat(getComputedStyle(line).textIndent || '0') === 0)).toBe(
       true
     );
@@ -310,7 +310,7 @@ describe('composite zero direct w:ind preserves style left and clears hanging', 
     });
     const lines = [...painted.querySelectorAll<HTMLElement>(':scope > .layout-line')];
     expect(lines).toHaveLength(6);
-    expect(lines.every((line) => line.style.paddingLeft === '96px')).toBe(true);
+    expect(lines.every((line) => parseFloat(line.style.paddingLeft || '0') === 0)).toBe(true);
     expect(lines.every((line) => parseFloat(getComputedStyle(line).textIndent || '0') === 0)).toBe(
       true
     );
@@ -332,19 +332,19 @@ describe('composite zero direct w:ind preserves style left and clears hanging', 
     expect(block.attrs?.indent).toEqual({ left: 48, firstLine: 16 });
   });
 
-  test('start alias participates in composite zero semantics', () => {
+  test('start alias zero clears style left indentation', () => {
     const block = toParagraphBlock(parseBodyTextParagraph('w:start="+000" w:firstLine="-000"'));
-    expect(block.attrs?.indent?.left).toBe(96);
+    expect(block.attrs?.indent?.left).toBe(0);
     expect(Math.abs(block.attrs?.indent?.firstLine ?? Number.NaN)).toBe(0);
     expect(block.attrs?.indent?.hanging).toBeUndefined();
   });
 
-  test('end alias zero inherits style right in a composite zero group', () => {
+  test('end alias zero clears style right indentation', () => {
     const attrs = toParagraphAttrs(
       parseBodyTextParagraph('w:end="0" w:firstLine="0"', undefined, 'RightText')
     );
     expect(attrs).toMatchObject({
-      indentRight: 360,
+      indentRight: 0,
       indentFirstLine: 0,
       hangingIndent: false,
     });

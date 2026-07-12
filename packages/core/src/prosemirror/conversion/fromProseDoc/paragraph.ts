@@ -775,6 +775,8 @@ function extractParagraphContent(paragraph: PMNode): ParagraphContent[] {
           (m) => m.type.name !== 'insertion' && m.type.name !== 'deletion'
         );
         run = createSymbolRun(node, otherMarks);
+      } else if (node.type.name === 'hardBreak') {
+        run = createBreakRun(node);
       } else {
         // Filter out the tracked change mark for text formatting extraction
         const otherMarks = node.marks.filter(
