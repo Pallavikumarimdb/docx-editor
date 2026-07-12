@@ -98,6 +98,7 @@ export type {
   MathEquation,
   TrackedChangeInfo,
   TrackedRunChange,
+  TrackedChangeContent,
   PropertyChangeInfo,
   Insertion,
   Deletion,

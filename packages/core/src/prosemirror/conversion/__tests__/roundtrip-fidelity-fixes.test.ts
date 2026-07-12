@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import JSZip from 'jszip';
 import { EditorState } from 'prosemirror-state';
-import { toFlowBlocks } from '../../../layout-bridge/toFlowBlocks';
+import JSZip from 'jszip';
+import { buildBoxTree } from '../../../flow-model/buildBoxTree';
 import { parseDocumentBody } from '../../../docx/documentParser';
 import { serializeDocumentBody } from '../../../docx/serializer/documentSerializer';
 import { serializeParagraph } from '../../../docx/serializer/paragraphSerializer';
@@ -69,7 +69,7 @@ describe('DOCX round-trip fidelity fixes', () => {
       const pm = toProseDoc(docOf(input));
       expect(pm.child(0).attrs.widowControl).toBe(value ?? null);
 
-      const flow = toFlowBlocks(pm)[0];
+      const flow = buildBoxTree(pm)[0];
       expect(flow.kind).toBe('paragraph');
       if (flow.kind !== 'paragraph') throw new Error('expected paragraph');
       expect(flow.attrs?.widowControl).toBe(value !== false);
@@ -501,6 +501,22 @@ describe('DOCX round-trip fidelity fixes', () => {
       const breakXml = serializeParagraph(roundTripped.package.document.content[1] as Paragraph);
       expect(breakXml).toContain('<w:br w:type="page"/>');
       expect(breakXml).not.toContain('<w:pageBreakBefore/>');
+    });
+
+    test('deleted hard page breaks round-trip without entering effective layout', () => {
+      const body = parseDocumentBody(`<w:document ${W}><w:body>
+        <w:p><w:r><w:t>Before</w:t></w:r><w:del w:id="803" w:author="Author">
+          <w:r><w:cr/></w:r><w:r><w:br w:type="page"/></w:r>
+        </w:del></w:p>
+        <w:p><w:r><w:t>After</w:t></w:r></w:p>
+      </w:body></w:document>`);
+      const doc = docOf(...body.content);
+      const pm = toProseDoc(doc);
+
+      expect(buildBoxTree(pm).map((block) => block.kind)).toEqual(['paragraph', 'paragraph']);
+      expect(
+        serializeParagraph(fromProseDoc(pm, doc).package.document.content[0] as Paragraph)
+      ).toContain('<w:br w:type="page"/>');
     });
 
     test('paragraph with text keeps driving layout pagination via pageBreakBefore attr', () => {

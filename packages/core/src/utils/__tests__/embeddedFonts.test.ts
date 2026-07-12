@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'bun:test';
-import { getEmbeddedFontFaces } from '../embeddedFonts';
+import { getEmbeddedFontFaces, loadEmbeddedFonts } from '../embeddedFonts';
 import { deobfuscateFont } from '../fontDeobfuscation';
+import { resolveFontFamily } from '../fontResolver';
 import type { FontTable } from '../../types/styles';
 
 const GUID = '{001B70DC-AA60-4AD5-90EC-18A0948E1EAE}';
@@ -12,6 +13,31 @@ function makeRealFont(): Uint8Array {
   font.set([0x00, 0x01, 0x00, 0x00], 0); // TrueType sfnt version
   for (let i = 4; i < 40; i++) font[i] = (i * 13 + 7) & 0xff;
   return font;
+}
+
+function makeMetricFont(): ArrayBuffer {
+  const headOffset = 44;
+  const os2Offset = 64;
+  const buffer = new ArrayBuffer(os2Offset + 78);
+  const view = new DataView(buffer);
+  view.setUint32(0, 0x00010000, false);
+  view.setUint16(4, 2, false);
+
+  for (const [recordOffset, tag, tableOffset, length] of [
+    [12, 'head', headOffset, 20],
+    [28, 'OS/2', os2Offset, 78],
+  ] as const) {
+    for (let index = 0; index < tag.length; index++) {
+      view.setUint8(recordOffset + index, tag.charCodeAt(index));
+    }
+    view.setUint32(recordOffset + 8, tableOffset, false);
+    view.setUint32(recordOffset + 12, length, false);
+  }
+
+  view.setUint16(headOffset + 18, 2048, false);
+  view.setUint16(os2Offset + 74, 1946, false);
+  view.setUint16(os2Offset + 76, 512, false);
+  return buffer;
 }
 
 function obfuscate(font: Uint8Array, guid: string): ArrayBuffer {
@@ -94,5 +120,16 @@ describe('getEmbeddedFontFaces', () => {
   test('returns empty when no font table', () => {
     expect(getEmbeddedFontFaces(undefined, new Map(), RELS_XML)).toEqual([]);
     expect(getEmbeddedFontFaces({ fonts: [] }, new Map(), null)).toEqual([]);
+  });
+
+  test('registers exact OS/2 line metrics from the embedded regular face', async () => {
+    const table: FontTable = {
+      fonts: [{ name: 'Embedded Metric Sans', embedRegular: { relId: 'rId1' } }],
+    };
+    const rawFonts = new Map<string, ArrayBuffer>([['word/fonts/font1.odttf', makeMetricFont()]]);
+
+    await loadEmbeddedFonts(table, rawFonts, RELS_XML);
+
+    expect(resolveFontFamily('Embedded Metric Sans').singleLineRatio).toBeCloseTo(2458 / 2048, 8);
   });
 });

@@ -8,18 +8,18 @@ import { parseXmlDocument, type XmlElement } from '../../../docx/xmlParser';
 import { toProseDoc } from '../../../prosemirror/conversion/toProseDoc';
 import { fromProseDoc } from '../../../prosemirror/conversion/fromProseDoc';
 import { serializeParagraph } from '../../../docx/serializer/paragraphSerializer';
-import { toFlowBlocks } from '../../toFlowBlocks';
-import { measureTextWidth, resetCanvasContext } from '../measureContainer';
-import { measureParagraph } from '../measureParagraph';
-import { renderParagraphFragment } from '../../../layout-painter/renderParagraph';
+import { buildBoxTree } from '../../buildBoxTree';
+import { measureTextWidth, resetCanvasContext } from '../textMetrics';
+import { paragraphLayout } from '../paragraphLayout';
+import { paintParagraphFragment } from '../../../painter-model/renderParagraph';
 import type { Document, Paragraph, StyleDefinitions } from '../../../types/document';
 import type {
   MeasuredLine,
   ParagraphBlock,
   ParagraphFragment,
   TextRun,
-} from '../../../layout-engine/types';
-import type { RenderContext } from '../../../layout-painter/renderPage';
+} from '../../../pagination-model/types';
+import type { RenderContext } from '../../../painter-model/paintPage';
 
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
 const W14 = 'xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"';
@@ -89,7 +89,7 @@ function toParagraphBlock(paragraph: Paragraph): ParagraphBlock {
     },
   };
   const pmDoc = toProseDoc(doc, { styles: styleDefinitions });
-  return toFlowBlocks(pmDoc, {}).find((block) => block.kind === 'paragraph') as ParagraphBlock;
+  return buildBoxTree(pmDoc, {}).find((block) => block.kind === 'paragraph') as ParagraphBlock;
 }
 
 function toParagraphAttrs(paragraph: Paragraph): Record<string, unknown> {
@@ -259,13 +259,13 @@ describe('composite zero direct w:ind preserves style left and clears hanging', 
     const throughAmet = measureTextWidth('Lorem ipsum dolor sit Amet,', STYLE);
     const throughConsectetur = measureTextWidth('Lorem ipsum dolor sit Amet, consectetur', STYLE);
     const containerWidth = (throughAmet + throughConsectetur) / 2 + 96;
-    const measured = measureParagraph(block, containerWidth);
+    const measured = paragraphLayout(block, containerWidth);
     expect(lineText(block, measured.lines[0])).toBe('Lorem ipsum dolor sit Amet,');
     expect(lineText(block, measured.lines[1]).startsWith('consectetur')).toBe(true);
 
     const fragment: ParagraphFragment = {
       kind: 'paragraph',
-      blockId: block.id,
+      nodeId: block.id,
       x: 0,
       y: 0,
       width: containerWidth,
@@ -274,7 +274,7 @@ describe('composite zero direct w:ind preserves style left and clears hanging', 
       toLine: measured.lines.length,
     };
     const context: RenderContext = { pageNumber: 1, totalPages: 1, section: 'body' };
-    const painted = renderParagraphFragment(fragment, block, measured, context);
+    const painted = paintParagraphFragment(fragment, block, measured, context);
     const lines = [...painted.querySelectorAll<HTMLElement>(':scope > .layout-line')];
     expect(lines.length).toBeGreaterThan(1);
     expect(lines.every((line) => line.style.paddingLeft === '96px')).toBe(true);
@@ -291,11 +291,11 @@ describe('composite zero direct w:ind preserves style left and clears hanging', 
     const block = toParagraphBlock(paragraph);
     expect(block.runs.filter((run) => run.kind === 'lineBreak')).toHaveLength(5);
 
-    const measured = measureParagraph(block, 400);
+    const measured = paragraphLayout(block, 400);
     expect(measured.lines).toHaveLength(6);
     const fragment: ParagraphFragment = {
       kind: 'paragraph',
-      blockId: block.id,
+      nodeId: block.id,
       x: 0,
       y: 0,
       width: 400,
@@ -303,7 +303,7 @@ describe('composite zero direct w:ind preserves style left and clears hanging', 
       fromLine: 0,
       toLine: measured.lines.length,
     };
-    const painted = renderParagraphFragment(fragment, block, measured, {
+    const painted = paintParagraphFragment(fragment, block, measured, {
       pageNumber: 1,
       totalPages: 1,
       section: 'body',

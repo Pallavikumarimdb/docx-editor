@@ -37,7 +37,24 @@ function para(
 }
 
 describe('page-top paragraph spacing', () => {
-  test('suppresses inherited space-before on first paragraph of a fresh page', () => {
+  test('preserves inherited space-before on the first document paragraph', () => {
+    const first = para('first', 24);
+    const second = para('second', 24);
+    const blocks: ContentNode[] = [first.block, { kind: 'pageBreak', id: 'pb' }, second.block];
+    const measures: LayoutMetrics[] = [first.measure, { kind: 'pageBreak' }, second.measure];
+
+    const layout = layOutPages(blocks, measures, {
+      pageSize: { w: 200, h: 200 },
+      margins: { top: 50, right: 50, bottom: 50, left: 50 },
+      finalPageSize: { w: 200, h: 200 },
+      finalMargins: { top: 50, right: 50, bottom: 50, left: 50 },
+    });
+
+    expect(layout.pages[0].fragments[0].y).toBe(74);
+    expect(layout.pages[1].fragments[0].y).toBe(50);
+  });
+
+  test('preserves direct space-before after a standalone hard page break', () => {
     const first = para('first', 24);
     const second = para('second', 24, true);
     const blocks: ContentNode[] = [first.block, { kind: 'pageBreak', id: 'pb' }, second.block];
@@ -50,7 +67,6 @@ describe('page-top paragraph spacing', () => {
       finalMargins: { top: 50, right: 50, bottom: 50, left: 50 },
     });
 
-    expect(layout.pages[0].fragments[0].y).toBe(50);
     expect(layout.pages[1].fragments[0].y).toBe(74);
   });
 

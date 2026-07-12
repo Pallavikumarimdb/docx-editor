@@ -80,3 +80,8 @@ export {
   clearAllCaches,
   getTotalCacheSize,
 } from './cache';
+
+export {
+  resolveParagraphFirstLineGeometry,
+  resolveParagraphMarkerStart,
+} from './paragraphFirstLineGeometry';

@@ -47,6 +47,26 @@ interface FontMapping {
  */
 export const DEFAULT_SINGLE_LINE_RATIO = 1.15;
 
+// Exact metrics discovered from document-embedded fonts. These override the
+// static family map because a DOCX can carry a different font version under
+// the same family name.
+const documentSingleLineRatios = new Map<string, number>();
+let documentFontMetricsRevision = 0;
+
+/** @internal */
+export function registerDocumentFontSingleLineRatio(fontFamily: string, ratio: number): void {
+  const normalizedName = fontFamily.trim().toLowerCase();
+  if (!normalizedName || !Number.isFinite(ratio) || ratio <= 0) return;
+  if (documentSingleLineRatios.get(normalizedName) === ratio) return;
+  documentSingleLineRatios.set(normalizedName, ratio);
+  documentFontMetricsRevision++;
+}
+
+/** @internal */
+export function getDocumentFontMetricsRevision(): number {
+  return documentFontMetricsRevision;
+}
+
 /**
  * Mapping of common DOCX fonts to Google Fonts equivalents
  *
@@ -443,6 +463,7 @@ const CJK_FONT_ALIASES: Record<string, string> = {
 
 export function resolveFontFamily(docxFontName: string): ResolvedFont {
   const normalizedName = docxFontName.trim().toLowerCase();
+  const documentSingleLineRatio = documentSingleLineRatios.get(normalizedName);
 
   // Direct mapping, or a romanized CJK spelling aliased to its native entry.
   const mapping = FONT_MAPPINGS[CJK_FONT_ALIASES[normalizedName] ?? normalizedName];
@@ -453,7 +474,7 @@ export function resolveFontFamily(docxFontName: string): ResolvedFont {
       cssFallback: mapping.fallbackStack.map(quoteFontName).join(', '),
       originalFont: docxFontName,
       hasGoogleEquivalent: true,
-      singleLineRatio: mapping.singleLineRatio,
+      singleLineRatio: documentSingleLineRatio ?? mapping.singleLineRatio,
     };
   }
 
@@ -466,7 +487,7 @@ export function resolveFontFamily(docxFontName: string): ResolvedFont {
     cssFallback: `${quoteFontName(docxFontName)}, ${defaultFallback}`,
     originalFont: docxFontName,
     hasGoogleEquivalent: false,
-    singleLineRatio: DEFAULT_SINGLE_LINE_RATIO,
+    singleLineRatio: documentSingleLineRatio ?? DEFAULT_SINGLE_LINE_RATIO,
   };
 }
 

@@ -3,7 +3,7 @@
  * indentation, numbering, frame. Used by serializeParagraphFormatting.
  */
 
-import type { ParagraphFormatting, TabStop, ShadingProperties } from '../../../types/document';
+import type { ParagraphFormatting, TabMark, ShadingProperties } from '../../../types/document';
 import { escapeXml, intAttr } from '../xmlUtils';
 import { serializeBorder } from '../borderSerializer';
 

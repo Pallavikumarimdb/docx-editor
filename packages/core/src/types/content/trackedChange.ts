@@ -70,7 +70,7 @@ export interface Insertion {
   /** Tracked change metadata */
   info: TrackedChangeInfo;
   /** Inserted content */
-  content: (Run | Hyperlink)[];
+  content: TrackedChangeContent[];
 }
 
 /**
@@ -81,7 +81,7 @@ export interface Deletion {
   /** Tracked change metadata */
   info: TrackedChangeInfo;
   /** Deleted content */
-  content: (Run | Hyperlink)[];
+  content: TrackedChangeContent[];
 }
 
 /**
@@ -92,7 +92,7 @@ export interface MoveFrom {
   /** Tracked change metadata */
   info: TrackedChangeInfo;
   /** Moved content */
-  content: (Run | Hyperlink)[];
+  content: TrackedChangeContent[];
 }
 
 /**
@@ -103,8 +103,11 @@ export interface MoveTo {
   /** Tracked change metadata */
   info: TrackedChangeInfo;
   /** Moved content */
-  content: (Run | Hyperlink)[];
+  content: TrackedChangeContent[];
 }
+
+/** Inline content allowed inside tracked-change wrappers, including nesting. */
+export type TrackedChangeContent = Run | Hyperlink | Insertion | Deletion | MoveFrom | MoveTo;
 
 /**
  * Move-from range start marker (w:moveFromRangeStart) — ECMA-376 §17.13.5.22

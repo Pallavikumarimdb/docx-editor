@@ -319,6 +319,9 @@ function decoratedWidth(
   horizontalScale: number
 ): number {
   const glyphWidth = canvasWidth(paintedText, fontString);
+  // CSS includes one trailing letter-spacing advance per grapheme in the
+  // inline box (including after the last), so one-character spaced runs from
+  // tracked changes still contribute their full advance.
   const graphemeCount =
     letterSpacing === 0 ? 0 : Math.max(0, graphemeBoundaries(paintedText).length - 1);
   return Math.max(0, glyphWidth + graphemeCount * letterSpacing) * horizontalScale;

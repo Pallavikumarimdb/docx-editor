@@ -27,6 +27,7 @@ import type {
   Deletion,
   MoveFrom,
   MoveTo,
+  TrackedChangeContent,
   TrackedChangeInfo,
   MathEquation,
 } from '../../types/document';
@@ -255,6 +256,17 @@ function parseTrackedChangeInfo(node: XmlElement): TrackedChangeInfo {
     author: author.length > 0 ? author : 'Unknown',
     date: date.length > 0 ? date : undefined,
   };
+}
+
+function isTrackedChangeContent(content: ParagraphContent): content is TrackedChangeContent {
+  return (
+    content.type === 'run' ||
+    content.type === 'hyperlink' ||
+    content.type === 'insertion' ||
+    content.type === 'deletion' ||
+    content.type === 'moveFrom' ||
+    content.type === 'moveTo'
+  );
 }
 
 function parsePropertyChangeInfo(node: XmlElement): ParagraphPropertyChange['info'] {
@@ -636,9 +648,7 @@ export function parseParagraphContents(
         const insertion: Insertion = {
           type: 'insertion',
           info: insInfo,
-          content: insContent.filter(
-            (c): c is Run | Hyperlink => c.type === 'run' || c.type === 'hyperlink'
-          ),
+          content: insContent.filter(isTrackedChangeContent),
         };
         contents.push(insertion);
         break;
@@ -658,9 +668,7 @@ export function parseParagraphContents(
         const deletion: Deletion = {
           type: 'deletion',
           info: delInfo,
-          content: delContent.filter(
-            (c): c is Run | Hyperlink => c.type === 'run' || c.type === 'hyperlink'
-          ),
+          content: delContent.filter(isTrackedChangeContent),
         };
         contents.push(deletion);
         break;
@@ -679,9 +687,7 @@ export function parseParagraphContents(
         const moveFrom: MoveFrom = {
           type: 'moveFrom',
           info: moveFromInfo,
-          content: moveFromContent.filter(
-            (c): c is Run | Hyperlink => c.type === 'run' || c.type === 'hyperlink'
-          ),
+          content: moveFromContent.filter(isTrackedChangeContent),
         };
         contents.push(moveFrom);
         break;
@@ -693,9 +699,7 @@ export function parseParagraphContents(
         const moveTo: MoveTo = {
           type: 'moveTo',
           info: moveToInfo,
-          content: moveToContent.filter(
-            (c): c is Run | Hyperlink => c.type === 'run' || c.type === 'hyperlink'
-          ),
+          content: moveToContent.filter(isTrackedChangeContent),
         };
         contents.push(moveTo);
         break;

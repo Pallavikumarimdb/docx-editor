@@ -702,7 +702,6 @@ function paragraphAttrsToFormatting(attrs: ParagraphAttrs): ParagraphFormatting 
     pageBreakBefore: hasEffectiveSourceLeadingPageBreak(attrs)
       ? undefined
       : attrs.pageBreakBefore || undefined,
-    widowControl: attrs.widowControl ?? undefined,
     bidi: attrs.bidi || undefined,
   };
 }
@@ -787,6 +786,25 @@ function extractParagraphContent(paragraph: PMNode): ParagraphContent[] {
           content: node.isText && node.text ? textToRunContent(node.text) : [],
           ...(Object.keys(formatting).length > 0 ? { formatting } : {}),
         };
+      }
+
+      if (insertionMark && deletionMark) {
+        const insertionInfo: TrackedChangeInfo = {
+          id: insertionMark.attrs.revisionId as number,
+          author: (insertionMark.attrs.author as string) || 'Unknown',
+          date: (insertionMark.attrs.date as string) || undefined,
+        };
+        const deletionInfo: TrackedChangeInfo = {
+          id: deletionMark.attrs.revisionId as number,
+          author: (deletionMark.attrs.author as string) || 'Unknown',
+          date: (deletionMark.attrs.date as string) || undefined,
+        };
+        content.push({
+          type: 'insertion',
+          info: insertionInfo,
+          content: [{ type: 'deletion', info: deletionInfo, content: [run] }],
+        });
+        return;
       }
 
       const info: TrackedChangeInfo = {
@@ -876,7 +894,7 @@ function extractParagraphContent(paragraph: PMNode): ParagraphContent[] {
         currentRun = null;
         currentMarksKey = null;
       }
-      content.push(createBreakRun());
+      content.push(createBreakRun(node));
     } else if (node.type.name === 'symbol') {
       // Symbol ends current run
       if (currentRun) {

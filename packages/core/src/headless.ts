@@ -329,6 +329,7 @@ export type {
   CommentRangeEnd,
   TrackedChangeInfo,
   TrackedRunChange,
+  TrackedChangeContent,
   Insertion,
   Deletion,
   MoveFrom,

@@ -109,7 +109,8 @@ export function convertRun(
   run: Run,
   styleFormatting?: TextFormatting,
   styleResolver?: StyleResolver | null,
-  noteRefDisplayFormatter?: NoteRefDisplayFormatter
+  noteRefDisplayFormatter?: NoteRefDisplayFormatter,
+  preservePageBreaks = false
 ): PMNode[] {
   const nodes: PMNode[] = [];
 
@@ -130,7 +131,12 @@ export function convertRun(
   const marks = textFormattingToMarks(mergedFormatting);
 
   for (const content of run.content) {
-    const contentNodes = convertRunContent(content, marks, noteRefDisplayFormatter);
+    const contentNodes = convertRunContent(
+      content,
+      marks,
+      noteRefDisplayFormatter,
+      preservePageBreaks
+    );
     nodes.push(...contentNodes);
   }
 
@@ -151,7 +157,8 @@ function symbolDisplayText(char: string): string {
 function convertRunContent(
   content: RunContent,
   marks: ReturnType<typeof schema.mark>[],
-  noteRefDisplayFormatter?: NoteRefDisplayFormatter
+  noteRefDisplayFormatter?: NoteRefDisplayFormatter,
+  preservePageBreaks = false
 ): PMNode[] {
   switch (content.type) {
     case 'text':
@@ -185,7 +192,13 @@ function convertRunContent(
         // recognized as inside the hyperlink on the way back out.
         return [schema.node('hardBreak', null, undefined, marks)];
       }
-      // Page breaks not supported in inline content
+      if (content.breakType === 'page' && preservePageBreaks) {
+        // Deleted page breaks do not participate in pagination, but retaining
+        // an inline, marked node preserves their source position for review
+        // actions and DOCX round-trip.
+        return [schema.node('hardBreak', { breakType: 'page' }, undefined, marks)];
+      }
+      // Live page breaks are represented structurally by the block converter.
       return [];
 
     case 'tab':

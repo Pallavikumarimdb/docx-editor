@@ -331,10 +331,31 @@ function convertTrackedChange(
   const nodes: PMNode[] = [];
   for (const item of change.content) {
     if (item.type === 'run') {
-      nodes.push(...convertRun(item, styleRunFormatting, styleResolver, noteRefDisplayFormatter));
+      nodes.push(
+        ...convertRun(
+          item,
+          styleRunFormatting,
+          styleResolver,
+          noteRefDisplayFormatter,
+          markType === 'deletion'
+        )
+      );
     } else if (item.type === 'hyperlink') {
       nodes.push(
         ...convertHyperlink(item, styleRunFormatting, styleResolver, noteRefDisplayFormatter)
+      );
+    } else {
+      const nestedMarkType =
+        item.type === 'deletion' || item.type === 'moveFrom' ? 'deletion' : 'insertion';
+      nodes.push(
+        ...convertTrackedChange(
+          item,
+          nestedMarkType,
+          styleRunFormatting,
+          styleResolver,
+          item.type === 'moveFrom' || item.type === 'moveTo',
+          noteRefDisplayFormatter
+        )
       );
     }
   }
@@ -418,7 +439,7 @@ function paragraphFormattingToAttrs(
     attrs.lineSpacing = formatting?.lineSpacing ?? stylePpr?.lineSpacing;
     attrs.lineSpacingRule = formatting?.lineSpacingRule ?? stylePpr?.lineSpacingRule;
     // Carry through only the inline-explicit flags (never style-resolved).
-    if (formatting?.spacingExplicit) attrs.spacingExplicit = formatting.spacingExplicit;
+    if (formatting?.spacingOverrides) attrs.spacingOverrides = formatting.spacingOverrides;
     attrs.indentLeft = directLeft ?? numberingIndent?.indentLeft ?? stylePpr?.indentLeft;
     attrs.indentRight = directRight ?? numberingIndent?.indentRight ?? stylePpr?.indentRight;
     // When the paragraph explicitly removes the style's numbering (direct
@@ -488,7 +509,7 @@ function paragraphFormattingToAttrs(
     attrs.spaceAfter = formatting?.spaceAfter;
     attrs.lineSpacing = formatting?.lineSpacing;
     attrs.lineSpacingRule = formatting?.lineSpacingRule;
-    if (formatting?.spacingExplicit) attrs.spacingExplicit = formatting.spacingExplicit;
+    if (formatting?.spacingOverrides) attrs.spacingOverrides = formatting.spacingOverrides;
     attrs.indentLeft = directLeft ?? numberingIndent?.indentLeft;
     attrs.indentRight = directRight ?? numberingIndent?.indentRight;
     attrs.indentFirstLine = directFirstLine ?? numberingIndent?.indentFirstLine;
@@ -714,10 +735,15 @@ function collectParagraphContentTokens(
         collectParagraphContentTokens(item.content as Paragraph['content'], tokens);
         break;
       case 'insertion':
+      case 'moveTo':
+        collectParagraphContentTokens(item.content as Paragraph['content'], tokens);
+        break;
       case 'deletion':
       case 'moveFrom':
-      case 'moveTo':
-        collectRunOrHyperlinkTokens(item.content, tokens);
+        // Deleted structure remains in the PM document for review and
+        // round-trip, but it is absent from Word's effective pagination flow.
+        // In particular, a deleted hard page break must not create a live
+        // pageBreak block before the following section boundary.
         break;
       case 'mathEquation':
         tokens.push('visible');

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { parseStyles } from '../styleParser';
 import { toProseDoc } from '../../prosemirror/conversion/toProseDoc';
-import { toFlowBlocks } from '../../layout-bridge/toFlowBlocks';
+import { buildBoxTree } from '../../flow-model/buildBoxTree';
 import type { Document } from '../../types/document';
 
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
@@ -52,7 +52,7 @@ describe('style widowControl parsing', () => {
 
     const pm = toProseDoc(document, { styles: document.package.styles });
     expect(pm.child(0).attrs.widowControl).toBe(false);
-    const flow = toFlowBlocks(pm)[0];
+    const flow = buildBoxTree(pm)[0];
     expect(flow.kind).toBe('paragraph');
     if (flow.kind !== 'paragraph') throw new Error('expected paragraph');
     expect(flow.attrs?.widowControl).toBe(false);

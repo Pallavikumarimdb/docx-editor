@@ -18,6 +18,7 @@ import type { ParagraphBlock, TextRun } from '../../pagination-model/types';
 import { measureTextWidth, ptToPx, type FontStyle } from './textMetrics';
 import { twipsToPixels } from '../buildBoxTree/shared';
 import { DEFAULT_TAB_STOP_TWIPS } from '../../docx/settingsParser';
+import { resolveParagraphMarkerStart } from './paragraphFirstLineGeometry';
 
 const DEFAULT_FONT_FAMILY = 'Calibri';
 const DEFAULT_FONT_SIZE = 11;
@@ -73,7 +74,6 @@ export function getListMarkerInlineWidth(block: ParagraphBlock): number {
 
   const indent = attrs.indent;
   const hanging = indent?.hanging ?? 0;
-  if (hanging > 0) return hanging;
 
   const { fontFamily, fontSize } = resolveListMarkerFont(block);
   const style: FontStyle = { fontFamily, fontSize };
@@ -81,16 +81,16 @@ export function getListMarkerInlineWidth(block: ParagraphBlock): number {
 
   // §17.9.25 — `w:suff` controls what follows the marker before body text.
   const suffix = attrs.listMarkerSuffix ?? 'tab';
-  if (suffix === 'nothing') return naturalWidth;
-  if (suffix === 'space') return naturalWidth + measureTextWidth(' ', style);
+  if (suffix === 'nothing') return Math.max(hanging, naturalWidth);
+  if (suffix === 'space') {
+    return Math.max(hanging, naturalWidth + measureTextWidth(' ', style));
+  }
 
   // Default suffix is `tab`. Body text aligns at the next stop past
   // `markerStart + naturalWidth`. `>=` (not `>`) is intentional: a tab
   // landing exactly at the marker's right edge IS valid — Word renders the
   // body at that column with zero residual gap. §17.9.27.
-  const indentLeft = indent?.left ?? 0;
-  const firstLine = indent?.firstLine ?? 0;
-  const markerStartPx = indentLeft + firstLine;
+  const markerStartPx = resolveParagraphMarkerStart(indent);
   const minBodyStart = markerStartPx + naturalWidth;
 
   const firstCustomPast = (attrs.tabs ?? [])
@@ -102,7 +102,7 @@ export function getListMarkerInlineWidth(block: ParagraphBlock): number {
   const defaultTabMarkPx = twipsToPixels(attrs.defaultTabMarkTwips ?? DEFAULT_TAB_STOP_TWIPS);
   const firstGridPast =
     defaultTabMarkPx > 0
-      ? (Math.floor(minBodyStart / defaultTabMarkPx) + 1) * defaultTabMarkPx
+      ? Math.ceil(minBodyStart / defaultTabMarkPx) * defaultTabMarkPx
       : undefined;
 
   // Closest wins — Word doesn't let a far custom tab override a closer
@@ -117,7 +117,7 @@ export function getListMarkerInlineWidth(block: ParagraphBlock): number {
   if (bodyStart === undefined) {
     // No tab grid at all (defaultTabMarkTwips explicitly 0): fall back to
     // a half-em visual gap so the marker doesn't butt up against the text.
-    return naturalWidth + ptToPx(fontSize) * 0.5;
+    return Math.max(hanging, naturalWidth + ptToPx(fontSize) * 0.5);
   }
-  return bodyStart - markerStartPx;
+  return Math.max(hanging, bodyStart - markerStartPx);
 }
