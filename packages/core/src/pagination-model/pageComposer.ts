@@ -210,25 +210,13 @@ function crossSectionBoundary(
 ): LayoutCursor {
   switch (next.startType) {
     case 'continuous': {
-      // Word/LibreOffice cannot place two page sizes/orientations on one physical
-      // sheet. When the next section's pageSize differs, promote continuous to a
-      // page break so the new geometry starts on a fresh page.
-      const currentPage = ctx.pages[cursor.pageIndex];
-      const nextSize = next.pageSize;
-      const sizeChanged =
-        nextSize != null &&
-        (nextSize.w !== currentPage.size.w || nextSize.h !== currentPage.size.h);
-      if (sizeChanged) {
-        ctx.section = next;
-        ctx.sectionIndex = nextSectionIndex;
-        return startPage(ctx, cursor.prev);
-      }
-
       ctx.section = next;
       ctx.sectionIndex = nextSectionIndex;
       // Re-columnise the current page from the pen down. The page keeps the size
-      // it was born with — a page cannot change dimensions halfway.
-      const page = currentPage;
+      // it was born with — a page cannot change dimensions halfway. New page
+      // size/margins stay pending on `ctx.section` until the next naturally
+      // created physical page (`startPage`), matching measureBlocksWithFloats.
+      const page = ctx.pages[cursor.pageIndex];
 
       // The pen is wherever the last column left it, which is somewhere up inside
       // that column. Content after the region has to resume BELOW the whole

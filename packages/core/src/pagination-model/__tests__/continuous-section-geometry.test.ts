@@ -563,59 +563,44 @@ describe('continuous section break geometry', () => {
     expect([keptFragments[0]?.fromLine, keptFragments[0]?.toLine]).toEqual([0, 4]);
   });
 
-  test('continuous break that changes orientation is promoted to a page break (Word/LibreOffice)', () => {
-    // Mirrors a memo with a landscape table sandwiched between portrait prose:
-    //   portrait A → [continuous, landscape] → B (wide table) → [continuous, portrait] → C
-    // Word/LibreOffice cannot place two orientations on one physical sheet, so
-    // each orientation change is promoted to a page break. A, B, and C must
-    // each land on their own correctly-oriented page — B (the table) isolated,
-    // and C (e.g. the "Discussion") must NOT trail onto the landscape page.
+  test('continuous orientation change keeps the current page; next overflow picks up new size', () => {
+    // portrait A → [continuous → landscape] → B (fits) → C (overflows).
+    // Geometry stays deferred: A+B share the portrait sheet; only the page
+    // created by C's overflow adopts landscape.
     const PORTRAIT = { w: 800, h: 1000 };
     const LANDSCAPE = { w: 1200, h: 700 };
     const M = { top: 50, right: 50, bottom: 50, left: 50 };
 
     const A = para('a', 100);
-    // sb1 terminates the portrait section containing A; the section that BEGINS
-    // after it (containing B) is landscape, supplied by sb2's pageSize below.
-    const sb1: SectionMarkerBlock = {
+    const sb: SectionMarkerBlock = {
       kind: 'sectionBreak',
-      id: 'sb1',
+      id: 'sb',
       type: 'continuous',
       pageSize: PORTRAIT,
       margins: M,
     };
     const B = para('b', 100);
-    // sb2 terminates the landscape section containing B; the final (Discussion)
-    // section that begins after it is portrait (finalPageSize below).
-    const sb2: SectionMarkerBlock = {
-      kind: 'sectionBreak',
-      id: 'sb2',
-      type: 'continuous',
-      pageSize: LANDSCAPE,
-      margins: M,
-    };
-    const C = para('c', 100);
+    // Content area on portrait is 900px; A+B leave ~700. C forces overflow onto
+    // a newly created page that must use the pending landscape geometry.
+    const C = para('c', 800);
 
-    const blocks: ContentNode[] = [A.block, sb1, B.block, sb2, C.block];
-    const measures = [
-      A.measure,
-      { kind: 'sectionBreak' },
-      B.measure,
-      { kind: 'sectionBreak' },
-      C.measure,
-    ] as never;
+    const blocks: ContentNode[] = [A.block, sb, B.block, C.block];
+    const measures = [A.measure, { kind: 'sectionBreak' }, B.measure, C.measure] as never;
 
     const result = layOutPages(blocks, measures, {
       pageSize: PORTRAIT,
       margins: M,
-      finalPageSize: PORTRAIT,
+      finalPageSize: LANDSCAPE,
       finalMargins: M,
+      bodyBreakType: 'continuous',
     });
 
-    // Three pages: portrait (A) → landscape (B) → portrait (C).
-    expect(result.pages.length).toBe(3);
+    expect(result.pages.length).toBeGreaterThanOrEqual(2);
     expect(result.pages[0].size).toEqual(PORTRAIT);
-    expect(result.pages[1].size).toEqual(LANDSCAPE);
-    expect(result.pages[2].size).toEqual(PORTRAIT);
+    expect(result.pages[0].fragments.some((f) => f.nodeId === 'a')).toBe(true);
+    expect(result.pages[0].fragments.some((f) => f.nodeId === 'b')).toBe(true);
+    const lastPage = result.pages[result.pages.length - 1];
+    expect(lastPage.size).toEqual(LANDSCAPE);
+    expect(lastPage.fragments.some((f) => f.nodeId === 'c')).toBe(true);
   });
 });
