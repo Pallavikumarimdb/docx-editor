@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import type { Node as PMNode } from 'prosemirror-model';
 import { EditorState } from 'prosemirror-state';
 import JSZip from 'jszip';
 import { buildBoxTree } from '../../../flow-model/buildBoxTree';
@@ -513,7 +514,7 @@ describe('DOCX round-trip fidelity fixes', () => {
       const doc = docOf(...body.content);
       const pm = toProseDoc(doc);
 
-      const hardBreaks: (typeof pm)[] = [];
+      const hardBreaks: PMNode[] = [];
       pm.child(0).forEach((node) => {
         if (node.type.name === 'hardBreak') hardBreaks.push(node);
       });
@@ -522,8 +523,8 @@ describe('DOCX round-trip fidelity fixes', () => {
         hardBreaks.every((node) => node.marks.some((mark) => mark.type.name === 'deletion'))
       ).toBe(true);
 
-      expect(toFlowBlocks(pm).map((block) => block.kind)).toEqual(['paragraph', 'paragraph']);
-      const firstFlow = toFlowBlocks(pm)[0];
+      expect(buildBoxTree(pm).map((block) => block.kind)).toEqual(['paragraph', 'paragraph']);
+      const firstFlow = buildBoxTree(pm)[0];
       expect(firstFlow.kind).toBe('paragraph');
       if (firstFlow.kind !== 'paragraph') return;
       expect(firstFlow.runs.some((run) => run.kind === 'lineBreak')).toBe(false);

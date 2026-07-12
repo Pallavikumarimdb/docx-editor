@@ -259,7 +259,7 @@ describe('direct zero w:ind clears paragraph-style indentation', () => {
     const throughAmet = measureTextWidth('Lorem ipsum dolor sit Amet,', STYLE);
     const throughConsectetur = measureTextWidth('Lorem ipsum dolor sit Amet, consectetur', STYLE);
     const containerWidth = (throughAmet + throughConsectetur) / 2;
-    const measured = measureParagraph(block, containerWidth);
+    const measured = paragraphLayout(block, containerWidth);
     expect(lineText(block, measured.lines[0])).toBe('Lorem ipsum dolor sit Amet,');
     expect(lineText(block, measured.lines[1]).startsWith('consectetur')).toBe(true);
 
