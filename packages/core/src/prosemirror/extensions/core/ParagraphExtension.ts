@@ -8,6 +8,7 @@
 
 import { Fragment, type NodeSpec, type Schema } from 'prosemirror-model';
 import type { Command, EditorState } from 'prosemirror-state';
+import { closeHistory } from 'prosemirror-history';
 import type {
   ParagraphAlignment,
   LineSpacingRule,
@@ -544,10 +545,19 @@ function makeSetAlignment(alignment: ParagraphAlignment): Command {
 
 function makeSetLineSpacing(value: number, rule: LineSpacingRule = 'auto'): Command {
   return (state, dispatch) => {
-    return setParagraphAttrsCmd({
+    // closeHistory on the spacing transaction so it does not merge with
+    // preceding typing under history newGroupDelay.
+    if (!dispatch) {
+      return setParagraphAttrsCmd({
+        lineSpacing: value,
+        lineSpacingRule: rule,
+      })(state, undefined);
+    }
+    const inner = setParagraphAttrsCmd({
       lineSpacing: value,
       lineSpacingRule: rule,
-    })(state, dispatch);
+    });
+    return inner(state, (tr) => dispatch(closeHistory(tr)));
   };
 }
 
@@ -609,7 +619,8 @@ function makeApplyStyle(schema: Schema) {
 
       if (!dispatch) return true;
 
-      let tr = state.tr;
+      // closeHistory so style application does not merge with preceding typing.
+      let tr = closeHistory(state.tr);
       const seen = new Set<number>();
 
       // Build marks from run formatting if provided
