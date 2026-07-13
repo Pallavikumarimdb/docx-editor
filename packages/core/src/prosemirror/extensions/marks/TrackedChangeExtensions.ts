@@ -33,8 +33,8 @@ export const InsertionExtension = createMarkExtension({
           const el = dom as HTMLElement;
           return {
             revisionId: parseInt(el.dataset.revisionId || '0', 10),
-            author: el.dataset.author || '',
-            date: el.dataset.date || null,
+            author: el.dataset.revisionAuthor || el.dataset.author || '',
+            date: el.dataset.revisionDate || el.dataset.date || null,
             isMovePair: el.dataset.movePair === 'true',
           };
         },
@@ -46,8 +46,11 @@ export const InsertionExtension = createMarkExtension({
         {
           class: 'docx-insertion',
           'data-revision-id': String(mark.attrs.revisionId),
+          'data-revision-author': mark.attrs.author,
           'data-author': mark.attrs.author,
-          ...(mark.attrs.date ? { 'data-date': mark.attrs.date } : {}),
+          ...(mark.attrs.date
+            ? { 'data-revision-date': mark.attrs.date, 'data-date': mark.attrs.date }
+            : {}),
           ...(mark.attrs.isMovePair ? { 'data-move-pair': 'true' } : {}),
           style: 'color: #2e7d32;',
         },
@@ -81,8 +84,8 @@ export const DeletionExtension = createMarkExtension({
           const el = dom as HTMLElement;
           return {
             revisionId: parseInt(el.dataset.revisionId || '0', 10),
-            author: el.dataset.author || '',
-            date: el.dataset.date || null,
+            author: el.dataset.revisionAuthor || el.dataset.author || '',
+            date: el.dataset.revisionDate || el.dataset.date || null,
             isMovePair: el.dataset.movePair === 'true',
           };
         },
@@ -94,8 +97,11 @@ export const DeletionExtension = createMarkExtension({
         {
           class: 'docx-deletion',
           'data-revision-id': String(mark.attrs.revisionId),
+          'data-revision-author': mark.attrs.author,
           'data-author': mark.attrs.author,
-          ...(mark.attrs.date ? { 'data-date': mark.attrs.date } : {}),
+          ...(mark.attrs.date
+            ? { 'data-revision-date': mark.attrs.date, 'data-date': mark.attrs.date }
+            : {}),
           ...(mark.attrs.isMovePair ? { 'data-move-pair': 'true' } : {}),
           style: 'color: #c62828;',
         },

@@ -205,8 +205,14 @@ function styleRunElement(
     element.style.borderBottom = '2px dashed #2e7d32';
     element.style.paddingBottom = '1px';
     element.classList.add('docx-insertion');
-    if (run.changeAuthor) element.dataset.changeAuthor = run.changeAuthor;
-    if (run.changeDate) element.dataset.changeDate = run.changeDate;
+    if (run.changeAuthor) {
+      element.dataset.changeAuthor = run.changeAuthor;
+      element.dataset.revisionAuthor = run.changeAuthor;
+    }
+    if (run.changeDate) {
+      element.dataset.changeDate = run.changeDate;
+      element.dataset.revisionDate = run.changeDate;
+    }
     if (run.changeRevisionId != null) element.dataset.revisionId = String(run.changeRevisionId);
   }
 
@@ -217,8 +223,14 @@ function styleRunElement(
     if (!decorations.includes('line-through')) decorations.push('line-through');
     element.style.textDecorationColor = '#c62828';
     element.classList.add('docx-deletion');
-    if (run.changeAuthor) element.dataset.changeAuthor = run.changeAuthor;
-    if (run.changeDate) element.dataset.changeDate = run.changeDate;
+    if (run.changeAuthor) {
+      element.dataset.changeAuthor = run.changeAuthor;
+      element.dataset.revisionAuthor = run.changeAuthor;
+    }
+    if (run.changeDate) {
+      element.dataset.changeDate = run.changeDate;
+      element.dataset.revisionDate = run.changeDate;
+    }
     if (run.changeRevisionId != null) element.dataset.revisionId = String(run.changeRevisionId);
   }
 
@@ -649,8 +661,14 @@ function applyImageRevisionStyle(el: HTMLElement, run: ImageRun): void {
   } else {
     return;
   }
-  if (run.changeAuthor) el.dataset.changeAuthor = run.changeAuthor;
-  if (run.changeDate) el.dataset.changeDate = run.changeDate;
+  if (run.changeAuthor) {
+    el.dataset.changeAuthor = run.changeAuthor;
+    el.dataset.revisionAuthor = run.changeAuthor;
+  }
+  if (run.changeDate) {
+    el.dataset.changeDate = run.changeDate;
+    el.dataset.revisionDate = run.changeDate;
+  }
   if (run.changeRevisionId != null) el.dataset.revisionId = String(run.changeRevisionId);
 }
 
