@@ -24,7 +24,7 @@ import { Plugin, PluginKey } from 'prosemirror-state';
 import type { Schema } from 'prosemirror-model';
 import { createExtension } from '../create';
 import type { ExtensionContext, ExtensionRuntime } from '../types';
-import { textFormattingToMarks, marksToTextFormatting } from '../marks/markUtils';
+import { textFormattingToMarks, defaultTextFormattingFromMarks } from '../marks/markUtils';
 import type { TextFormatting } from '../../../types/document';
 
 export const emptyParagraphFormatKey = new PluginKey('emptyParagraphFormat');
@@ -68,7 +68,9 @@ function createEmptyParagraphFormatPlugin(schema: Schema): Plugin {
       // Focus/toolbar churn often leaves an empty array (truthy), and mirroring
       // that would wipe font/size from DTF. Treat [] like null: restore from DTF.
       if (stored !== null && stored.length > 0) {
-        const nextDtf = normalizeDtf(marksToTextFormatting(stored));
+        // Merge mark-backed fields onto existing DTF so DOCX-only attrs
+        // (smallCaps, shading, …) and previously lossy mark attrs survive.
+        const nextDtf = normalizeDtf(defaultTextFormattingFromMarks(dtf, stored));
         if (formattingEqual(dtf, nextDtf)) return null;
         const tr = newState.tr.setNodeMarkup(selection.$from.before(), undefined, {
           ...para.attrs,

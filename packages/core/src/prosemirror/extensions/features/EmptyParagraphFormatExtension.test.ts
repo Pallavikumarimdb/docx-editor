@@ -98,6 +98,100 @@ describe('EmptyParagraphFormatExtension', () => {
     expect(state.doc.firstChild!.attrs.defaultTextFormatting).toEqual({ bold: true });
     expect(markNames(state.storedMarks)).toContain('bold');
   });
+
+  test('mirroring stored marks preserves unrelated DOCX DTF fields', () => {
+    // GPT review: EmptyParagraphFormat used to rewrite DTF via lossy
+    // marksToTextFormatting, dropping underline color / doubleStrike / EA+CS
+    // fonts / theme font slots, and wiping DOCX-only fields (smallCaps, …).
+    const richDtf = {
+      underline: { style: 'single' as const, color: { rgb: 'FF0000' } },
+      doubleStrike: true,
+      fontFamily: {
+        ascii: 'Calibri',
+        hAnsi: 'Calibri',
+        eastAsia: 'MS Mincho',
+        cs: 'Arial',
+        asciiTheme: 'minorAscii' as const,
+        hAnsiTheme: 'minorHAnsi',
+        eastAsiaTheme: 'minorEastAsia',
+        csTheme: 'minorBidi',
+      },
+      fontSize: 24,
+      smallCaps: true,
+      emboss: true,
+    };
+    const empty = schema.node('paragraph', { defaultTextFormatting: richDtf });
+    let state = stateWith(schema.node('doc', null, [empty]));
+    // Restore full stored marks from DTF, then add bold (same shape as a toolbar toggle).
+    state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, 1)));
+    const withBold = [
+      ...(state.storedMarks ?? []).filter((m) => m.type.name !== 'bold'),
+      schema.marks.bold.create(),
+    ];
+    state = state.apply(state.tr.setStoredMarks(withBold));
+
+    const dtf = state.doc.firstChild!.attrs.defaultTextFormatting as typeof richDtf & {
+      bold?: boolean;
+    };
+    expect(dtf.bold).toBe(true);
+    expect(dtf.underline).toEqual(richDtf.underline);
+    expect(dtf.doubleStrike).toBe(true);
+    expect(dtf.fontFamily).toEqual(richDtf.fontFamily);
+    expect(dtf.fontSize).toBe(24);
+    expect(dtf.smallCaps).toBe(true);
+    expect(dtf.emboss).toBe(true);
+  });
+
+  test('toggle round-trips underline color, doubleStrike, and theme/EA fonts', () => {
+    const richDtf = {
+      underline: { style: 'double' as const, color: { rgb: '00AA00' } },
+      doubleStrike: true,
+      fontFamily: {
+        ascii: 'Calibri',
+        hAnsi: 'Calibri',
+        eastAsia: 'Yu Gothic',
+        cs: 'Tahoma',
+        asciiTheme: 'majorAscii' as const,
+        hAnsiTheme: 'majorHAnsi',
+        eastAsiaTheme: 'majorEastAsia',
+        csTheme: 'majorBidi',
+      },
+      fontSize: 24,
+    };
+    const empty = schema.node('paragraph', { defaultTextFormatting: richDtf });
+    let state = stateWith(schema.node('doc', null, [empty]));
+    state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, 1)));
+
+    // Selection clear re-derives stored marks from DTF (must not drop attrs).
+    state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, 1)));
+
+    const underline = state.storedMarks!.find((m) => m.type.name === 'underline');
+    expect(underline?.attrs.style).toBe('double');
+    expect(underline?.attrs.color).toEqual({ rgb: '00AA00' });
+
+    const strike = state.storedMarks!.find((m) => m.type.name === 'strike');
+    expect(strike?.attrs.double).toBe(true);
+
+    const family = state.storedMarks!.find((m) => m.type.name === 'fontFamily');
+    expect(family?.attrs.eastAsia).toBe('Yu Gothic');
+    expect(family?.attrs.cs).toBe('Tahoma');
+    expect(family?.attrs.asciiTheme).toBe('majorAscii');
+    expect(family?.attrs.csTheme).toBe('majorBidi');
+
+    // Bold toggle must merge, not replace, those fields.
+    const bold = schema.marks.bold.create();
+    const nextMarks = [...(state.storedMarks ?? []).filter((m) => m.type.name !== 'bold'), bold];
+    state = state.apply(state.tr.setStoredMarks(nextMarks));
+
+    const dtf = state.doc.firstChild!.attrs.defaultTextFormatting as typeof richDtf & {
+      bold?: boolean;
+    };
+    expect(dtf.bold).toBe(true);
+    expect(dtf.underline).toEqual(richDtf.underline);
+    expect(dtf.doubleStrike).toBe(true);
+    expect(dtf.fontFamily).toEqual(richDtf.fontFamily);
+    expect(dtf.fontSize).toBe(24);
+  });
 });
 
 describe('applyPostSplitInheritance — next style', () => {

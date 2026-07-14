@@ -8,8 +8,29 @@ import type { Command, EditorState, Transaction } from 'prosemirror-state';
 import type { MarkType, Mark, Schema } from 'prosemirror-model';
 import { toggleMark as pmToggleMark } from 'prosemirror-commands';
 import type { TextFormatting } from '../../../types/document';
+import type { FontFamilyAttrs, UnderlineAttrs } from '../../schema/marks';
 
 type MarkAttrs = Record<string, unknown>;
+
+/**
+ * TextFormatting keys that marksToTextFormatting / textFormattingToMarks
+ * round-trip. When syncing DTF from stored marks, these are replaced from the
+ * mark set; every other DOCX field (smallCaps, shading, spacing, …) is kept.
+ */
+const MARK_BACKED_FORMATTING_KEYS = [
+  'bold',
+  'italic',
+  'underline',
+  'strike',
+  'doubleStrike',
+  'color',
+  'highlight',
+  'fontSize',
+  'fontSizeCs',
+  'fontFamily',
+  'vertAlign',
+  'rtl',
+] as const satisfies readonly (keyof TextFormatting)[];
 
 // ============================================================================
 // PARAGRAPH DEFAULT FORMATTING HELPERS
@@ -26,11 +47,20 @@ export function marksToTextFormatting(marks: readonly Mark[]): TextFormatting {
       case 'italic':
         formatting.italic = true;
         break;
-      case 'underline':
-        formatting.underline = { style: mark.attrs.style || 'single' };
+      case 'underline': {
+        const attrs = mark.attrs as UnderlineAttrs;
+        formatting.underline = {
+          style: attrs.style || 'single',
+          ...(attrs.color ? { color: attrs.color } : {}),
+        };
         break;
+      }
       case 'strike':
-        formatting.strike = true;
+        if (mark.attrs.double) {
+          formatting.doubleStrike = true;
+        } else {
+          formatting.strike = true;
+        }
         break;
       case 'textColor':
         formatting.color = mark.attrs;
@@ -49,12 +79,20 @@ export function marksToTextFormatting(marks: readonly Mark[]): TextFormatting {
         // Only set when sizeCs is present so Latin-only runs stay fontSize-only.
         if (mark.attrs.sizeCs != null) formatting.fontSizeCs = mark.attrs.sizeCs;
         break;
-      case 'fontFamily':
+      case 'fontFamily': {
+        const attrs = mark.attrs as FontFamilyAttrs;
         formatting.fontFamily = {
-          ascii: mark.attrs.ascii,
-          hAnsi: mark.attrs.hAnsi,
+          ascii: attrs.ascii,
+          hAnsi: attrs.hAnsi,
+          eastAsia: attrs.eastAsia || undefined,
+          cs: attrs.cs || undefined,
+          asciiTheme: attrs.asciiTheme as NonNullable<TextFormatting['fontFamily']>['asciiTheme'],
+          hAnsiTheme: attrs.hAnsiTheme || undefined,
+          eastAsiaTheme: attrs.eastAsiaTheme || undefined,
+          csTheme: attrs.csTheme || undefined,
         };
         break;
+      }
       case 'superscript':
         formatting.vertAlign = 'superscript';
         break;
@@ -71,6 +109,28 @@ export function marksToTextFormatting(marks: readonly Mark[]): TextFormatting {
   }
 
   return formatting;
+}
+
+/**
+ * Sync `defaultTextFormatting` from stored marks without wiping DOCX fields
+ * that have no ProseMirror mark. Mark-backed keys are replaced from `marks`;
+ * everything else is kept from `existing`.
+ */
+export function defaultTextFormattingFromMarks(
+  existing: TextFormatting | null | undefined,
+  marks: readonly Mark[]
+): TextFormatting | null {
+  const fromMarks = marksToTextFormatting(marks);
+  if (!existing || Object.keys(existing).length === 0) {
+    return Object.keys(fromMarks).length === 0 ? null : fromMarks;
+  }
+
+  const result: TextFormatting = { ...existing };
+  for (const key of MARK_BACKED_FORMATTING_KEYS) {
+    delete result[key];
+  }
+  Object.assign(result, fromMarks);
+  return Object.keys(result).length === 0 ? null : result;
 }
 
 /**
@@ -94,14 +154,10 @@ function saveStoredMarksToParagraph(
   if (paragraph.type.name !== 'paragraph') return tr;
   if (paragraph.textContent.length > 0) return tr;
 
-  if (marks.length === 0) {
-    return tr.setNodeMarkup($from.before(), undefined, {
-      ...paragraph.attrs,
-      defaultTextFormatting: null,
-    });
-  }
-
-  const defaultTextFormatting = marksToTextFormatting(marks);
+  const defaultTextFormatting = defaultTextFormattingFromMarks(
+    paragraph.attrs.defaultTextFormatting as TextFormatting | null | undefined,
+    marks
+  );
 
   return tr.setNodeMarkup($from.before(), undefined, {
     ...paragraph.attrs,
@@ -374,7 +430,12 @@ export function textFormattingToMarks(formatting: TextFormatting, schema: Schema
       schema.marks.fontFamily.create({
         ascii: formatting.fontFamily.ascii,
         hAnsi: formatting.fontFamily.hAnsi,
+        eastAsia: formatting.fontFamily.eastAsia,
+        cs: formatting.fontFamily.cs,
         asciiTheme: formatting.fontFamily.asciiTheme,
+        hAnsiTheme: formatting.fontFamily.hAnsiTheme,
+        eastAsiaTheme: formatting.fontFamily.eastAsiaTheme,
+        csTheme: formatting.fontFamily.csTheme,
       })
     );
   }
@@ -399,9 +460,17 @@ export const clearFormatting: Command = (state, dispatch) => {
 
   if (empty) {
     if (dispatch) {
-      // Clear the paragraph's run defaults too, so EmptyParagraphFormatExtension
-      // doesn't re-derive stored marks from them right after the clear.
-      const tr = saveStoredMarksToParagraph(state, state.tr, []);
+      // Wipe mark-backed *and* DOCX-only run defaults — unlike removeMark of the
+      // last mark, clearFormatting is an intentional full clear.
+      const { $from } = state.selection;
+      const paragraph = $from.parent;
+      let tr = state.tr;
+      if (paragraph.type.name === 'paragraph' && paragraph.textContent.length === 0) {
+        tr = tr.setNodeMarkup($from.before(), undefined, {
+          ...paragraph.attrs,
+          defaultTextFormatting: null,
+        });
+      }
       tr.setStoredMarks([]);
       dispatch(tr);
     }
