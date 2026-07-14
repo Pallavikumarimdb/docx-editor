@@ -964,6 +964,13 @@ export const ParagraphExtension = createNodeExtension({
           };
         },
       },
+      // Word-style alignment shortcuts (Ctrl/Cmd+L/E/R/J)
+      keyboardShortcuts: {
+        'Mod-l': makeSetAlignment('left'),
+        'Mod-e': makeSetAlignment('center'),
+        'Mod-r': makeSetAlignment('right'),
+        'Mod-j': makeSetAlignment('both'),
+      },
     };
   },
 });

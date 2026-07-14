@@ -12,6 +12,7 @@ import {
   joinForward,
   selectParentNode,
 } from 'prosemirror-commands';
+import { closeHistory } from 'prosemirror-history';
 import type { Mark, Node as PMNode, Schema } from 'prosemirror-model';
 import { TextSelection, Selection, type Command, type Transaction } from 'prosemirror-state';
 import { createExtension } from '../create';
@@ -47,6 +48,14 @@ function chainCommands(...commands: Command[]): Command {
       }
     }
     return false;
+  };
+}
+
+/** Run a command, forcing its transaction into a new history group. */
+function withClosedHistory(command: Command): Command {
+  return (state, dispatch, view) => {
+    if (!dispatch) return command(state, undefined, view);
+    return command(state, (tr) => dispatch(closeHistory(tr)), view);
   };
 }
 
@@ -295,8 +304,13 @@ export const BaseKeymapExtension = createExtension({
         ...baseKeymap,
         // Override some keys with better defaults
         Enter: splitBlockClearBorders,
-        Backspace: chainCommands(deleteSelection, clearIndentOnBackspace, joinBackward),
-        Delete: chainCommands(deleteSelection, joinForward),
+        // closeHistory so Backspace/Delete do not merge with preceding typing —
+        // otherwise select-all+delete (or even a single backspace) undoes the
+        // typed text in the same step and cannot be restored.
+        Backspace: withClosedHistory(
+          chainCommands(deleteSelection, clearIndentOnBackspace, joinBackward)
+        ),
+        Delete: withClosedHistory(chainCommands(deleteSelection, joinForward)),
         'Mod-a': selectAllText,
         Escape: selectParentNode,
       },

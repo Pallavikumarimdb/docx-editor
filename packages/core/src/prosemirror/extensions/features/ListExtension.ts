@@ -442,7 +442,7 @@ function insertTab(): Command {
 }
 
 // Import goToNextCell/goToPrevCell from table extension for chaining
-import { goToNextCell, goToPrevCell } from '../nodes/TableExtension';
+import { goToNextCell, goToPrevCell, isInTable } from '../nodes/TableExtension';
 
 // ============================================================================
 // EXTENSION
@@ -461,7 +461,12 @@ export const ListExtension = createExtension({
         removeList: () => removeList,
       },
       keyboardShortcuts: {
-        Tab: chainCommands(goToNextCell(), increaseListIndent(), insertTab()),
+        // Skip insertTab inside tables so Tab at the last cell can fall
+        // through to TableExtension's addRowBelow keymap.
+        Tab: chainCommands(goToNextCell(), increaseListIndent(), (state, dispatch, view) => {
+          if (isInTable(state)) return false;
+          return insertTab()(state, dispatch, view);
+        }),
         'Shift-Tab': chainCommands(goToPrevCell(), decreaseListIndent()),
         'Shift-Enter': () => false, // Let base keymap handle this
         Enter: chainCommands(exitListOnEmptyEnter(), splitListItem()),

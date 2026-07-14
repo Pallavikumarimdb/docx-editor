@@ -34,6 +34,7 @@ import {
   preventTableMergeAtGap,
 } from './delete';
 import { selectTable, selectRow, selectColumn } from './selection';
+import { goToNextCell, goToPrevCell } from '../context';
 import {
   setTableBorders,
   setCellBorder,
@@ -76,6 +77,12 @@ export function setupTableRuntime(ctx: ExtensionContext): ExtensionRuntime {
     keyboardShortcuts: {
       Backspace: chainCommands(deleteTableIfSelected, preventTableMergeAtGap),
       Delete: chainCommands(deleteTableIfSelected, preventTableMergeAtGap),
+      // Word: Tab advances cells; at the last cell, insert a row below.
+      // prosemirror-tables' tableEditing() also binds Tab, but our custom
+      // goToNextCell returns false at the end — chain addRowBelow so the
+      // scenario "Tab at last cell creates new row" works with body-PM focus.
+      Tab: chainCommands(goToNextCell(), addRowBelow),
+      'Shift-Tab': goToPrevCell(),
     },
     commands: {
       insertTable,
