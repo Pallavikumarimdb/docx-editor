@@ -919,6 +919,8 @@ export function paintPage(
     if (shouldClipHeader) {
       headerEl.style.maxHeight = `${availableHeaderHeight}px`;
       headerEl.style.overflow = 'hidden';
+    } else {
+      pageEl.style.overflow = 'visible'; // anchored header media above page box
     }
     pageEl.appendChild(headerEl);
   }

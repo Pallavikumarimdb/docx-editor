@@ -633,7 +633,10 @@ function fillLines(
         line.atomAdvances[token.runIndex] = paintedWidth;
         // Attribute the height to the line the image LANDS on, which is only
         // known after makeRoom has decided whether it wrapped (#766).
-        line.imageHeight = Math.max(line.imageHeight, token.run.height * scale);
+        // Fold wp:inline distT/distB into the reserved line height so it matches
+        // the painter's margin-top/margin-bottom on the image (#580).
+        const distPad = (token.run.distTop ?? 0) + (token.run.distBottom ?? 0);
+        line.imageHeight = Math.max(line.imageHeight, token.run.height * scale + distPad);
         break;
       }
     }

@@ -818,6 +818,26 @@
   display: block;
 }
 
+/* Header/footer CONTENT is non-interactive in normal mode: a single click on a
+   header/footer is already a no-op (Word parity), and — crucially — a page- or
+   margin-anchored shape (e.g. a full-page letterhead in a header) overflows the
+   band and would otherwise sit on top of the body and swallow clicks meant for
+   the document text (#856). The band element itself keeps pointer events so it
+   stays the double-click-to-edit target; only its content is passed through.
+   Kept here (not only in prosemirror/editor.css) so the React adapter's
+   styles.css build — which compiles this file — ships the rule. */
+.layout-page-header > *,
+.layout-page-footer > * {
+  pointer-events: none;
+}
+
+/* While editing a region, its content must be hittable again so clicks map to
+   header/footer caret positions. */
+.paged-editor--editing-header .layout-page-header > *,
+.paged-editor--editing-footer .layout-page-footer > * {
+  pointer-events: auto;
+}
+
 /* Header/footer areas — double-click hint */
 .layout-page-header,
 .layout-page-footer {
