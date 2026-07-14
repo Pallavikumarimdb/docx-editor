@@ -286,6 +286,13 @@ export function createSelectionTrackerPlugin(onSelectionChange?: SelectionChange
           }
           // Reuse context already computed in state.apply() — avoid double doc walk
           const context = selectionTrackerKey.getState(view.state);
+          const prevContext = selectionTrackerKey.getState(prevState);
+          // Skip notify when only the caret moved inside the same formatting
+          // context. Emitting on every ArrowLeft/Right re-renders the toolbar
+          // and drops subsequent keydowns (table in-cell navigation).
+          if (context && prevContext && contextsEqual(prevContext, context)) {
+            return;
+          }
           if (context) {
             onSelectionChange(context);
           }

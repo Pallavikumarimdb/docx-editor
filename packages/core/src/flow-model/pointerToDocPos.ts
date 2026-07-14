@@ -296,10 +296,12 @@ function characterAt(
   x: number
 ): PositionResult | null {
   let penX = 0;
+  let sawRun = false;
 
   for (let runIndex = line.fromRun; runIndex <= line.toRun; runIndex++) {
     const run = node.runs[runIndex];
     if (!run) continue;
+    sawRun = true;
 
     const from = runIndex === line.fromRun ? line.fromChar : 0;
     const to = runIndex === line.toRun ? line.toChar : runLength(run);
@@ -319,6 +321,14 @@ function characterAt(
     }
 
     penX += width;
+  }
+
+  // Empty paragraph / blank line: no painted runs, but the cell or paragraph
+  // still has a content position the caret must land in.
+  if (!sawRun && node.docFrom !== undefined) {
+    const pos =
+      node.docTo !== undefined && node.docTo > node.docFrom + 1 ? node.docFrom + 1 : node.docFrom;
+    return { pos, lineIndex, runIndex: 0, charOffset: 0 };
   }
 
   return null;

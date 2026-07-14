@@ -147,7 +147,13 @@ function positionFromCaretApi(
 
   const span = enclosingPaintedSpan(hit.node, container, scope);
   if (span === OUTSIDE_POSITION_SCOPE) return OUTSIDE_POSITION_SCOPE;
-  if (!span) return null;
+  if (!span) {
+    // Empty paragraphs paint a `.layout-empty-run` with no `data-doc-from` of
+    // its own — the range lives on the paragraph. Without this, a click in an
+    // empty table cell (or blank line) returns null and the editor parks the
+    // caret at end-of-document.
+    return positionFromEmptyRunHit(hit.node, container, scope);
+  }
 
   const docFrom = numberAttr(span, 'docFrom');
   const docTo = numberAttr(span, 'docTo');
@@ -159,6 +165,40 @@ function positionFromCaretApi(
   // A span's range is authoritative; a text offset that runs past it means the
   // painter split the run and we're looking at a slice.
   return Math.min(docFrom + offset, docTo);
+}
+
+/**
+ * Map a caret hit inside `.layout-empty-run` to the enclosing paragraph's
+ * content position (`docFrom + 1` when the range has room).
+ */
+function positionFromEmptyRunHit(
+  node: Node,
+  container: HTMLElement,
+  scope: 'body' | 'hf'
+): number | typeof OUTSIDE_POSITION_SCOPE | null {
+  const el = node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement;
+  const emptyRun = el?.closest<HTMLElement>('.layout-empty-run');
+  if (!emptyRun) return null;
+
+  const para = emptyRun.closest<HTMLElement>('.layout-paragraph[data-doc-from][data-doc-to]');
+  if (!para) return null;
+
+  if (scope === 'body' && (!para.closest('.layout-page-content') || !isBodyPositionElement(para))) {
+    return OUTSIDE_POSITION_SCOPE;
+  }
+  if (scope === 'hf' && !para.closest('.layout-page-header, .layout-page-footer')) {
+    return OUTSIDE_POSITION_SCOPE;
+  }
+  if (!container.contains(para)) return OUTSIDE_POSITION_SCOPE;
+
+  const docFrom = numberAttr(para, 'docFrom');
+  const docTo = numberAttr(para, 'docTo');
+  if (docFrom === null || docTo === null) return null;
+
+  // Empty paragraph ranges are typically `[docFrom, docFrom+2)` (open + close).
+  // The caret belongs in the content gap: `docFrom + 1`.
+  if (docTo > docFrom + 1) return docFrom + 1;
+  return docFrom;
 }
 
 /** `caretPositionFromPoint` is the standard; WebKit still ships the old one. */
@@ -272,6 +312,54 @@ function nearestPositionOnLine(
       pos = docFrom + proportionalTextOffset(span, ratio, docTo - docFrom);
       distance = 0;
     }
+
+    if (!best || distance < best.distance) best = { pos, distance };
+  }
+
+  // Empty paragraphs/cells paint only a 1-glyph nbsp run with no position of
+  // its own. Fall back to the full paragraph/line box so a click in the wide
+  // empty area of a table cell still lands inside that cell.
+  if (!best) {
+    const emptyPos = nearestEmptyParagraphOnLine(container, clientX, clientY);
+    if (emptyPos !== null) return emptyPos;
+  }
+
+  return best?.pos ?? null;
+}
+
+/** Nearest empty-paragraph content position on the clicked line band. */
+function nearestEmptyParagraphOnLine(
+  container: HTMLElement,
+  clientX: number,
+  clientY: number
+): number | null {
+  let best: { pos: number; distance: number } | null = null;
+
+  // Body queries must stay scoped (footnote collision); HF hosts pass themselves.
+  const runs = container.matches('.layout-page-header, .layout-page-footer')
+    ? Array.from(container.querySelectorAll<HTMLElement>('.layout-empty-run'))
+    : findBodyEmptyRuns(container);
+
+  for (const run of runs) {
+    const para = run.closest<HTMLElement>('.layout-paragraph[data-doc-from][data-doc-to]');
+    if (!para || !container.contains(para)) continue;
+
+    // Prefer the line/paragraph box (full cell width) over the tiny nbsp glyph.
+    const boxEl =
+      (run.closest('.layout-line') as HTMLElement | null) ??
+      (para.getBoundingClientRect().width > 0 ? para : run);
+    const rect = boxEl.getBoundingClientRect();
+    if (clientY < rect.top - LINE_BAND_TOLERANCE_PX) continue;
+    if (clientY > rect.bottom + LINE_BAND_TOLERANCE_PX) continue;
+
+    const docFrom = numberAttr(para, 'docFrom');
+    const docTo = numberAttr(para, 'docTo');
+    if (docFrom === null || docTo === null) continue;
+
+    const pos = docTo > docFrom + 1 ? docFrom + 1 : docFrom;
+    let distance = 0;
+    if (clientX < rect.left) distance = rect.left - clientX;
+    else if (clientX > rect.right) distance = clientX - rect.right;
 
     if (!best || distance < best.distance) best = { pos, distance };
   }

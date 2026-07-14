@@ -81,6 +81,47 @@ describe('body DOM position mapping', () => {
     }
   );
 
+  test('resolves clicks on empty-run paragraphs (empty table cells)', () => {
+    const root = document.createElement('div');
+    const body = document.createElement('div');
+    body.className = 'layout-page-content';
+
+    const para = document.createElement('div');
+    para.className = 'layout-paragraph';
+    para.dataset.docFrom = '9';
+    para.dataset.docTo = '11';
+
+    const line = document.createElement('div');
+    line.className = 'layout-line';
+    line.getBoundingClientRect = () => rect(100, 20, 300, 16);
+
+    const emptyRun = document.createElement('span');
+    emptyRun.className = 'layout-run layout-empty-run';
+    emptyRun.innerHTML = '&nbsp;';
+    emptyRun.getBoundingClientRect = () => rect(100, 20, 4, 16);
+
+    line.appendChild(emptyRun);
+    para.appendChild(line);
+    body.appendChild(para);
+    root.appendChild(body);
+    document.body.appendChild(root);
+
+    Object.defineProperty(document, 'caretPositionFromPoint', {
+      configurable: true,
+      value: () => ({ offsetNode: emptyRun.firstChild!, offset: 1 }),
+    });
+
+    // Caret API hits the empty run → resolve via paragraph range.
+    expect(resolveDomPosition(root, 250, 28, 1)).toBe(10);
+
+    // No caret API: fall back to the full line box of the empty paragraph.
+    Object.defineProperty(document, 'caretPositionFromPoint', {
+      configurable: true,
+      value: undefined,
+    });
+    expect(resolveDomPosition(root, 250, 28, 1)).toBe(10);
+  });
+
   test('clips topClip body copies below repeated headers while preserving header geometry', () => {
     const table = document.createElement('div');
     table.className = 'layout-table';

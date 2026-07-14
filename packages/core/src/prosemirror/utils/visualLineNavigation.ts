@@ -18,7 +18,7 @@
  * @packageDocumentation
  * @internal
  */
-import { TextSelection } from 'prosemirror-state';
+import { NodeSelection, Selection, TextSelection } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import { findVerticalScrollParent } from '../../utils/findVerticalScrollParent';
 
@@ -181,6 +181,63 @@ export function findPositionOnLineAtClientX(lineEl: HTMLElement, clientX: number
 }
 
 /**
+ * Move the caret (or extend the selection) one position left/right via an
+ * explicit PM transaction.
+ *
+ * The hidden off-screen EditorView relies on the browser's native
+ * contenteditable caret for ArrowLeft/Right — but DOM selection and PM
+ * state drift apart there (DOM offset advances while `selection.from`
+ * stalls). Dispatching the move ourselves keeps them in lockstep.
+ *
+ * Ctrl/Meta/Alt (word/line jumps) and CellSelection/NodeSelection are
+ * left to other handlers.
+ */
+function handleHorizontalArrow(view: EditorView, event: KeyboardEvent): boolean {
+  if (event.ctrlKey || event.metaKey || event.altKey) return false;
+
+  const dir = event.key === 'ArrowRight' ? 1 : -1;
+  const { state } = view;
+  const sel = state.selection;
+
+  if (sel instanceof NodeSelection) return false;
+  // Duck-type CellSelection without importing prosemirror-tables here.
+  if ('$anchorCell' in sel) return false;
+
+  if (!sel.empty && !event.shiftKey) {
+    const pos = dir > 0 ? sel.to : sel.from;
+    view.dispatch(state.tr.setSelection(TextSelection.create(state.doc, pos)));
+    return true;
+  }
+
+  const head = sel.head;
+  const $head = state.doc.resolve(head);
+
+  let target: number;
+  if (dir > 0 && $head.parentOffset < $head.parent.content.size) {
+    target = head + 1;
+  } else if (dir < 0 && $head.parentOffset > 0) {
+    target = head - 1;
+  } else {
+    const side = dir > 0 ? $head.after() : $head.before();
+    const found = Selection.findFrom(state.doc.resolve(side), dir, true);
+    if (!found) return false;
+    target = found.head;
+  }
+
+  try {
+    const newSel = event.shiftKey
+      ? TextSelection.create(state.doc, sel.anchor, target)
+      : TextSelection.create(state.doc, target);
+    view.dispatch(state.tr.setSelection(newSel));
+  } catch {
+    const near = TextSelection.near(state.doc.resolve(target), dir);
+    const newSel = event.shiftKey ? TextSelection.create(state.doc, sel.anchor, near.head) : near;
+    view.dispatch(state.tr.setSelection(newSel));
+  }
+  return true;
+}
+
+/**
  * Handle PM ArrowUp / ArrowDown with visual-line awareness + sticky
  * X. Returns true if the event was handled and PM should not run
  * its default behaviour. Mutates `state` so consecutive presses
@@ -193,11 +250,39 @@ export function handleVisualLineKeyDown(
   event: KeyboardEvent,
   container: HTMLElement | null
 ): boolean {
+  // Home/End: always move within the current textblock. Relying solely on
+  // prosemirror-commands' baseKeymap is flaky when Dom focus races with
+  // painter/layout re-renders after typing in a table cell.
+  if (
+    (event.key === 'Home' || event.key === 'End') &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey &&
+    !event.shiftKey
+  ) {
+    state.stickyX = null;
+    state.lastVisualLineIndex = -1;
+    const $head = view.state.selection.$head;
+    const pos = event.key === 'Home' ? $head.start() : $head.end();
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)));
+    return true;
+  }
+
+  // ArrowLeft/Right: see handleHorizontalArrow — must not rely on native
+  // caret movement in the off-screen PM.
+  if (
+    (event.key === 'ArrowLeft' || event.key === 'ArrowRight') &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey
+  ) {
+    state.stickyX = null;
+    state.lastVisualLineIndex = -1;
+    return handleHorizontalArrow(view, event);
+  }
+
   if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
-    if (
-      ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key) ||
-      (event.key.length === 1 && !event.ctrlKey && !event.metaKey)
-    ) {
+    if (event.key.length === 1 && !event.ctrlKey && !event.metaKey) {
       state.stickyX = null;
       state.lastVisualLineIndex = -1;
     }
