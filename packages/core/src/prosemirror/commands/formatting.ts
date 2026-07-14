@@ -48,47 +48,59 @@ export function textFormattingToMarks(formatting: TextFormatting): Mark[] {
 // COMMANDS — delegated to singleton extension manager
 // ============================================================================
 
-const cmds = singletonManager.getCommands();
+const cmds = () => singletonManager.getCommands();
 
-// Toggle marks (simple on/off)
-export const toggleBold: Command = cmds.toggleBold();
-export const toggleItalic: Command = cmds.toggleItalic();
-export const toggleUnderline: Command = cmds.toggleUnderline();
-export const toggleStrike: Command = cmds.toggleStrike();
-export const toggleSuperscript: Command = cmds.toggleSuperscript();
-export const toggleSubscript: Command = cmds.toggleSubscript();
-
+// Toggle marks (simple on/off) — resolve lazily so the command always closes
+// over the singleton schema currently backing the editor (not a stale capture
+// from first import before runtime init).
+export const toggleBold: Command = (state, dispatch, view) =>
+  cmds().toggleBold()(state, dispatch, view);
+export const toggleItalic: Command = (state, dispatch, view) =>
+  cmds().toggleItalic()(state, dispatch, view);
+export const toggleUnderline: Command = (state, dispatch, view) =>
+  cmds().toggleUnderline()(state, dispatch, view);
+export const toggleStrike: Command = (state, dispatch, view) =>
+  cmds().toggleStrike()(state, dispatch, view);
+export const toggleSuperscript: Command = (state, dispatch, view) =>
+  cmds().toggleSuperscript()(state, dispatch, view);
+export const toggleSubscript: Command = (state, dispatch, view) =>
+  cmds().toggleSubscript()(state, dispatch, view);
 // Set marks (with attributes)
 export function setTextColor(attrs: TextColorAttrs): Command {
-  return cmds.setTextColor(attrs);
+  return cmds().setTextColor(attrs);
 }
-export const clearTextColor: Command = cmds.clearTextColor();
+export const clearTextColor: Command = (state, dispatch, view) =>
+  cmds().clearTextColor()(state, dispatch, view);
 
 export function setHighlight(color: string): Command {
-  return cmds.setHighlight(color);
+  return cmds().setHighlight(color);
 }
-export const clearHighlight: Command = cmds.clearHighlight();
+export const clearHighlight: Command = (state, dispatch, view) =>
+  cmds().clearHighlight()(state, dispatch, view);
 
 export function setFontSize(size: number): Command {
-  return cmds.setFontSize(size);
+  return cmds().setFontSize(size);
 }
-export const clearFontSize: Command = cmds.clearFontSize();
+export const clearFontSize: Command = (state, dispatch, view) =>
+  cmds().clearFontSize()(state, dispatch, view);
 
 export function setFontFamily(fontName: string): Command {
-  return cmds.setFontFamily(fontName);
+  return cmds().setFontFamily(fontName);
 }
-export const clearFontFamily: Command = cmds.clearFontFamily();
+export const clearFontFamily: Command = (state, dispatch, view) =>
+  cmds().clearFontFamily()(state, dispatch, view);
 
 export function setUnderlineStyle(style: string, color?: TextColorAttrs): Command {
-  return cmds.setUnderlineStyle(style, color);
+  return cmds().setUnderlineStyle(style, color);
 }
 
 // Hyperlink commands
 export function setHyperlink(href: string, tooltip?: string): Command {
-  return cmds.setHyperlink(href, tooltip);
+  return cmds().setHyperlink(href, tooltip);
 }
-export const removeHyperlink: Command = cmds.removeHyperlink();
+export const removeHyperlink: Command = (state, dispatch, view) =>
+  cmds().removeHyperlink()(state, dispatch, view);
 
 export function insertHyperlink(text: string, href: string, tooltip?: string): Command {
-  return cmds.insertHyperlink(text, href, tooltip);
+  return cmds().insertHyperlink(text, href, tooltip);
 }

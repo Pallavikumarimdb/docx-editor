@@ -53,15 +53,50 @@ describe('EmptyParagraphFormatExtension', () => {
     expect(markNames(state.storedMarks)).toContain('fontSize');
   });
 
-  test('leaves a plain body paragraph mark-free (font/size handled by the painter)', () => {
+  test('re-derives font-only defaultTextFormatting so Enter/refocus keeps typed font', () => {
+    // User-set Georgia on an empty body paragraph must survive the selection
+    // clear that follows Enter / toolbar focus churn — otherwise the next
+    // keystroke falls back to the editor chrome font.
     const body = schema.node('paragraph', {
-      defaultTextFormatting: { fontSize: 22, fontFamily: { ascii: 'Arial', hAnsi: 'Arial' } },
+      defaultTextFormatting: { fontSize: 22, fontFamily: { ascii: 'Georgia', hAnsi: 'Georgia' } },
     });
     let state = stateWith(schema.node('doc', null, [body]));
     state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, 1)));
 
-    // No bold/color/etc. → no stored marks forced onto ordinary typed text.
-    expect(state.storedMarks).toBeNull();
+    expect(markNames(state.storedMarks)).toContain('fontFamily');
+    expect(markNames(state.storedMarks)).toContain('fontSize');
+    const family = state.storedMarks!.find((m) => m.type.name === 'fontFamily');
+    expect(family?.attrs.ascii).toBe('Georgia');
+  });
+
+  test('empty storedMarks array does not wipe defaultTextFormatting', () => {
+    const body = schema.node('paragraph', {
+      defaultTextFormatting: { fontSize: 22, fontFamily: { ascii: 'Georgia', hAnsi: 'Georgia' } },
+    });
+    let state = stateWith(schema.node('doc', null, [body]));
+    // Focus churn: explicit empty storedMarks (truthy) must restore, not clear DTF.
+    state = state.apply(
+      state.tr.setStoredMarks([]).setSelection(TextSelection.create(state.doc, 1))
+    );
+
+    expect(state.doc.firstChild!.attrs.defaultTextFormatting).toEqual({
+      fontSize: 22,
+      fontFamily: { ascii: 'Georgia', hAnsi: 'Georgia' },
+    });
+    expect(markNames(state.storedMarks)).toContain('fontFamily');
+    expect(markNames(state.storedMarks)).toContain('fontSize');
+  });
+
+  test('mirrors stored marks into defaultTextFormatting on an empty paragraph', () => {
+    const empty = schema.node('paragraph');
+    let state = stateWith(schema.node('doc', null, [empty]));
+    state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, 1)));
+
+    const bold = schema.marks.bold.create();
+    state = state.apply(state.tr.setStoredMarks([bold]));
+
+    expect(state.doc.firstChild!.attrs.defaultTextFormatting).toEqual({ bold: true });
+    expect(markNames(state.storedMarks)).toContain('bold');
   });
 });
 

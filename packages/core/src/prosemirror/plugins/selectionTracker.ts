@@ -165,10 +165,14 @@ function extractTextFormatting(state: EditorState): TextFormatting {
   // Marks at the selection. For a non-empty range, `$from.marks()` returns
   // the LEFT-side marks when `from` sits on a mark boundary — read marks
   // from the first text node inside the range instead.
-  let marks = state.storedMarks;
+  // For a collapsed caret at the left edge of a marked run, prefer nodeAfter
+  // so the toolbar reflects the run under the caret.
+  // `storedMarks === []` is truthy but empty — treat like null.
+  let marks = state.storedMarks && state.storedMarks.length > 0 ? state.storedMarks : null;
   if (!marks) {
     if (empty) {
-      marks = $from.marks();
+      const after = $from.nodeAfter;
+      marks = after?.isText && after.marks.length > 0 ? after.marks : $from.marks();
     } else {
       let inside: readonly Mark[] | null = null;
       doc.nodesBetween(from, to, (node) => {
@@ -182,7 +186,17 @@ function extractTextFormatting(state: EditorState): TextFormatting {
       marks = inside ?? $from.marks();
     }
   }
-  const formatting: TextFormatting = {};
+
+  const paragraph = $from.parent;
+  const isEmptyParagraph = paragraph.type.name === 'paragraph' && paragraph.content.size === 0;
+  const paragraphDefaultFormatting = paragraph.attrs?.defaultTextFormatting as
+    | TextFormatting
+    | undefined;
+
+  let formatting: TextFormatting = {};
+  if (isEmptyParagraph && marks.length === 0 && paragraphDefaultFormatting) {
+    formatting = { ...paragraphDefaultFormatting };
+  }
 
   for (const mark of marks) {
     switch (mark.type.name) {

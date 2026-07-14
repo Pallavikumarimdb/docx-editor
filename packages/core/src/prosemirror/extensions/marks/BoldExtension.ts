@@ -2,8 +2,8 @@
  * Bold Mark Extension
  */
 
-import { toggleMark } from 'prosemirror-commands';
 import { createMarkExtension } from '../create';
+import { toggleMarkPersist } from './markUtils';
 import type { ExtensionContext, ExtensionRuntime } from '../types';
 
 export const BoldExtension = createMarkExtension({
@@ -31,12 +31,13 @@ export const BoldExtension = createMarkExtension({
     },
   },
   onSchemaReady(ctx: ExtensionContext): ExtensionRuntime {
+    const toggle = toggleMarkPersist(ctx.schema.marks.bold);
     return {
       commands: {
-        toggleBold: () => toggleMark(ctx.schema.marks.bold),
+        toggleBold: () => toggle,
       },
       keyboardShortcuts: {
-        'Mod-b': toggleMark(ctx.schema.marks.bold),
+        'Mod-b': toggle,
       },
     };
   },

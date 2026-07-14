@@ -2,9 +2,8 @@
  * Underline Mark Extension
  */
 
-import { toggleMark } from 'prosemirror-commands';
 import { createMarkExtension } from '../create';
-import { setMark } from './markUtils';
+import { setMark, toggleMarkPersist } from './markUtils';
 import type { TextColorAttrs } from '../../schema/marks';
 import type { UnderlineAttrs } from '../../schema/marks';
 import type { ExtensionContext, ExtensionRuntime } from '../types';
@@ -47,14 +46,15 @@ export const UnderlineExtension = createMarkExtension({
     },
   },
   onSchemaReady(ctx: ExtensionContext): ExtensionRuntime {
+    const toggle = toggleMarkPersist(ctx.schema.marks.underline);
     return {
       commands: {
-        toggleUnderline: () => toggleMark(ctx.schema.marks.underline),
+        toggleUnderline: () => toggle,
         setUnderlineStyle: (style: string, color?: TextColorAttrs) =>
           setMark(ctx.schema.marks.underline, { style, color }),
       },
       keyboardShortcuts: {
-        'Mod-u': toggleMark(ctx.schema.marks.underline),
+        'Mod-u': toggle,
       },
     };
   },

@@ -70,9 +70,22 @@ export function extractSelectionState(state: EditorState): SelectionState | null
     | TextFormatting
     | undefined;
 
-  // For empty selection (cursor), use stored marks or marks at cursor position
-  // For non-empty selection, check marks at the start of selection
-  const marks = state.storedMarks || selection.$from.marks();
+  // For empty selection (cursor), use stored marks or marks at cursor position.
+  // At the LEFT edge of a marked run `$from.marks()` omits that run (marks are
+  // considered to start at this position); prefer `nodeAfter` so the toolbar
+  // matches the formatting under the caret (Word-like).
+  // For non-empty selection, check marks at the start of selection.
+  // `storedMarks === []` is truthy but means "no marks yet" — treat like null
+  // so empty-paragraph DTF (and nodeAfter) can fill the toolbar.
+  let marks = state.storedMarks && state.storedMarks.length > 0 ? state.storedMarks : null;
+  if (!marks) {
+    if (empty) {
+      const after = selection.$from.nodeAfter;
+      marks = after?.isText && after.marks.length > 0 ? after.marks : selection.$from.marks();
+    } else {
+      marks = selection.$from.marks();
+    }
+  }
 
   // If in empty paragraph with no marks but has defaultTextFormatting, use that
   if (isEmptyParagraph && marks.length === 0 && paragraphDefaultFormatting) {

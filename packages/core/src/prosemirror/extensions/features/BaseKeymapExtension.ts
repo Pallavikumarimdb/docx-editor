@@ -10,20 +10,34 @@ import {
   deleteSelection,
   joinBackward,
   joinForward,
-  selectAll,
   selectParentNode,
 } from 'prosemirror-commands';
 import type { Mark, Node as PMNode, Schema } from 'prosemirror-model';
+import { TextSelection, Selection, type Command, type Transaction } from 'prosemirror-state';
 import { createExtension } from '../create';
 import { textFormattingToMarks } from '../marks/markUtils';
 import { Priority } from '../types';
 import type { ExtensionRuntime, ExtensionContext } from '../types';
-import type { Command, Transaction } from 'prosemirror-state';
 import type { TextFormatting } from '../../../types/document';
 import { mergeFontFamily } from '../../../utils/fontFamilyMerge';
 import type { StyleResolver } from '../../styles/styleResolver';
 import { paragraphAttrsFromResolvedStyle } from '../../styles/resolvedStyleAttrs';
 import { getDocumentStyleResolver } from '../../plugins/documentStyles';
+
+/**
+ * Select all inline content without using ProseMirror's AllSelection.
+ * AllSelection + Delete replaces the whole doc with a fresh empty paragraph,
+ * dropping `defaultTextFormatting` and delete-preserved stored marks — so
+ * Ctrl/Cmd+A, Delete, type lost bold/italic (Word keeps them).
+ */
+const selectAllText: Command = (state, dispatch) => {
+  const from = Selection.atStart(state.doc).from;
+  const to = Selection.atEnd(state.doc).to;
+  if (dispatch) {
+    dispatch(state.tr.setSelection(TextSelection.create(state.doc, from, to)));
+  }
+  return true;
+};
 
 function chainCommands(...commands: Command[]): Command {
   return (state, dispatch, view) => {
@@ -283,7 +297,7 @@ export const BaseKeymapExtension = createExtension({
         Enter: splitBlockClearBorders,
         Backspace: chainCommands(deleteSelection, clearIndentOnBackspace, joinBackward),
         Delete: chainCommands(deleteSelection, joinForward),
-        'Mod-a': selectAll,
+        'Mod-a': selectAllText,
         Escape: selectParentNode,
       },
     };

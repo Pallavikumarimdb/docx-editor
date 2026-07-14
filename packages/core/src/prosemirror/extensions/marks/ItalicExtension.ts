@@ -2,8 +2,8 @@
  * Italic Mark Extension
  */
 
-import { toggleMark } from 'prosemirror-commands';
 import { createMarkExtension } from '../create';
+import { toggleMarkPersist } from './markUtils';
 import type { ExtensionContext, ExtensionRuntime } from '../types';
 
 export const ItalicExtension = createMarkExtension({
@@ -23,12 +23,13 @@ export const ItalicExtension = createMarkExtension({
     },
   },
   onSchemaReady(ctx: ExtensionContext): ExtensionRuntime {
+    const toggle = toggleMarkPersist(ctx.schema.marks.italic);
     return {
       commands: {
-        toggleItalic: () => toggleMark(ctx.schema.marks.italic),
+        toggleItalic: () => toggle,
       },
       keyboardShortcuts: {
-        'Mod-i': toggleMark(ctx.schema.marks.italic),
+        'Mod-i': toggle,
       },
     };
   },

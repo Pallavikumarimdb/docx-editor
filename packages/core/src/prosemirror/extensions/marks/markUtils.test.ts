@@ -11,7 +11,7 @@
 import { describe, test, expect } from 'bun:test';
 import { Schema } from 'prosemirror-model';
 import { EditorState, TextSelection } from 'prosemirror-state';
-import { setMark, removeMark } from './markUtils';
+import { setMark, removeMark, toggleMarkPersist, isMarkActive } from './markUtils';
 
 // Includes a nested-block container (table cell) so we can verify that the
 // "paragraph inside a wrapper" shape — same shape as header/footer content
@@ -170,6 +170,64 @@ describe('removeMark on empty paragraph', () => {
     state = applyCommand(state, removeMark(schema.marks.fontFamily));
 
     expect(state.storedMarks!.length).toBe(0);
+    expect(state.doc.firstChild!.attrs.defaultTextFormatting).toBeNull();
+  });
+});
+
+describe('toggleMarkPersist with foreign MarkType identity', () => {
+  // Vite can load two ExtensionManager/schema copies; toolbar commands close over
+  // mark types from copy A while the EditorView state uses copy B. MarkType.isInSet
+  // is reference equality, so toggles must rebind to state.schema.
+  const foreignSchema = new Schema({
+    nodes: {
+      doc: { content: 'block+' },
+      paragraph: {
+        group: 'block',
+        content: 'inline*',
+        attrs: { defaultTextFormatting: { default: null } },
+        toDOM: () => ['p', 0],
+      },
+      text: { group: 'inline' },
+    },
+    marks: {
+      bold: { toDOM: () => ['strong', 0] },
+      fontSize: { attrs: { size: { default: 24 } }, toDOM: () => ['span', 0] },
+    },
+  });
+
+  test('second toggle removes bold even when MarkType !== state.schema.marks.bold', () => {
+    let state = createEmptyParaState();
+    expect(schema.marks.bold).not.toBe(foreignSchema.marks.bold);
+
+    state = applyCommand(state, toggleMarkPersist(foreignSchema.marks.bold));
+    expect(state.storedMarks!.some((m) => m.type.name === 'bold')).toBe(true);
+    expect(state.storedMarks![0].type).toBe(schema.marks.bold);
+    expect(state.doc.firstChild!.attrs.defaultTextFormatting).toEqual({ bold: true });
+    expect(isMarkActive(state, foreignSchema.marks.bold)).toBe(true);
+
+    state = applyCommand(state, toggleMarkPersist(foreignSchema.marks.bold));
+    expect(state.storedMarks!.some((m) => m.type.name === 'bold')).toBe(false);
+    expect(state.doc.firstChild!.attrs.defaultTextFormatting).toBeNull();
+    expect(isMarkActive(state, foreignSchema.marks.bold)).toBe(false);
+  });
+
+  test('toggle-off removes bold planted with a foreign MarkType', () => {
+    // Simulate EmptyParagraph / DTF restore from a different schema copy.
+    let state = createEmptyParaState();
+    const foreignBold = foreignSchema.marks.bold.create();
+    let tr = state.tr.setStoredMarks([foreignBold]);
+    tr = tr.setNodeMarkup(0, undefined, {
+      ...state.doc.firstChild!.attrs,
+      defaultTextFormatting: { bold: true },
+    });
+    tr.setStoredMarks([foreignBold]);
+    state = state.apply(tr);
+
+    expect(schema.marks.bold.isInSet(state.storedMarks!) == null).toBe(true);
+    expect(state.storedMarks!.some((m) => m.type.name === 'bold')).toBe(true);
+
+    state = applyCommand(state, toggleMarkPersist(schema.marks.bold));
+    expect(state.storedMarks!.some((m) => m.type.name === 'bold')).toBe(false);
     expect(state.doc.firstChild!.attrs.defaultTextFormatting).toBeNull();
   });
 });

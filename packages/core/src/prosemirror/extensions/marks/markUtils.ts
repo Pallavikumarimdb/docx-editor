@@ -6,6 +6,7 @@
 
 import type { Command, EditorState, Transaction } from 'prosemirror-state';
 import type { MarkType, Mark, Schema } from 'prosemirror-model';
+import { toggleMark as pmToggleMark } from 'prosemirror-commands';
 import type { TextFormatting } from '../../../types/document';
 
 type MarkAttrs = Record<string, unknown>;
@@ -14,7 +15,7 @@ type MarkAttrs = Record<string, unknown>;
 // PARAGRAPH DEFAULT FORMATTING HELPERS
 // ============================================================================
 
-function marksToTextFormatting(marks: readonly Mark[]): TextFormatting {
+export function marksToTextFormatting(marks: readonly Mark[]): TextFormatting {
   const formatting: TextFormatting = {};
 
   for (const mark of marks) {
@@ -123,24 +124,71 @@ function dispatchStoredMarks(
   dispatch: (tr: Transaction) => void,
   marks: readonly Mark[]
 ): void {
+  // Coerce to state.schema so MarkType identity matches the EditorView
+  // (Vite can duplicate ExtensionManager modules; foreign MarkTypes break
+  // MarkType.isInSet / toggle-off).
+  const localMarks = coerceMarksToSchema(marks, state.schema);
   let tr = state.tr;
-  tr = saveStoredMarksToParagraph(state, tr, marks);
-  tr.setStoredMarks(marks);
+  tr = saveStoredMarksToParagraph(state, tr, localMarks);
+  tr.setStoredMarks(localMarks);
   dispatch(tr);
+}
+
+/** True if any mark shares `markType`'s name (reference equality optional). */
+function hasMarkNamed(marks: readonly Mark[], markType: MarkType): boolean {
+  return markType.isInSet(marks) != null || marks.some((m) => m.type.name === markType.name);
+}
+
+function withoutMarkNamed(marks: readonly Mark[], markType: MarkType): Mark[] {
+  return marks.filter((m) => m.type !== markType && m.type.name !== markType.name);
+}
+
+/** Rebuild marks with this schema's MarkTypes (attrs preserved). */
+function coerceMarksToSchema(marks: readonly Mark[], schema: Schema): Mark[] {
+  const out: Mark[] = [];
+  for (const mark of marks) {
+    const type = schema.marks[mark.type.name];
+    if (!type) continue;
+    out.push(type === mark.type ? mark : type.create(mark.attrs));
+  }
+  return out;
+}
+
+/**
+ * Marks that should apply to the next typed character in an empty paragraph.
+ *
+ * ProseMirror uses `storedMarks === null` to mean "inherit from the cursor",
+ * but focus/toolbar churn often leaves `storedMarks === []` (explicit empty).
+ * An empty array is truthy, so `storedMarks || $from.marks()` skips the
+ * paragraph's `defaultTextFormatting` and a subsequent bold toggle would
+ * overwrite DTF with `{ bold: true }` alone — dropping Georgia/size.
+ * Seed from DTF whenever stored marks are missing or empty.
+ */
+export function effectiveEmptyParagraphMarks(state: EditorState): readonly Mark[] {
+  const { $from } = state.selection;
+  const para = $from.parent;
+  if (para.type.name === 'paragraph' && para.content.size === 0) {
+    const stored = state.storedMarks;
+    if (stored && stored.length > 0) return stored;
+    const dtf = para.attrs.defaultTextFormatting as TextFormatting | null | undefined;
+    if (dtf && Object.keys(dtf).length > 0) {
+      return textFormattingToMarks(dtf, state.schema);
+    }
+    if (stored) return stored;
+  }
+  return state.storedMarks || $from.marks();
 }
 
 export function setMark(markType: MarkType, attrs: MarkAttrs): Command {
   return (state, dispatch) => {
+    const localType = state.schema.marks[markType.name] ?? markType;
     const { from, to, empty } = state.selection;
-    const mark = markType.create(attrs);
+    const mark = localType.create(attrs);
 
     if (empty) {
       if (dispatch) {
-        const current = state.storedMarks || state.selection.$from.marks();
-        const sansType = markType.isInSet(current)
-          ? current.filter((m) => m.type !== markType)
-          : current;
-        dispatchStoredMarks(state, dispatch, [...sansType, mark]);
+        const current = effectiveEmptyParagraphMarks(state);
+        dispatchStoredMarks(state, dispatch, [...withoutMarkNamed(current, localType), mark]);
       }
       return true;
     }
@@ -154,22 +202,49 @@ export function setMark(markType: MarkType, attrs: MarkAttrs): Command {
 
 export function removeMark(markType: MarkType): Command {
   return (state, dispatch) => {
+    const localType = state.schema.marks[markType.name] ?? markType;
     const { from, to, empty } = state.selection;
 
     if (empty) {
       if (dispatch) {
-        const next = (state.storedMarks || state.selection.$from.marks()).filter(
-          (m) => m.type !== markType
+        dispatchStoredMarks(
+          state,
+          dispatch,
+          withoutMarkNamed(effectiveEmptyParagraphMarks(state), localType)
         );
-        dispatchStoredMarks(state, dispatch, next);
       }
       return true;
     }
 
     if (dispatch) {
-      dispatch(state.tr.removeMark(from, to, markType).scrollIntoView());
+      dispatch(state.tr.removeMark(from, to, localType).scrollIntoView());
     }
     return true;
+  };
+}
+
+/**
+ * Toggle a mark, mirroring into `defaultTextFormatting` when the caret is in
+ * an empty paragraph. Plain `toggleMark` only updates `storedMarks`, which
+ * ProseMirror clears on the next selection/focus transaction — so bold/italic
+ * set on an empty run vanished after Enter / ArrowUp / toolbar refocus.
+ * Range selections still use prosemirror-commands `toggleMark`.
+ *
+ * Always rebinds `markType` to `state.schema` and matches existing marks by
+ * name — Vite can duplicate ExtensionManager modules so `MarkType.isInSet`
+ * (reference equality) misses foreign-schema marks already in storedMarks.
+ */
+export function toggleMarkPersist(markType: MarkType, attrs?: MarkAttrs): Command {
+  return (state, dispatch) => {
+    const localType = state.schema.marks[markType.name] ?? markType;
+    if (state.selection.empty) {
+      const current = effectiveEmptyParagraphMarks(state);
+      if (hasMarkNamed(current, localType)) {
+        return removeMark(localType)(state, dispatch);
+      }
+      return setMark(localType, attrs ?? {})(state, dispatch);
+    }
+    return pmToggleMark(localType, attrs)(state, dispatch);
   };
 }
 
@@ -181,12 +256,13 @@ export function isMarkActive(
   markType: MarkType,
   attrs?: Record<string, unknown>
 ): boolean {
+  const localType = state.schema.marks[markType.name] ?? markType;
   const { from, to, empty } = state.selection;
 
   if (empty) {
-    const marks = state.storedMarks || state.selection.$from.marks();
+    const marks = effectiveEmptyParagraphMarks(state);
     return marks.some((mark) => {
-      if (mark.type !== markType) return false;
+      if (mark.type !== localType && mark.type.name !== localType.name) return false;
       if (!attrs) return true;
       return Object.entries(attrs).every(([key, value]) => mark.attrs[key] === value);
     });
@@ -195,7 +271,7 @@ export function isMarkActive(
   let hasMark = false;
   state.doc.nodesBetween(from, to, (node) => {
     if (node.isText) {
-      const mark = markType.isInSet(node.marks);
+      const mark = localType.isInSet(node.marks);
       if (mark) {
         if (!attrs) {
           hasMark = true;
@@ -218,12 +294,13 @@ export function isMarkActive(
  * Get the current value of a mark attribute
  */
 export function getMarkAttr(state: EditorState, markType: MarkType, attr: string): unknown | null {
-  const { empty, $from, from, to } = state.selection;
+  const localType = state.schema.marks[markType.name] ?? markType;
+  const { empty, from, to } = state.selection;
 
   if (empty) {
-    const marks = state.storedMarks || $from.marks();
+    const marks = effectiveEmptyParagraphMarks(state);
     for (const mark of marks) {
-      if (mark.type === markType) {
+      if (mark.type === localType || mark.type.name === localType.name) {
         return mark.attrs[attr];
       }
     }
@@ -233,7 +310,7 @@ export function getMarkAttr(state: EditorState, markType: MarkType, attr: string
   let value: unknown = null;
   state.doc.nodesBetween(from, to, (node) => {
     if (node.isText && value === null) {
-      const mark = markType.isInSet(node.marks);
+      const mark = localType.isInSet(node.marks);
       if (mark) {
         value = mark.attrs[attr];
         return false;
