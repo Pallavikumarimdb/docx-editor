@@ -358,6 +358,21 @@ function increaseListIndent(): Command {
       }
     });
 
+    // Caret (empty range): nodesBetween visits nothing — use the parent paragraph.
+    if (
+      positions.length === 0 &&
+      $from.parent.type.name === 'paragraph' &&
+      $from.parent.attrs.numPr
+    ) {
+      const currentLevel = ($from.parent.attrs.numPr as { ilvl?: number }).ilvl ?? 0;
+      if (currentLevel < 8) {
+        positions.push({
+          pos: $from.before($from.depth),
+          attrs: $from.parent.attrs as Record<string, unknown>,
+        });
+      }
+    }
+
     if (positions.length === 0) return false;
 
     if (dispatch) {
@@ -389,6 +404,17 @@ function decreaseListIndent(): Command {
         positions.push({ pos, attrs: node.attrs as Record<string, unknown> });
       }
     });
+
+    if (
+      positions.length === 0 &&
+      $from.parent.type.name === 'paragraph' &&
+      $from.parent.attrs.numPr
+    ) {
+      positions.push({
+        pos: $from.before($from.depth),
+        attrs: $from.parent.attrs as Record<string, unknown>,
+      });
+    }
 
     if (positions.length === 0) return false;
 
