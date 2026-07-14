@@ -18,11 +18,16 @@
  * @packageDocumentation
  * @internal
  */
+import type { Node as PMNode, ResolvedPos } from 'prosemirror-model';
 import { NodeSelection, Selection, TextSelection } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
+import { nextGraphemeBoundary, snapToGrapheme } from '../../flow-model/metrics/textMetrics';
 import { findVerticalScrollParent } from '../../utils/findVerticalScrollParent';
 
 const CONTENT_LINE_SELECTOR = '.layout-page-content .layout-line';
+
+/** Leaf/atom placeholder so inline nodes contribute one UTF-16 unit to textBetween. */
+const INLINE_ATOM_PLACEHOLDER = '\ufffc';
 
 /** @internal */
 export interface VisualLineState {
@@ -181,6 +186,56 @@ export function findPositionOnLineAtClientX(lineEl: HTMLElement, clientX: number
 }
 
 /**
+ * UTF-16 delta for one caret-safe grapheme (or one atomic inline) in `dir`
+ * within the current textblock. Returns null at the parent edge so the
+ * caller can cross the block boundary via `Selection.findFrom`.
+ *
+ * Operates on the full parent string so a caret already inside a cluster
+ * (illegal mid-surrogate) snaps to the cluster edge instead of walking
+ * one broken code unit at a time.
+ *
+ * Uses `Intl.Segmenter` when available (via `nextGraphemeBoundary` /
+ * `snapToGrapheme`); otherwise the shared fallback that covers combining
+ * marks, emoji modifiers, flags, and ZWJ sequences.
+ */
+function graphemeOffsetDelta($pos: ResolvedPos, dir: 1 | -1): number | null {
+  const parent = $pos.parent;
+  const offset = $pos.parentOffset;
+  if (dir > 0) {
+    if (offset >= parent.content.size) return null;
+  } else if (offset <= 0) {
+    return null;
+  }
+
+  const full = parent.textBetween(0, parent.content.size, undefined, INLINE_ATOM_PLACEHOLDER);
+  if (dir > 0) {
+    const next = nextGraphemeBoundary(full, offset);
+    return next > offset ? next - offset : null;
+  }
+
+  const prev = snapToGrapheme(full, offset - 1);
+  return offset > prev ? offset - prev : null;
+}
+
+/**
+ * Next caret position for a collapsed horizontal arrow move.
+ *
+ * Advances by a full grapheme cluster inside the current textblock so the
+ * caret never lands inside a surrogate pair or combining sequence. At the
+ * textblock edge, uses ProseMirror's `Selection.findFrom` (same as before)
+ * so table-cell / cross-paragraph behaviour is unchanged.
+ */
+function computeHorizontalArrowTarget(doc: PMNode, head: number, dir: 1 | -1): number | null {
+  const $head = doc.resolve(head);
+  const delta = graphemeOffsetDelta($head, dir);
+  if (delta != null) return head + dir * delta;
+
+  const side = dir > 0 ? $head.after() : $head.before();
+  const found = Selection.findFrom(doc.resolve(side), dir, true);
+  return found ? found.head : null;
+}
+
+/**
  * Move the caret (or extend the selection) one position left/right via an
  * explicit PM transaction.
  *
@@ -209,20 +264,8 @@ function handleHorizontalArrow(view: EditorView, event: KeyboardEvent): boolean 
     return true;
   }
 
-  const head = sel.head;
-  const $head = state.doc.resolve(head);
-
-  let target: number;
-  if (dir > 0 && $head.parentOffset < $head.parent.content.size) {
-    target = head + 1;
-  } else if (dir < 0 && $head.parentOffset > 0) {
-    target = head - 1;
-  } else {
-    const side = dir > 0 ? $head.after() : $head.before();
-    const found = Selection.findFrom(state.doc.resolve(side), dir, true);
-    if (!found) return false;
-    target = found.head;
-  }
+  const target = computeHorizontalArrowTarget(state.doc, sel.head, dir);
+  if (target == null) return false;
 
   try {
     const newSel = event.shiftKey
