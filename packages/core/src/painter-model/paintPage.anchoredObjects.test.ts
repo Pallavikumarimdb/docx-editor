@@ -530,7 +530,7 @@ describe('anchored object paint parity', () => {
     expect(resolvedPageY(header, headerContent, followingHeader)).toBe(20);
     expect(resolvedPageY(footer, footerContent, footerBox)).toBe(290);
     expect(resolvedPageY(footer, footerContent, followingFooter)).toBe(254);
-    expect(header?.style.overflow).toBe('');
+    expect(header?.style.overflow).toBe('visible');
     expect(footer?.style.overflow).toBe('');
   });
 });

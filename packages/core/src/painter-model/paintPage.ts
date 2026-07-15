@@ -861,16 +861,10 @@ export function paintPage(
     const headerVisualTop = config.headerContent?.visualTop ?? 0;
     const headerFlowHeight = config.headerContent?.flowHeight ?? config.headerContent?.height ?? 0;
     const headerVisualBottom = config.headerContent?.visualBottom ?? headerFlowHeight;
-    // The interactive box height tracks the in-flow band (`flowHeight`), NOT the
-    // float-inclusive `visualBottom`. A page/margin-anchored shape (e.g. a
-    // full-page letterhead in a header) overflows the band visually but must not
-    // inflate the header element's box — otherwise it covers the body and
-    // swallows clicks meant for the document text (#856). Floating content still
-    // renders (overflow stays visible below) and is made non-interactive in
-    // normal mode via CSS so it never intercepts body clicks.
+    // Interactive box tracks in-flow `flowHeight`, not float-inclusive
+    // `visualBottom`, so a letterhead shape can't swallow body clicks (#856).
     const interactiveHeaderHeight = Math.max(headerFlowHeight - Math.min(0, headerVisualTop), 24);
-    // If header content fits in the original space, clip overflow; otherwise
-    // margins.top was already expanded so let content show fully.
+    // Clip when content fits the margin band; otherwise leave unclipped.
     const headerVisualHeight =
       Math.max(headerFlowHeight, headerVisualBottom) - Math.min(0, headerVisualTop);
     const headerOverflows = headerVisualHeight > availableHeaderHeight;
@@ -909,8 +903,7 @@ export function paintPage(
         layout
       );
       headerContentEl.style.top = `${-headerVisualTop}px`;
-      // Do not clip header containers that include media. Their measured content
-      // height can exclude absolutely positioned runs, which causes visible cut-off.
+      // Do not clip headers with media — measured height can miss abspos runs.
       if (headerContentEl.querySelector('img')) {
         shouldClipHeader = false;
       }
@@ -920,7 +913,11 @@ export function paintPage(
       headerEl.style.maxHeight = `${availableHeaderHeight}px`;
       headerEl.style.overflow = 'hidden';
     } else {
-      pageEl.style.overflow = 'visible'; // anchored header media above page box
+      // Unclip the header band; unlock page clip only for above-page overhang.
+      headerEl.style.overflow = 'visible';
+      if (headerDistance + headerVisualTop < 0) {
+        pageEl.style.overflow = 'visible';
+      }
     }
     pageEl.appendChild(headerEl);
   }
