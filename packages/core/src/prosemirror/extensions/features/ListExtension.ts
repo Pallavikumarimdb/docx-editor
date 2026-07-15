@@ -469,6 +469,8 @@ function insertTab(): Command {
 
 // Import goToNextCell/goToPrevCell from table extension for chaining
 import { goToNextCell, goToPrevCell, isInTable } from '../nodes/TableExtension';
+import { makeAddRowBelow } from '../nodes/TableExtension/commands/insert';
+import type { ExtensionContext } from '../types';
 
 // ============================================================================
 // EXTENSION
@@ -477,7 +479,9 @@ import { goToNextCell, goToPrevCell, isInTable } from '../nodes/TableExtension';
 export const ListExtension = createExtension({
   name: 'list',
   priority: Priority.High, // Must be before base keymap
-  onSchemaReady(): ExtensionRuntime {
+  onSchemaReady(ctx: ExtensionContext): ExtensionRuntime {
+    const addRowBelow = makeAddRowBelow(ctx.schema);
+
     return {
       commands: {
         toggleBulletList: () => toggleBulletList,
@@ -487,12 +491,21 @@ export const ListExtension = createExtension({
         removeList: () => removeList,
       },
       keyboardShortcuts: {
-        // Skip insertTab inside tables so Tab at the last cell can fall
-        // through to TableExtension's addRowBelow keymap.
-        Tab: chainCommands(goToNextCell(), increaseListIndent(), (state, dispatch, view) => {
-          if (isInTable(state)) return false;
-          return insertTab()(state, dispatch, view);
-        }),
+        // ListExtension owns Tab (High priority). At the last table cell,
+        // goToNextCell fails — add a row here so Tab is not swallowed by
+        // insertTab (a later keymap never sees the key once this returns).
+        Tab: chainCommands(
+          goToNextCell(),
+          (state, dispatch) => {
+            if (!isInTable(state)) return false;
+            return addRowBelow(state, dispatch);
+          },
+          increaseListIndent(),
+          (state, dispatch, view) => {
+            if (isInTable(state)) return false;
+            return insertTab()(state, dispatch, view);
+          }
+        ),
         'Shift-Tab': chainCommands(goToPrevCell(), decreaseListIndent()),
         'Shift-Enter': () => false, // Let base keymap handle this
         Enter: chainCommands(exitListOnEmptyEnter(), splitListItem()),

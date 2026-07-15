@@ -373,20 +373,23 @@ export function makeAddRowBelow(schema: Schema): Command {
       return false;
 
     if (dispatch) {
+      // Prefer the live state schema so nodes always match the document
+      // (closed-over `schema` can diverge across HMR / manager rebuilds).
+      const liveSchema = state.schema ?? schema;
       const tr = state.tr;
       const rowNode = context.table.child(context.rowIndex);
       const info = makeSuggestionInfo(state);
       let newRow: PMNode;
       if (info) {
-        newRow = buildSuggestingRow(schema, rowNode, info);
+        newRow = buildSuggestingRow(liveSchema, rowNode, info);
       } else {
         const cells: PMNode[] = [];
         rowNode.forEach((cell) => {
-          const paragraph = schema.nodes.paragraph.create();
+          const paragraph = liveSchema.nodes.paragraph.create();
           const cellAttrs = buildCellAttrsFromTemplate(cell);
-          cells.push(schema.nodes.tableCell.create(cellAttrs, paragraph));
+          cells.push(liveSchema.nodes.tableCell.create(cellAttrs, paragraph));
         });
-        newRow = schema.nodes.tableRow.create(
+        newRow = liveSchema.nodes.tableRow.create(
           {
             height: rowNode.attrs.height ?? 360,
             heightRule: rowNode.attrs.heightRule ?? 'atLeast',
@@ -400,7 +403,13 @@ export function makeAddRowBelow(schema: Schema): Command {
         rowPos += context.table.child(i).nodeSize;
       }
 
+      const stepsBefore = tr.steps.length;
       tr.insert(rowPos, newRow);
+      if (tr.steps.length === stepsBefore || !tr.docChanged) {
+        // Insert was rejected (invalid pos / content). Don't claim success —
+        // a later keymap (or caller) must be able to retry.
+        return false;
+      }
       dispatch(tr.scrollIntoView());
     }
     return true;
