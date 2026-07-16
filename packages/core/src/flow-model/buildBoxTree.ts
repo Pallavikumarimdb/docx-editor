@@ -858,8 +858,10 @@ export function buildBoxTree(doc: PMNode, config: BuildBoxTreeOptions = {}): Con
 
           nodes.push(contentNode);
 
-          // Emit section break block if this paragraph ends a section
-          if (secProps || pmAttrs.sectionBreakType) {
+          // A deleted paragraph mark also deletes any section break carried by
+          // that mark. Keep the paragraph and its revision metadata visible for
+          // review/round-trip, but do not let the deleted break affect layout.
+          if ((secProps || pmAttrs.sectionBreakType) && pmAttrs.pPrDel == null) {
             const sectionBreak: SectionMarkerBlock = {
               kind: 'sectionBreak',
               id: allocBoxId(),

@@ -49,7 +49,7 @@ describe('buildBoxTree — page-break paragraphs', () => {
     }
   });
 
-  test('keeps a deleted section carrier reviewable without pagination height', () => {
+  test('keeps a deleted section carrier reviewable without applying its section break', () => {
     const doc = schema.node('doc', null, [
       schema.node('paragraph', {
         sectionBreakType: 'nextPage',
@@ -60,7 +60,7 @@ describe('buildBoxTree — page-break paragraphs', () => {
     const blocks = buildBoxTree(doc);
     const carrier = blocks[0] as ParagraphBlock;
 
-    expect(blocks.map((block) => block.kind)).toEqual(['paragraph', 'sectionBreak']);
+    expect(blocks.map((block) => block.kind)).toEqual(['paragraph']);
     expect(carrier.attrs?.pPrDel?.revisionId).toBe(804);
     expect(carrier.attrs?.suppressEmptyParagraphHeight).toBe(true);
     expect(paragraphLayout(carrier, 600).totalHeight).toBe(0);
