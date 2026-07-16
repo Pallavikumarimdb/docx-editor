@@ -1,5 +1,13 @@
 import { describe, test, expect } from 'bun:test';
-import { resolveFontFamily, getGoogleFontEquivalent } from './fontResolver';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  resolveFontFamily,
+  getGoogleFontEquivalent,
+  registerDocumentFontSingleLineRatio,
+  DEFAULT_SINGLE_LINE_RATIO,
+} from './fontResolver';
 
 describe('fontResolver — native CJK theme typefaces map to matched Noto webfonts', () => {
   // The names `applyThemeFontLang` writes into the empty `<a:ea>` slot are the
@@ -35,4 +43,43 @@ describe('fontResolver — native CJK theme typefaces map to matched Noto webfon
       expect(getGoogleFontEquivalent(name)).toBe(font);
     });
   }
+});
+
+describe('fontResolver — document metrics survive duplicate bundles', () => {
+  test('registers ratio through one copy and resolves it from another', async () => {
+    const outdir = await mkdtemp(join(tmpdir(), 'font-resolver-dual-'));
+    const entrypoint = join(import.meta.dir, 'fontResolver.ts');
+    try {
+      for (const name of ['copy-a.js', 'copy-b.js'] as const) {
+        const result = await Bun.build({
+          entrypoints: [entrypoint],
+          outdir,
+          target: 'bun',
+          format: 'esm',
+          naming: name,
+        });
+        expect(result.success).toBe(true);
+      }
+
+      const writer = (await import(join(outdir, 'copy-a.js'))) as typeof import('./fontResolver');
+      const reader = (await import(join(outdir, 'copy-b.js'))) as typeof import('./fontResolver');
+
+      expect(writer).not.toBe(reader);
+      expect(reader.resolveFontFamily('Dual Bundle Font').singleLineRatio).toBe(
+        DEFAULT_SINGLE_LINE_RATIO
+      );
+
+      writer.registerDocumentFontSingleLineRatio('Dual Bundle Font', 1.2);
+
+      expect(reader.resolveFontFamily('Dual Bundle Font').singleLineRatio).toBe(1.2);
+      expect(writer.resolveFontFamily('Dual Bundle Font').singleLineRatio).toBe(1.2);
+    } finally {
+      await rm(outdir, { recursive: true, force: true });
+    }
+  });
+
+  test('registerDocumentFontSingleLineRatio updates resolveFontFamily in-process', () => {
+    registerDocumentFontSingleLineRatio('In Process Metric Font', 1.2);
+    expect(resolveFontFamily('In Process Metric Font').singleLineRatio).toBe(1.2);
+  });
 });

@@ -50,21 +50,40 @@ export const DEFAULT_SINGLE_LINE_RATIO = 1.15;
 // Exact metrics discovered from document-embedded fonts. These override the
 // static family map because a DOCX can carry a different font version under
 // the same family name.
-const documentSingleLineRatios = new Map<string, number>();
-let documentFontMetricsRevision = 0;
+// Production can load two copies of this module; Symbol.for keeps the registry
+// shared across those copies on the same JS realm.
+interface DocumentFontMetricsState {
+  ratios: Map<string, number>;
+  revision: number;
+}
+
+const DOCUMENT_FONT_METRICS_STATE = Symbol.for('@eigenpal/docx-editor-core/document-font-metrics');
+
+function getDocumentFontMetricsState(): DocumentFontMetricsState {
+  const realm = globalThis as typeof globalThis & Record<symbol, unknown>;
+  const existing = realm[DOCUMENT_FONT_METRICS_STATE] as DocumentFontMetricsState | undefined;
+  if (existing) return existing;
+  const created: DocumentFontMetricsState = {
+    ratios: new Map<string, number>(),
+    revision: 0,
+  };
+  realm[DOCUMENT_FONT_METRICS_STATE] = created;
+  return created;
+}
 
 /** @internal */
 export function registerDocumentFontSingleLineRatio(fontFamily: string, ratio: number): void {
   const normalizedName = fontFamily.trim().toLowerCase();
   if (!normalizedName || !Number.isFinite(ratio) || ratio <= 0) return;
-  if (documentSingleLineRatios.get(normalizedName) === ratio) return;
-  documentSingleLineRatios.set(normalizedName, ratio);
-  documentFontMetricsRevision++;
+  const state = getDocumentFontMetricsState();
+  if (state.ratios.get(normalizedName) === ratio) return;
+  state.ratios.set(normalizedName, ratio);
+  state.revision++;
 }
 
 /** @internal */
 export function getDocumentFontMetricsRevision(): number {
-  return documentFontMetricsRevision;
+  return getDocumentFontMetricsState().revision;
 }
 
 /**
@@ -463,7 +482,7 @@ const CJK_FONT_ALIASES: Record<string, string> = {
 
 export function resolveFontFamily(docxFontName: string): ResolvedFont {
   const normalizedName = docxFontName.trim().toLowerCase();
-  const documentSingleLineRatio = documentSingleLineRatios.get(normalizedName);
+  const documentSingleLineRatio = getDocumentFontMetricsState().ratios.get(normalizedName);
 
   // Direct mapping, or a romanized CJK spelling aliased to its native entry.
   const mapping = FONT_MAPPINGS[CJK_FONT_ALIASES[normalizedName] ?? normalizedName];
