@@ -240,7 +240,7 @@ export interface DocxPackage {
  *
  * @example
  * ```ts
- * import { parseDocx } from '@eigenpal/docx-editor-core/headless';
+ * import { parseDocx } from '@docx-editor.dev/core/headless';
  * const doc = await parseDocx(buffer);
  * console.log(doc.package.document.content.length);
  * ```

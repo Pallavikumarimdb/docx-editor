@@ -57,7 +57,7 @@ interface DocumentFontMetricsState {
   revision: number;
 }
 
-const DOCUMENT_FONT_METRICS_STATE = Symbol.for('@eigenpal/docx-editor-core/document-font-metrics');
+const DOCUMENT_FONT_METRICS_STATE = Symbol.for('@docx-editor.dev/core/document-font-metrics');
 
 function getDocumentFontMetricsState(): DocumentFontMetricsState {
   const realm = globalThis as typeof globalThis & Record<symbol, unknown>;

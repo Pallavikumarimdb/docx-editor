@@ -1,5 +1,5 @@
 {
-  "name": "@eigenpal/docx-editor-core",
+  "name": "@docx-editor.dev/core",
   "version": "1.10.0",
   "sideEffects": false,
   "description": "Framework-agnostic core for DOCX parsing, editing, and rendering",
@@ -529,10 +529,10 @@
     "dist"
   ],
   "scripts": {
-    "build": "NODE_OPTIONS=--max-old-space-size=8192 tsup && node scripts/copy-assets.mjs && node ../../scripts/inject-package-doc.mjs --package @eigenpal/docx-editor-core",
+    "build": "NODE_OPTIONS=--max-old-space-size=8192 tsup && node scripts/copy-assets.mjs && node ../../scripts/inject-package-doc.mjs --package @docx-editor.dev/core",
     "typecheck": "tsc --noEmit",
-    "api:extract": "node ../../scripts/api-extractor.mjs --package @eigenpal/docx-editor-core --local",
-    "api:check": "node ../../scripts/api-extractor.mjs --package @eigenpal/docx-editor-core"
+    "api:extract": "node ../../scripts/api-extractor.mjs --package @docx-editor.dev/core --local",
+    "api:check": "node ../../scripts/api-extractor.mjs --package @docx-editor.dev/core"
   },
   "dependencies": {
     "docxtemplater": "^3.50.0",
