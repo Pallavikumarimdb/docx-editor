@@ -4,36 +4,19 @@
 
 import type {
   Page,
-  Fragment,
   ParagraphBlock,
   ParagraphMetrics,
-  ParagraphFragment,
-  ParagraphBorders,
   TableBlock,
-  TableMetrics,
-  TableFragment,
-  ImageBlock,
-  ImageMetrics,
-  ImageFragment,
-  ImageRun,
   TextBoxBlock,
-  TextBoxMetrics,
-  TextBoxFragment,
-  SdtGroup,
+  ImageRun,
 } from '../pagination-model/types';
 import { renderSdtBoundaryBoxes } from './sdtBoundary';
-import { paintFragment } from './paintFragment';
-import { paintParagraphFragment } from './renderParagraph';
-import { paintTableFragment } from './renderTable';
-import { paintImageFragment } from './renderImage';
-import { paintTextBoxFragment } from './renderTextBox';
 import type { NodeLookup } from './index';
 import type { BorderSpec } from '../types/document';
 import { borderToStyle } from '../utils/formatToStyle';
 import type { Theme, Watermark } from '../types/document';
 import { renderWatermarkLayer } from './renderWatermark';
 import {
-  paragraphLayout,
   rectsToFloatingZones,
   type FloatingExclusionRect,
   type FloatingImageZone,
@@ -68,8 +51,10 @@ import {
   calculateFootnoteAreaRenderHeight,
   type FootnoteRenderItem,
 } from './paintPage/footnotes';
+import { bodySdtGroupsOf, paintBodyPageFragments } from './paintPage/bodyFragments';
 import { getPageFurniture } from './pageFurnitureRegistry';
 import type { PageFloatingImage } from './paintPage/pageFloatingImage';
+import { appendRevisionBarOverlay, createBodyRevisionBarCollector } from './paintPageRevisionBars';
 
 export {
   floatingImageIsBehindDoc,
@@ -313,35 +298,6 @@ function applyContentAreaStyles(element: HTMLElement, page: Page): void {
   element.style.overflow = 'visible';
 }
 
-/**
- * Apply fragment positioning styles
- * Note: Fragment x/y include page margins, but fragments are positioned
- * inside the content area which already has margin offsets applied.
- * So we subtract the margins to get content-area-relative positions.
- */
-function applyFragmentStyles(
-  element: HTMLElement,
-  fragment: Fragment,
-  margins: { left: number; top: number }
-): void {
-  element.style.position = 'absolute';
-  element.style.left = `${fragment.x - margins.left}px`;
-  // Tables draw 1px cell borders on an internal whole-pixel row grid; if the
-  // table's own top is fractional those borders fall between device pixels and
-  // render unevenly soft/thick. Snap a table's top (and height) to whole pixels
-  // so its border grid aligns with the page (which sits on the pixel grid).
-  const top = fragment.y - margins.top;
-  element.style.top = `${fragment.kind === 'table' ? Math.round(top) : top}px`;
-  element.style.width = `${fragment.width}px`;
-
-  // Height handling varies by fragment type. Tables set their own height in
-  // paintTableFragment (from the rounded row stack, so the bottom border isn't
-  // clipped) — don't override it here.
-  if ('height' in fragment && fragment.kind !== 'table') {
-    element.style.height = `${fragment.height}px`;
-  }
-}
-
 function extractFloatingImagesFromParagraph(
   block: ParagraphBlock,
   measure: ParagraphMetrics,
@@ -398,6 +354,11 @@ function extractFloatingImagesFromParagraph(
       cropBottom: imgRun.cropBottom,
       cropLeft: imgRun.cropLeft,
       opacity: imgRun.opacity,
+      isInsertion: imgRun.isInsertion,
+      isDeletion: imgRun.isDeletion,
+      changeAuthor: imgRun.changeAuthor,
+      changeDate: imgRun.changeDate,
+      changeRevisionId: imgRun.changeRevisionId,
     });
   }
 
@@ -607,157 +568,20 @@ export function paintPage(
     contentEl.appendChild(floatingLayer);
   }
 
-  const getParaBorders = (frag: Fragment): ParagraphBorders | undefined => {
-    if (frag.kind !== 'paragraph' || !config.nodeLookup || !frag.nodeId) return undefined;
-    const nodeData = config.nodeLookup.get(String(frag.nodeId));
-    if (nodeData?.node.kind === 'paragraph')
-      return (nodeData.node as ParagraphBlock).attrs?.borders;
-    return undefined;
-  };
+  const revisionBars = createBodyRevisionBarCollector(allFloatingImages);
 
-  let prevParagraphBorders: ParagraphBorders | undefined;
-  const renderedInlineImageKeysByBlock = new Map<string, Set<string>>();
+  paintBodyPageFragments({
+    page,
+    contentEl,
+    doc,
+    contentWidth,
+    context,
+    nodeLookup: config.nodeLookup,
+    floatingZones,
+    revisionBars,
+  });
 
-  // Block-level Structured Document Tag (content control) membership for a
-  // fragment, derived from its block's `sdtGroups` (set in buildBoxTree).
-  const sdtGroupsOf = (frag: Fragment): SdtGroup[] => {
-    if (!config.nodeLookup || !frag.nodeId) return [];
-    return config.nodeLookup.get(String(frag.nodeId))?.node.sdtGroups ?? [];
-  };
-
-  /**
-   * Stamp a painted fragment with its enclosing content-control identity, so
-   * selection / addressing can find the region by tag/alias. The innermost
-   * group drives the dataset attrs; the visible boundary box is drawn
-   * separately (see `renderSdtBoundaryBoxes`) so a multi-block control reads
-   * as one rounded rectangle rather than per-fragment rules.
-   */
-  const stampSdtFragment = (el: HTMLElement, groups: SdtGroup[]): void => {
-    if (groups.length === 0) return;
-    const innermost = groups[groups.length - 1];
-    el.classList.add('layout-block-sdt');
-    el.dataset.sdtGroupId = innermost.id;
-    el.dataset.sdtType = innermost.sdtType;
-    el.dataset.sdtDepth = String(groups.length);
-    if (innermost.tag != null) el.dataset.sdtTag = innermost.tag;
-    if (innermost.alias != null) el.dataset.sdtAlias = innermost.alias;
-    if (innermost.lock != null) el.dataset.sdtLock = innermost.lock;
-  };
-
-  for (let i = 0; i < page.fragments.length; i++) {
-    const fragment = page.fragments[i];
-    let fragmentEl: HTMLElement;
-    const fragmentContext = { ...context, section: 'body' as const, contentWidth };
-
-    // Calculate fragment's Y position relative to content area (for per-line margin calculation)
-    const fragmentContentY = fragment.y - page.margins.top;
-
-    // If we have block lookup, try to render full content based on fragment type
-    if (config.nodeLookup && fragment.nodeId) {
-      const nodeData = config.nodeLookup.get(String(fragment.nodeId));
-
-      if (
-        fragment.kind === 'paragraph' &&
-        nodeData?.node.kind === 'paragraph' &&
-        nodeData?.metrics.kind === 'paragraph'
-      ) {
-        const paragraphBlock = nodeData.node as ParagraphBlock;
-        const nextBorders =
-          i + 1 < page.fragments.length ? getParaBorders(page.fragments[i + 1]) : undefined;
-        const blockKey = String(fragment.nodeId);
-        let renderedInlineImageKeys = renderedInlineImageKeysByBlock.get(blockKey);
-        if (!renderedInlineImageKeys) {
-          renderedInlineImageKeys = new Set<string>();
-          renderedInlineImageKeysByBlock.set(blockKey, renderedInlineImageKeys);
-        }
-
-        // Re-measure paragraph with floating zones for text wrapping
-        let paragraphMetrics = nodeData.metrics as ParagraphMetrics;
-        if (floatingZones.length > 0) {
-          paragraphMetrics = paragraphLayout(paragraphBlock, contentWidth, {
-            floatingZones,
-            paragraphYOffset: fragmentContentY,
-          });
-        }
-
-        fragmentEl = paintParagraphFragment(
-          fragment as ParagraphFragment,
-          paragraphBlock,
-          paragraphMetrics,
-          fragmentContext,
-          {
-            document: doc,
-            fragmentContentY: fragmentContentY,
-            prevBorders: prevParagraphBorders,
-            nextBorders,
-            renderedInlineImageKeys,
-          }
-        );
-        prevParagraphBorders = paragraphBlock.attrs?.borders;
-      } else if (
-        fragment.kind === 'table' &&
-        nodeData?.node.kind === 'table' &&
-        nodeData?.metrics.kind === 'table'
-      ) {
-        fragmentEl = paintTableFragment(
-          fragment as TableFragment,
-          nodeData.node as TableBlock,
-          nodeData.metrics as TableMetrics,
-          fragmentContext,
-          { document: doc }
-        );
-        prevParagraphBorders = undefined;
-      } else if (
-        fragment.kind === 'image' &&
-        nodeData?.node.kind === 'image' &&
-        nodeData?.metrics.kind === 'image'
-      ) {
-        fragmentEl = paintImageFragment(
-          fragment as ImageFragment,
-          nodeData.node as ImageBlock,
-          nodeData.metrics as ImageMetrics,
-          fragmentContext,
-          { document: doc }
-        );
-        prevParagraphBorders = undefined;
-      } else if (
-        fragment.kind === 'textBox' &&
-        nodeData?.node.kind === 'textBox' &&
-        nodeData?.metrics.kind === 'textBox'
-      ) {
-        fragmentEl = paintTextBoxFragment(
-          fragment as TextBoxFragment,
-          nodeData.node as TextBoxBlock,
-          nodeData.metrics as TextBoxMetrics,
-          fragmentContext,
-          { document: doc }
-        );
-        prevParagraphBorders = undefined;
-      } else {
-        // Fallback to placeholder
-        fragmentEl = paintFragment(fragment, fragmentContext, { document: doc });
-        prevParagraphBorders = undefined;
-      }
-    } else {
-      // Use placeholder when no nodeLookup
-      fragmentEl = paintFragment(fragment, fragmentContext, { document: doc });
-      prevParagraphBorders = undefined;
-    }
-
-    applyFragmentStyles(fragmentEl, fragment, { left: page.margins.left, top: page.margins.top });
-
-    // Tag fragments enclosed by a block-level content control so selection /
-    // addressing can find the region; the boundary box is drawn afterward.
-    stampSdtFragment(fragmentEl, sdtGroupsOf(fragment));
-
-    contentEl.appendChild(fragmentEl);
-  }
-
-  // Draw one boundary box per block-level content control on this page,
-  // spanning the vertical extent of its fragments at content width — so a
-  // multi-block (or nested) control reads as a single rounded rectangle with
-  // a corner label, matching Word. Nested controls each get their own box.
-  renderSdtBoundaryBoxes(page, contentEl, contentWidth, sdtGroupsOf, doc);
+  renderSdtBoundaryBoxes(page, contentEl, contentWidth, bodySdtGroupsOf(config.nodeLookup), doc);
 
   // Render in-front floating images after text fragments so wrapNone and
   // wrapping images paint above body text without participating in flow.
@@ -850,6 +674,8 @@ export function paintPage(
     fnAreaEl.style.right = '0';
     contentEl.appendChild(fnAreaEl);
   }
+
+  appendRevisionBarOverlay(revisionBars, contentEl, doc);
 
   pageEl.appendChild(contentEl);
 

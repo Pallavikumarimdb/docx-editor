@@ -18,6 +18,7 @@ import type {
   ParagraphBorders,
   BorderKind,
   MeasuredLine,
+  ImageRun,
 } from '../pagination-model/types';
 import type { RenderContext } from './paintPage';
 import { resolveFontFamily } from '../utils/fontResolver';
@@ -29,6 +30,9 @@ import {
   resolveListMarkerFont,
 } from '../flow-model/metrics/listMarkerWidth';
 import { resolveParagraphFirstLineGeometry } from '../flow-model/metrics/paragraphFirstLineGeometry';
+import type { RevisionIndicatorKind, RevisionMetadata } from './revisionIndicators';
+import type { RevisionBarCollector } from './revisionIndicators';
+import { getImageRevisionData } from './renderImage';
 
 export { PARAGRAPH_CLASS_NAMES } from './renderParagraph/shared';
 export { runsWithinLine, paintLine } from './renderParagraph/line';
@@ -47,6 +51,34 @@ export interface RenderParagraphOptions {
   nextBorders?: ParagraphBorders;
   /** Inline image runs already rendered for this paragraph block */
   renderedInlineImageKeys?: Set<string>;
+  /** Owning revision-bar collector and this fragment's collector-space bounds. */
+  inlineImageRevisionBars?: {
+    collector: RevisionBarCollector;
+    originTop: number;
+    clipTop: number;
+    clipBottom: number;
+  };
+}
+
+export function getParagraphRevisionMetadata(block: ParagraphBlock): {
+  kind: RevisionIndicatorKind;
+  metadata: RevisionMetadata;
+} | null {
+  const pPrIns = block.attrs?.pPrIns;
+  const pPrDel = block.attrs?.pPrDel;
+  if (!pPrIns && !pPrDel) {
+    return null;
+  }
+
+  const revision = pPrIns ?? pPrDel!;
+  return {
+    kind: pPrIns ? 'ins' : 'del',
+    metadata: {
+      revisionId: revision.revisionId,
+      author: revision.author,
+      date: revision.date,
+    },
+  };
 }
 
 /**
@@ -148,18 +180,25 @@ export function paintParagraphFragment(
   }
 
   // Paragraph-mark tracked-change cues. Only the LAST fragment of a paragraph
-  // carries the pilcrow (the mark belongs to the terminating glyph). Other
-  // fragments still get the margin change bar via the class so split
-  // paragraphs are visually flagged on every page.
-  const pPrIns = block.attrs?.pPrIns;
-  const pPrDel = block.attrs?.pPrDel;
-  if (pPrIns || pPrDel) {
-    const rev = pPrIns ?? pPrDel!;
+  // carries the pilcrow (the mark belongs to the terminating glyph); the page-
+  // margin revision bar is painted by the owning page/header/footer collector.
+  const revisionMetadata = getParagraphRevisionMetadata(block);
+  const pPrIns = revisionMetadata?.kind === 'ins' ? block.attrs?.pPrIns : null;
+  const pPrDel = revisionMetadata?.kind === 'del' ? block.attrs?.pPrDel : null;
+  if (revisionMetadata) {
     fragmentEl.classList.add('layout-revision-pmark');
-    fragmentEl.classList.add(pPrIns ? 'layout-revision-ins' : 'layout-revision-del');
-    fragmentEl.dataset.revisionId = String(rev.revisionId);
-    fragmentEl.dataset.revisionAuthor = rev.author;
-    if (rev.date) fragmentEl.dataset.revisionDate = rev.date;
+    fragmentEl.classList.add(
+      revisionMetadata.kind === 'ins' ? 'layout-revision-ins' : 'layout-revision-del'
+    );
+    if (revisionMetadata.metadata.revisionId != null) {
+      fragmentEl.dataset.revisionId = String(revisionMetadata.metadata.revisionId);
+    }
+    if (revisionMetadata.metadata.author) {
+      fragmentEl.dataset.revisionAuthor = revisionMetadata.metadata.author;
+    }
+    if (revisionMetadata.metadata.date) {
+      fragmentEl.dataset.revisionDate = revisionMetadata.metadata.date;
+    }
   }
 
   // Text wrapping around floating images is handled at measurement time via
@@ -372,9 +411,27 @@ export function paintParagraphFragment(
 
   // Render each line with per-line floating margin calculation
   const renderedInlineImageKeys = config.renderedInlineImageKeys ?? new Set<string>();
+  let fragmentLineY = 0;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    const lineTop = fragmentLineY + Math.max(0, line.floatSkipBefore ?? 0);
+    const onInlineImageRendered = (run: ImageRun, span: { top: number; height: number }): void => {
+      const revisionBars = config.inlineImageRevisionBars;
+      const revision = getImageRevisionData(run);
+      if (!revisionBars || !revision) return;
+      const imageTop = revisionBars.originTop + lineTop + span.top;
+      const imageBottom = imageTop + span.height;
+      const visibleTop = Math.max(imageTop, revisionBars.clipTop);
+      const visibleBottom = Math.min(imageBottom, revisionBars.clipBottom);
+      if (visibleBottom <= visibleTop) return;
+      revisionBars.collector.register({
+        top: visibleTop,
+        height: visibleBottom - visibleTop,
+        kind: revision.kind,
+        ...revision.metadata,
+      });
+    };
     // Calculate the actual line index in the full paragraph
     const lineIndex = fragment.fromLine + i;
     const isLastLine = lineIndex === totalLines - 1;
@@ -420,6 +477,7 @@ export function paintParagraphFragment(
           context,
           floatingMargins: { leftMargin: 0, rightMargin: 0 },
           renderedInlineImageKeys,
+          onInlineImageRendered,
         });
         segmentEl.className += ' layout-line-segment';
         segmentEl.style.position = 'absolute';
@@ -430,6 +488,7 @@ export function paintParagraphFragment(
       }
 
       fragmentEl.appendChild(splitLineEl);
+      fragmentLineY = lineTop + line.lineHeight;
       continue;
     }
 
@@ -444,6 +503,7 @@ export function paintParagraphFragment(
       context,
       floatingMargins: { leftMargin: lineLeftOffset, rightMargin: lineRightOffset },
       renderedInlineImageKeys,
+      onInlineImageRendered,
       // Absolute right edge in content-area coords. The fragment starts at
       // content-area-x=0 with full content-area width; the rightmost x where
       // inline content can land is `fragment.width - indentRight - lineRightOffset`.
@@ -572,6 +632,7 @@ export function paintParagraphFragment(
 
     // Append line directly to fragment (per-line margins are applied in paintLine)
     fragmentEl.appendChild(lineEl);
+    fragmentLineY = lineTop + line.lineHeight;
   }
 
   // Paragraph-mark pilcrow. Only the LAST fragment of the paragraph carries

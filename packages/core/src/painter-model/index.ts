@@ -66,6 +66,12 @@ export {
   type RenderContext,
 };
 export type { RenderPagesUpdateKind };
+export { RevisionBarCollector, applyRevisionMetadata } from './revisionIndicators';
+export type {
+  RevisionIndicatorKind,
+  RevisionMetadata,
+  RevisionBarSpan,
+} from './revisionIndicators';
 export type {
   HeaderFooterContent,
   SectionHeaderFooterContent,

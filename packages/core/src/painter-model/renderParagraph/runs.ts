@@ -18,7 +18,11 @@ import type {
 } from '../../pagination-model/types';
 import type { RenderContext } from '../paintPage';
 import { isFloatingImageRun } from '../floatingImageFlow';
-import { applyImageVisualAttrs, hasImageVisualAttrs } from '../renderImage';
+import {
+  applyImageRevisionAttrs,
+  applyImageVisualAttrs,
+  hasImageVisualAttrs,
+} from '../renderImage';
 import { resolveFontFamily } from '../../utils/fontResolver';
 import { sanitizeHref } from '../../utils/sanitizeHref';
 import { sanitizeImageSrc } from '../../utils/sanitizeImageSrc';
@@ -26,6 +30,7 @@ import { measureTextWidth, resolveFontStyle } from '../../flow-model/metrics/tex
 import { underlineStyleToCss } from '../../utils/underlineStyle';
 import {
   PARAGRAPH_CLASS_NAMES,
+  getImagePaintGeometry,
   isTextRun,
   isTabRun,
   isImageRun,
@@ -448,32 +453,6 @@ function getLeaderChar(leader: string): string | null {
 }
 
 /**
- * Parse the rotation angle (in degrees, normalized to [0, 360)) from a
- * `transform` string like `"rotate(90deg) scaleX(-1)"`. Returns 0 when no
- * `rotate()` term is present.
- */
-function rotationDegrees(transform: string | undefined): number {
-  if (!transform) return 0;
-  const m = transform.match(/rotate\(([-\d.]+)deg\)/);
-  if (!m) return 0;
-  return ((parseFloat(m[1]) % 360) + 360) % 360;
-}
-
-/**
- * Axis-aligned bounding box of a rectangle of size `w × h` rotated by
- * `deg` degrees. For multiples of 90° the dims swap (or stay) without
- * floating-point drift; arbitrary angles use the standard formula.
- */
-function rotatedBoundingBox(w: number, h: number, deg: number): { w: number; h: number } {
-  if (deg === 0 || deg === 180) return { w, h };
-  if (deg === 90 || deg === 270) return { w: h, h: w };
-  const rad = (deg * Math.PI) / 180;
-  const sinA = Math.abs(Math.sin(rad));
-  const cosA = Math.abs(Math.cos(rad));
-  return { w: w * cosA + h * sinA, h: w * sinA + h * cosA };
-}
-
-/**
  * Render an inline image run (flows with text)
  */
 /**
@@ -486,20 +465,25 @@ function applyInlineImageDist(el: HTMLElement, run: ImageRun): void {
   if (run.distBottom) el.style.marginBottom = `${run.distBottom}px`;
 }
 
-function renderInlineImageRun(run: ImageRun, doc: Document): HTMLElement {
+function renderInlineImageRun(
+  run: ImageRun,
+  doc: Document,
+  paintedWidth: number | undefined
+): HTMLElement {
+  const geometry = getImagePaintGeometry(run, { paintedWidth });
   const img = doc.createElement('img');
   img.className = `${PARAGRAPH_CLASS_NAMES.run} ${PARAGRAPH_CLASS_NAMES.image}`;
 
   const imageSrc = sanitizeImageSrc(run.src);
   if (imageSrc) img.src = imageSrc;
-  img.width = run.width;
-  img.height = run.height;
+  img.width = Math.round(geometry.contentWidth);
+  img.height = Math.round(geometry.contentHeight);
   // Lock dimensions explicitly: when only the width/height attributes are set,
   // browsers may compute height from the natural aspect ratio (e.g. wp:extent
   // 1771650×278918 EMU rounds to 186×29 px but native 800×126 px gives 29.29 px,
   // overflowing the cell by ~0.3 px and clipping the bottom of the logo).
-  img.style.width = `${run.width}px`;
-  img.style.height = `${run.height}px`;
+  img.style.width = `${geometry.contentWidth}px`;
+  img.style.height = `${geometry.contentHeight}px`;
   if (run.alt) {
     img.alt = run.alt;
   }
@@ -511,8 +495,10 @@ function renderInlineImageRun(run: ImageRun, doc: Document): HTMLElement {
   }
   if (hasImageVisualAttrs(run)) applyImageVisualAttrs(img, run);
 
-  const deg = rotationDegrees(run.transform);
-  if (deg !== 0) {
+  if (
+    geometry.boxWidth !== geometry.contentWidth ||
+    geometry.boxHeight !== geometry.contentHeight
+  ) {
     // Rotated content extends past `run.width × run.height`, so the inline
     // line box would otherwise reserve too little space and adjacent text
     // would overlap the picture. Wrap the rotated img in a span sized to
@@ -520,16 +506,16 @@ function renderInlineImageRun(run: ImageRun, doc: Document): HTMLElement {
     // wrapper's centre so the rotation pivots correctly. This matches
     // Word's behaviour where `wp:extent` reflects the post-rotation bbox
     // and the picture content rotates inside it.
-    const bbox = rotatedBoundingBox(run.width, run.height, deg);
     const wrapper = doc.createElement('span');
+    wrapper.className = `${PARAGRAPH_CLASS_NAMES.run} ${PARAGRAPH_CLASS_NAMES.imageWrapper}`;
     wrapper.style.display = 'inline-block';
     wrapper.style.position = 'relative';
-    wrapper.style.width = `${bbox.w}px`;
-    wrapper.style.height = `${bbox.h}px`;
+    wrapper.style.width = `${geometry.boxWidth}px`;
+    wrapper.style.height = `${geometry.boxHeight}px`;
     wrapper.style.verticalAlign = 'middle';
     img.style.position = 'absolute';
-    img.style.left = `${(bbox.w - run.width) / 2}px`;
-    img.style.top = `${(bbox.h - run.height) / 2}px`;
+    img.style.left = `${(geometry.boxWidth - geometry.contentWidth) / 2}px`;
+    img.style.top = `${(geometry.boxHeight - geometry.contentHeight) / 2}px`;
     applyInlineImageDist(wrapper, run);
     applyPmPositions(wrapper, run.docFrom, run.docTo);
     wrapper.appendChild(img);
@@ -556,7 +542,7 @@ function renderInlineImageRun(run: ImageRun, doc: Document): HTMLElement {
   // is clamped) or overflows the page entirely. The run's own aspect is used —
   // not the image's natural aspect — so a deliberately stretched image keeps
   // its shape. Behaves identically in React and Vue (both use this painter).
-  if (run.width > 0 && run.height > 0) {
+  if (paintedWidth === undefined && run.width > 0 && run.height > 0) {
     img.style.height = 'auto';
     img.style.aspectRatio = `${run.width} / ${run.height}`;
     img.style.maxWidth = '100%';
@@ -572,23 +558,26 @@ function renderInlineImageRun(run: ImageRun, doc: Document): HTMLElement {
  * Render a block image (on its own line, like topAndBottom)
  */
 function renderBlockImage(run: ImageRun, doc: Document): HTMLElement {
+  const geometry = getImagePaintGeometry(run, { defaultMargin: 6 });
   const container = doc.createElement('div');
   container.className = 'layout-block-image';
   container.style.display = 'block';
   container.style.textAlign = 'center';
-  container.style.marginTop = `${run.distTop ?? 6}px`;
-  container.style.marginBottom = `${run.distBottom ?? 6}px`;
+  container.style.marginTop = `${geometry.marginTop}px`;
+  container.style.marginBottom = `${geometry.marginBottom}px`;
 
   const img = doc.createElement('img');
   const imageSrc = sanitizeImageSrc(run.src);
   if (imageSrc) img.src = imageSrc;
-  img.width = run.width;
-  img.height = run.height;
+  img.width = Math.round(geometry.contentWidth);
+  img.height = Math.round(geometry.contentHeight);
   // Global CSS reset (Tailwind preflight) sets img { display: block },
   // which makes text-align: center on the container ineffective.
   // Use margin: auto on the img itself to center it.
   img.style.marginLeft = 'auto';
   img.style.marginRight = 'auto';
+  img.style.width = `${geometry.contentWidth}px`;
+  img.style.height = `${geometry.contentHeight}px`;
   if (run.alt) {
     img.alt = run.alt;
   }
@@ -601,21 +590,23 @@ function renderBlockImage(run: ImageRun, doc: Document): HTMLElement {
   // Reserve the rotated bbox height so the rotated image doesn't bleed into
   // adjacent paragraphs. The container height matches the bbox; the inner
   // img rotates around its own centre, which now lands inside the wrapper.
-  const deg = rotationDegrees(run.transform);
-  if (deg !== 0) {
-    const bbox = rotatedBoundingBox(run.width, run.height, deg);
-    container.style.height = `${bbox.h}px`;
+  if (
+    geometry.boxWidth !== geometry.contentWidth ||
+    geometry.boxHeight !== geometry.contentHeight
+  ) {
+    container.style.height = `${geometry.boxHeight}px`;
     container.style.position = 'relative';
     img.style.position = 'absolute';
     img.style.left = '50%';
     img.style.top = '50%';
-    img.style.marginLeft = `${-run.width / 2}px`;
+    img.style.marginLeft = `${-geometry.contentWidth / 2}px`;
     img.style.marginRight = '0';
-    img.style.marginTop = `${-run.height / 2}px`;
+    img.style.marginTop = `${-geometry.contentHeight / 2}px`;
   }
 
   applyPmPositions(container, run.docFrom, run.docTo);
 
+  applyImageRevisionAttrs(img, run);
   container.appendChild(img);
 
   return container;
@@ -626,7 +617,7 @@ function renderBlockImage(run: ImageRun, doc: Document): HTMLElement {
  * Note: Floating images (square/tight/through) are handled separately at paragraph level,
  * not through this function. If they reach here, render as block.
  */
-export function paintImageRun(run: ImageRun, doc: Document): HTMLElement {
+export function paintImageRun(run: ImageRun, doc: Document, paintedWidth?: number): HTMLElement {
   // Floating images should be handled at paragraph level, not here
   // If they reach here (e.g., inside table cells), render as block
   let el: HTMLElement;
@@ -636,7 +627,7 @@ export function paintImageRun(run: ImageRun, doc: Document): HTMLElement {
     el = renderBlockImage(run, doc);
   } else {
     // Default: inline
-    el = renderInlineImageRun(run, doc);
+    el = renderInlineImageRun(run, doc, paintedWidth);
   }
   applyImageRevisionStyle(el, run);
   return el;
@@ -649,27 +640,7 @@ export function paintImageRun(run: ImageRun, doc: Document): HTMLElement {
  * and perturb the measured line height.
  */
 function applyImageRevisionStyle(el: HTMLElement, run: ImageRun): void {
-  if (run.isInsertion) {
-    el.style.outline = '2px solid #2e7d32';
-    el.style.outlineOffset = '1px';
-    el.classList.add('docx-insertion');
-  } else if (run.isDeletion) {
-    el.style.outline = '2px solid #c62828';
-    el.style.outlineOffset = '1px';
-    el.style.opacity = '0.6';
-    el.classList.add('docx-deletion');
-  } else {
-    return;
-  }
-  if (run.changeAuthor) {
-    el.dataset.changeAuthor = run.changeAuthor;
-    el.dataset.revisionAuthor = run.changeAuthor;
-  }
-  if (run.changeDate) {
-    el.dataset.changeDate = run.changeDate;
-    el.dataset.revisionDate = run.changeDate;
-  }
-  if (run.changeRevisionId != null) el.dataset.revisionId = String(run.changeRevisionId);
+  applyImageRevisionAttrs(el, run);
 }
 
 /**

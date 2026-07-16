@@ -121,6 +121,12 @@
   /* Link */
   --doc-link: #0563c1; /* hyperlinks */
 
+  /* Revision indicators */
+  --doc-revision-insertion: #2e7d32;
+  --doc-revision-deletion: #c62828;
+  --doc-revision-insertion-tint: rgba(46, 125, 50, 0.05);
+  --doc-revision-deletion-tint: rgba(198, 40, 40, 0.05);
+
   /* Shadows & overlays */
   --doc-shadow: rgba(0, 0, 0, 0.15);
   --doc-shadow-strong: rgba(0, 0, 0, 0.3);
@@ -1127,4 +1133,91 @@
 }
 .layout-sdt-repeat-btn:hover {
   background: var(--doc-primary-light);
+}
+
+/* ============================================================================
+ * Revision indicators shared by both adapters.
+ * Visible painter cues live here so React and Vue stay in lockstep.
+ * ========================================================================== */
+
+.layout-revision-bars {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.layout-revision-change-bar {
+  position: absolute;
+  left: -10px;
+  width: 2px;
+  pointer-events: none;
+}
+
+.layout-revision-change-bar.layout-revision-ins {
+  background-color: var(--doc-revision-insertion);
+}
+
+.layout-revision-change-bar.layout-revision-del {
+  background-color: var(--doc-revision-deletion);
+}
+
+.layout-revision-pmark {
+  position: relative;
+}
+
+.layout-revision-pmark-glyph {
+  display: inline;
+  margin-left: 2px;
+  font-weight: normal;
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+.layout-revision-pmark-glyph.layout-revision-ins {
+  color: var(--doc-revision-insertion);
+}
+
+.layout-revision-pmark-glyph.layout-revision-del {
+  color: var(--doc-revision-deletion);
+  text-decoration: line-through;
+}
+
+.ep-revision-cell.ep-revision-ins {
+  box-shadow: inset 0 3px 0 var(--doc-revision-insertion);
+  background-color: var(--doc-revision-insertion-tint);
+}
+
+.ep-revision-cell.ep-revision-del {
+  box-shadow: inset 0 3px 0 var(--doc-revision-deletion);
+  background-color: var(--doc-revision-deletion-tint);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--doc-revision-deletion) 60%, transparent);
+}
+
+.ep-revision-cell.ep-revision-merge {
+  box-shadow: inset 0 3px 0 var(--doc-text-muted);
+  background-color: color-mix(in srgb, var(--doc-text-muted) 8%, transparent);
+}
+
+.layout-run-image.docx-insertion,
+.layout-run-image-wrapper.docx-insertion > .layout-run-image,
+.layout-block-image.docx-insertion,
+.layout-image.docx-insertion,
+.layout-page-floating-image.docx-insertion > img,
+.layout-cell-floating-image.docx-insertion > img,
+.layout-header-footer-floating-image.docx-insertion > img {
+  outline: 2px solid var(--doc-revision-insertion);
+  outline-offset: 1px;
+}
+
+.layout-run-image.docx-deletion,
+.layout-run-image-wrapper.docx-deletion > .layout-run-image,
+.layout-block-image.docx-deletion,
+.layout-image.docx-deletion,
+.layout-page-floating-image.docx-deletion > img,
+.layout-cell-floating-image.docx-deletion > img,
+.layout-header-footer-floating-image.docx-deletion > img {
+  outline: 2px solid var(--doc-revision-deletion);
+  outline-offset: 1px;
+  opacity: 0.6;
 }

@@ -19,6 +19,8 @@ import type { WrapType } from '../docx/wrapTypes';
 export const LAYOUT_IMAGE_CLASSES = {
   /** Inline image rendered inside `.layout-line`. */
   runImage: 'layout-run-image',
+  /** Wrapper used when an inline image needs a rotated bounding box. */
+  runImageWrapper: 'layout-run-image-wrapper',
   /** Block (centered, topAndBottom) image. */
   blockImage: 'layout-block-image',
   /** Anchored image rendered in the page-level floating layer. */
@@ -33,8 +35,17 @@ const IMAGE_HIT_SELECTOR = [
   `.${LAYOUT_IMAGE_CLASSES.pageFloatingImage}`,
   `.${LAYOUT_IMAGE_CLASSES.cellFloatingImage}`,
   `.${LAYOUT_IMAGE_CLASSES.blockImage}`,
+  `.${LAYOUT_IMAGE_CLASSES.runImageWrapper}`,
   `.${LAYOUT_IMAGE_CLASSES.runImage}`,
 ].join(', ');
+
+function resolveInlineImageHit(target: HTMLElement): HTMLElement | null {
+  if (target.tagName !== 'IMG' || !target.classList.contains(LAYOUT_IMAGE_CLASSES.runImage)) {
+    return null;
+  }
+  const wrapper = target.closest(`.${LAYOUT_IMAGE_CLASSES.runImageWrapper}`) as HTMLElement | null;
+  return wrapper?.dataset.docFrom ? wrapper : target;
+}
 
 // ============================================================================
 // Hit-test
@@ -56,7 +67,8 @@ export function pointerTargetResolveImage(
   target: EventTarget | null
 ): ImagePointerTargetResult | null {
   if (!(target instanceof Element)) return null;
-  const imageEl = target.closest(IMAGE_HIT_SELECTOR) as HTMLElement | null;
+  const inlineImageHit = target instanceof HTMLElement ? resolveInlineImageHit(target) : null;
+  const imageEl = inlineImageHit ?? (target.closest(IMAGE_HIT_SELECTOR) as HTMLElement | null);
   if (!imageEl) return null;
   const docFromAttr = imageEl.dataset.docFrom;
   if (docFromAttr === undefined) return null;
@@ -75,12 +87,8 @@ export function pointerTargetResolveImage(
  */
 export function findImageElement(target: EventTarget | null): HTMLElement | null {
   if (!(target instanceof HTMLElement)) return null;
-  // Direct hit on an inline `<img class="layout-run-image">` — return it as-is
-  // since the inline image carries its own `data-doc-from` and behaves as the
-  // selection target.
-  if (target.tagName === 'IMG' && target.classList.contains(LAYOUT_IMAGE_CLASSES.runImage)) {
-    return target;
-  }
+  const inlineImageHit = resolveInlineImageHit(target);
+  if (inlineImageHit) return inlineImageHit;
   // Otherwise walk up to the nearest image container with `data-doc-from`.
   const container = target.closest(IMAGE_HIT_SELECTOR) as HTMLElement | null;
   if (container && container.dataset.docFrom) return container;
@@ -108,11 +116,17 @@ export function captureInlinePositionEmu(
   imageEl: HTMLElement,
   zoom = 1
 ): { horizontalEmu: number; verticalEmu: number } | undefined {
-  if (!imageEl.classList.contains(LAYOUT_IMAGE_CLASSES.runImage)) return undefined;
+  const isDirectInlineImage = imageEl.classList.contains(LAYOUT_IMAGE_CLASSES.runImage);
+  const isWrappedInlineImage = imageEl.classList.contains(LAYOUT_IMAGE_CLASSES.runImageWrapper);
+  if (!isDirectInlineImage && !isWrappedInlineImage) return undefined;
+  const measuredEl = isWrappedInlineImage
+    ? ((imageEl.querySelector(`img.${LAYOUT_IMAGE_CLASSES.runImage}`) as HTMLElement | null) ??
+      imageEl)
+    : imageEl;
   const pageContent = imageEl.closest(`.${LAYOUT_IMAGE_CLASSES.pageContent}`) as HTMLElement | null;
   const paragraph = imageEl.closest(`.${LAYOUT_IMAGE_CLASSES.paragraph}`) as HTMLElement | null;
   if (!pageContent || !paragraph) return undefined;
-  const imgRect = imageEl.getBoundingClientRect();
+  const imgRect = measuredEl.getBoundingClientRect();
   const pageRect = pageContent.getBoundingClientRect();
   const paraRect = paragraph.getBoundingClientRect();
   const safeZoom = zoom > 0 ? zoom : 1;

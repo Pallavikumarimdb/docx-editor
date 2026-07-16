@@ -24,6 +24,11 @@ export interface CellFloatingImage {
   height: number;
   alt?: string;
   transform?: string;
+  isInsertion?: boolean;
+  isDeletion?: boolean;
+  changeAuthor?: string;
+  changeDate?: string;
+  changeRevisionId?: number;
   x: number;
   y: number;
   side: 'left' | 'right';
@@ -120,6 +125,11 @@ export function extractCellFloatingImages(
         height: imgRun.height,
         alt: imgRun.alt,
         transform: imgRun.transform,
+        isInsertion: imgRun.isInsertion,
+        isDeletion: imgRun.isDeletion,
+        changeAuthor: imgRun.changeAuthor,
+        changeDate: imgRun.changeDate,
+        changeRevisionId: imgRun.changeRevisionId,
         x,
         y,
         side,

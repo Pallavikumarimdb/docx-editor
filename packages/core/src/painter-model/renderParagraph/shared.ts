@@ -11,6 +11,12 @@ import type {
   LineBreakRun,
   FieldRun,
 } from '../../pagination-model/types';
+export {
+  getImagePaintGeometry,
+  rotatedBoundingBox,
+  rotationDegrees,
+  type ImagePaintGeometry,
+} from '../../utils/imagePaintGeometry';
 
 /**
  * CSS class names for paragraph rendering
@@ -22,6 +28,7 @@ export const PARAGRAPH_CLASS_NAMES = {
   text: 'layout-run-text',
   tab: 'layout-run-tab',
   image: 'layout-run-image',
+  imageWrapper: 'layout-run-image-wrapper',
   lineBreak: 'layout-run-linebreak',
 };
 

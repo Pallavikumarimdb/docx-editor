@@ -16,7 +16,9 @@
 import type { CellMarker, RevisionInfo } from '../types/content/trackedChange';
 import type { InlineSdtWidget } from './inlineSdtWidgets';
 import type { FootnoteFragment } from './footnoteTypes';
+import type { TrackedChangeMetadata } from './trackedChangeMetadata';
 export type { FootnoteNodeFragment, FootnoteFragment } from './footnoteTypes';
+export type { TrackedChangeMetadata } from './trackedChangeMetadata';
 
 // ============================================================================
 // Shared scalars
@@ -196,7 +198,7 @@ export interface ImageRunPosition {
  *
  * @public
  */
-export interface RunFormatting {
+export interface RunFormatting extends TrackedChangeMetadata {
   bold?: boolean;
   italic?: boolean;
   /** `true` for a plain single underline; an object when style or color is set. */
@@ -233,11 +235,6 @@ export interface RunFormatting {
   footnoteRefId?: number;
   endnoteRefId?: number;
   commentIds?: number[];
-  isInsertion?: boolean;
-  isDeletion?: boolean;
-  changeAuthor?: string;
-  changeDate?: string;
-  changeRevisionId?: number;
 }
 
 /**
@@ -310,7 +307,7 @@ export interface FieldRun extends RunFormatting, DocRange {
  *
  * @public
  */
-export interface ImageRun extends DocRange {
+export interface ImageRun extends DocRange, TrackedChangeMetadata {
   kind: 'image';
   src: string;
   width: number;
@@ -332,11 +329,6 @@ export interface ImageRun extends DocRange {
   cropLeft?: number;
   opacity?: number;
   hlinkHref?: string;
-  isInsertion?: boolean;
-  isDeletion?: boolean;
-  changeAuthor?: string;
-  changeDate?: string;
-  changeRevisionId?: number;
 }
 
 /**
@@ -536,7 +528,7 @@ export interface TableBlock extends ContentNodeBase {
  *
  * @public
  */
-export interface ImageBlock extends ContentNodeBase {
+export interface ImageBlock extends ContentNodeBase, TrackedChangeMetadata {
   kind: 'image';
   src: string;
   width: number;

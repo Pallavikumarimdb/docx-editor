@@ -1,11 +1,16 @@
-import { applyImageVisualAttrs, hasImageVisualAttrs } from './renderImage';
+import {
+  applyImageRevisionAttrs,
+  applyImageVisualAttrs,
+  hasImageVisualAttrs,
+  type ImageRevisionAttrs,
+} from './renderImage';
 import { sanitizeImageSrc } from '../utils/sanitizeImageSrc';
 
 /**
  * Minimum fields the floating-image painter needs. Page-level and cell-level
  * float records both satisfy this shape.
  */
-export interface FloatingImagePaintRecord {
+export interface FloatingImagePaintRecord extends ImageRevisionAttrs {
   src: string;
   width: number;
   height: number;
@@ -72,6 +77,7 @@ export function paintFloatingImagesLayer(
     container.style.left = `${floatImg.x}px`;
     if (floatImg.docFrom !== undefined) container.dataset.docFrom = String(floatImg.docFrom);
     if (floatImg.docTo !== undefined) container.dataset.docTo = String(floatImg.docTo);
+    applyImageRevisionAttrs(container, floatImg);
 
     const img = doc.createElement('img');
     const imageSrc = sanitizeImageSrc(floatImg.src);
@@ -92,6 +98,7 @@ export function paintFloatingImagesLayer(
       img.style.transformOrigin = 'center center';
     }
     if (hasImageVisualAttrs(floatImg)) applyImageVisualAttrs(img, floatImg);
+    applyImageRevisionAttrs(img, floatImg);
 
     container.appendChild(img);
     layer.appendChild(container);

@@ -26,6 +26,7 @@ import {
 import { measureTextWidth, resolveFontStyle } from '../../flow-model/metrics/textMetrics';
 import {
   PARAGRAPH_CLASS_NAMES,
+  getImagePaintGeometry,
   isTextRun,
   isTabRun,
   isImageRun,
@@ -114,6 +115,38 @@ interface RenderLineOptions {
    * hung-out region for some inputs and would drift.
    */
   lineRightEdgePx?: number;
+  /** Reports each inline image only when this line actually appends it. */
+  onInlineImageRendered?: (run: ImageRun, span: InlineImagePaintSpan) => void;
+}
+
+export interface InlineImagePaintSpan {
+  top: number;
+  height: number;
+}
+
+function reportInlineImageSpan(
+  run: ImageRun,
+  line: MeasuredLine,
+  runIndex: number,
+  imageOnly: boolean,
+  callback: RenderLineOptions['onInlineImageRendered']
+): void {
+  if (!callback) return;
+
+  const rendersAsBlock = run.displayMode === 'block' || run.wrapType === 'topAndBottom';
+  const geometry = getImagePaintGeometry(run, {
+    paintedWidth: rendersAsBlock ? run.width : (line.atomAdvances?.[runIndex] ?? run.width),
+    defaultMargin: rendersAsBlock ? 6 : 0,
+  });
+  const imageTop = imageOnly
+    ? (line.lineHeight - geometry.boxHeight - geometry.marginTop - geometry.marginBottom) / 2 +
+      geometry.marginTop
+    : line.lineHeight - geometry.marginBottom - geometry.boxHeight;
+  const visibleTop = Math.max(0, imageTop);
+  const visibleBottom = Math.min(line.lineHeight, imageTop + geometry.boxHeight);
+  if (visibleBottom > visibleTop) {
+    callback(run, { top: visibleTop, height: visibleBottom - visibleTop });
+  }
 }
 
 /**
@@ -286,7 +319,8 @@ export function paintLine(
   // Image-level alignment wins when present — it's the more specific signal
   // from OOXML, and it's the only signal Word writes for that kind of
   // anchored layout.
-  if (runsForLine.length === 1 && isImageRun(runsForLine[0])) {
+  const imageOnlyLine = runsForLine.length === 1 && isImageRun(runsForLine[0]);
+  if (imageOnlyLine) {
     const imageRun = runsForLine[0] as ImageRun;
     const effectiveAlign = resolveImageLineAlign(imageRun, alignment);
     lineEl.style.display = 'flex';
@@ -506,7 +540,16 @@ export function paintLine(
             const imageKey = getInlineImageRunKey(next);
             if (!config?.renderedInlineImageKeys?.has(imageKey)) {
               config?.renderedInlineImageKeys?.add(imageKey);
-              lineEl.appendChild(paintImageRun(next, doc));
+              lineEl.appendChild(
+                paintImageRun(next, doc, line.atomAdvances?.[line.fromRun + j] ?? next.width)
+              );
+              reportInlineImageSpan(
+                next,
+                line,
+                line.fromRun + j,
+                imageOnlyLine,
+                config?.onInlineImageRendered
+              );
             }
           } else {
             lineEl.appendChild(paintRun(next, doc, config?.context));
@@ -564,11 +607,19 @@ export function paintLine(
       }
       config?.renderedInlineImageKeys?.add(imageKey);
       // Inline or block image - render in the text flow
-      const runEl = paintImageRun(run, doc);
+      const paintedWidth = line.atomAdvances?.[line.fromRun + i] ?? run.width;
+      const runEl = paintImageRun(run, doc, paintedWidth);
       lineEl.appendChild(runEl);
+      reportInlineImageSpan(
+        run,
+        line,
+        line.fromRun + i,
+        imageOnlyLine,
+        config?.onInlineImageRendered
+      );
       // Block images don't contribute to horizontal position
       if (run.displayMode !== 'block' && run.wrapType !== 'topAndBottom') {
-        currentX += run.width;
+        currentX += paintedWidth;
       }
     } else if (isLineBreakRun(run)) {
       const runEl = paintLineBreakRun(run, doc);

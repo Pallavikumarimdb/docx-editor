@@ -239,6 +239,68 @@ describe('anchored object paint parity', () => {
     expect(paintedTextBox?.style.top).toBe('260px');
   });
 
+  test('keeps the positioned header image as the sole revision sidebar anchor', () => {
+    const imageParagraph: ParagraphBlock = {
+      kind: 'paragraph',
+      id: 'tracked-header-image',
+      runs: [
+        {
+          kind: 'image',
+          src: '',
+          width: 20,
+          height: 10,
+          displayMode: 'float',
+          wrapType: 'square',
+          position: {
+            horizontal: { relativeTo: 'rightMargin', align: 'center' },
+            vertical: { relativeTo: 'bottomMargin', align: 'bottom' },
+          },
+          isInsertion: true,
+          changeAuthor: 'Jane',
+          changeDate: '2026-07-16T20:00:00Z',
+          changeRevisionId: 303,
+        },
+      ],
+    };
+
+    const painted = renderHeaderFooterContent(
+      {
+        nodes: [imageParagraph],
+        metrics: [{ kind: 'paragraph', lines: [], totalHeight: 0 }],
+        height: 10,
+      },
+      { pageNumber: 1, totalPages: 1, section: 'header', contentWidth: 380 },
+      { document },
+      {
+        flowTop: 30,
+        flowLeft: 40,
+        contentWidth: 380,
+        pageWidth: 500,
+        pageHeight: 300,
+        margins: { top: 20, right: 80, bottom: 60, left: 40 },
+      }
+    );
+    const wrapper = painted.querySelector<HTMLElement>('.layout-header-footer-floating-image');
+    const anchors = painted.querySelectorAll<HTMLElement>(
+      '.docx-insertion[data-revision-id="303"]'
+    );
+    const image = anchors[0];
+    const bar = painted.querySelector<HTMLElement>(
+      '.layout-revision-change-bar[data-revision-id="303"]'
+    );
+
+    expect(wrapper?.classList.contains('docx-insertion')).toBe(true);
+    expect(wrapper?.dataset.revisionId).toBeUndefined();
+    expect(anchors).toHaveLength(1);
+    expect(image?.tagName).toBe('IMG');
+    expect(image?.style.left).toBe('410px');
+    expect(image?.style.top).toBe('260px');
+    expect(image?.style.width).toBe('20px');
+    expect(image?.style.height).toBe('10px');
+    expect(bar?.style.top).toBe('260px');
+    expect(bar?.style.height).toBe('10px');
+  });
+
   test('positions topAndBottom header text boxes without advancing following content', () => {
     const textBox: TextBoxBlock = {
       kind: 'textBox',
@@ -347,6 +409,67 @@ describe('anchored object paint parity', () => {
     expect(paintedTable?.style.top).toBe('60px');
     expect(paintedTable?.style.left).toBe('0px');
     expect(followingContent?.style.top).toBe('0px');
+  });
+
+  test('positions a floating header table revision bar at the resolved table top', () => {
+    const table: TableBlock = {
+      kind: 'table',
+      id: 'tracked-floating-header-table',
+      rows: [
+        {
+          id: 'tracked-row',
+          trackedIns: {
+            revisionId: 91,
+            author: 'Jane',
+            date: '2026-07-16T17:00:00Z',
+          },
+          cells: [{ id: 'tracked-cell', nodes: [] }],
+        },
+      ],
+      floating: {
+        horzAnchor: 'page',
+        vertAnchor: 'page',
+        tblpX: 50,
+        tblpY: 80,
+      },
+    };
+
+    const painted = renderHeaderFooterContent(
+      {
+        nodes: [table],
+        metrics: [
+          {
+            kind: 'table',
+            rows: [{ height: 20, cells: [{ metrics: [], width: 100, height: 20 }] }],
+            columnWidths: [100],
+            totalWidth: 100,
+            totalHeight: 20,
+          },
+        ],
+        height: 20,
+        flowHeight: 0,
+      },
+      { pageNumber: 1, totalPages: 1, section: 'header', contentWidth: 300 },
+      { document },
+      {
+        flowTop: 20,
+        flowLeft: 50,
+        contentWidth: 300,
+        pageWidth: 400,
+        pageHeight: 300,
+        margins: { top: 40, right: 50, bottom: 40, left: 50 },
+      }
+    );
+
+    const paintedTable = painted.querySelector<HTMLElement>(
+      '[data-block-id="tracked-floating-header-table"]'
+    );
+    const revisionBar = painted.querySelector<HTMLElement>(
+      '.layout-revision-change-bar[data-revision-id="91"]'
+    );
+    expect(paintedTable?.style.top).toBe('60px');
+    expect(revisionBar?.style.top).toBe('60px');
+    expect(revisionBar?.style.height).toBe('20px');
   });
 
   test('keeps a page-relative footer text box at its authored page y', () => {

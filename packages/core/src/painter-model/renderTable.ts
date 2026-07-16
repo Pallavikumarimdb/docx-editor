@@ -14,17 +14,9 @@ import type {
   TableMetrics,
   TableCell,
   TableCellMetrics,
-  ParagraphBlock,
-  ParagraphMetrics,
-  ParagraphFragment,
 } from '../pagination-model/types';
 import type { RenderContext } from './paintPage';
-import { paintFloatingImagesLayer } from './floatingImageLayer';
-import { floatingImageIsBehindDoc, floatingImageWrapsText } from './floatingImageFlow';
-import { paintParagraphFragment } from './renderParagraph';
-import { paragraphLayout, type FloatingImageZone } from '../flow-model/metrics';
 import { resolveCellGrid } from '../flow-model/tableWidthUtils';
-import { extractCellFloatingImages } from './renderTableCellFloating';
 import {
   styleBorder,
   buildRowYPositions,
@@ -32,10 +24,17 @@ import {
   makeCutBorder,
   makeTableBodyClip,
 } from './renderTableBorders';
-import type { RevisionInfo } from '../types/content/trackedChange';
-import { renderSdtBoundaryBoxesForExtents, type SdtBoundaryExtent } from './sdtBoundary';
-import { tagSdtCellBlock } from './renderTableSdt';
 import { applyRevisionAttrs } from './renderTableRevisions';
+import {
+  applyWholeTableRevisionDom,
+  getWholeTableRevisionMetadata,
+  resolveCellContentBox,
+  type CellFloatRevisionContext,
+} from './renderTableRevisionBars';
+import type { RevisionBarCollector } from './revisionIndicators';
+import { renderCellContent } from './renderTableCellContent';
+
+export { getTableRevisionBarSpans, getWholeTableRevisionMetadata } from './renderTableRevisionBars';
 
 /**
  * CSS class names for table elements
@@ -56,279 +55,11 @@ export const TABLE_CLASS_NAMES = {
  */
 export interface RenderTableFragmentOptions {
   document?: Document;
-}
-
-/**
- * Render cell content (paragraphs and nested tables)
- */
-function renderCellContent(
-  cell: TableCell,
-  cellMetrics: TableCellMetrics,
-  context: RenderContext,
-  doc: Document
-): HTMLElement {
-  const contentEl = doc.createElement('div');
-  contentEl.className = TABLE_CLASS_NAMES.cellContent;
-  contentEl.style.position = 'relative';
-  // Cell uses border-box sizing, so content width must subtract padding.
-  const padLeft = cell.padding?.left ?? 7;
-  const padRight = cell.padding?.right ?? 7;
-  const contentWidth = Math.max(0, cellMetrics.width - padLeft - padRight);
-  contentEl.style.width = `${contentWidth}px`;
-
-  const cellFloatingImages = extractCellFloatingImages(cell, cellMetrics, contentWidth);
-
-  // Build floating zones for measurement and render floating layer
-  let floatingZones: FloatingImageZone[] | undefined;
-  if (cellFloatingImages.length > 0) {
-    floatingZones = cellFloatingImages.filter(floatingImageWrapsText).map((img) => {
-      const rectRight = img.x + img.width + img.distRight;
-      const rectTop = img.y - img.distTop;
-      const rectBottom = img.y + img.height + img.distBottom;
-
-      let leftMargin = 0;
-      let rightMargin = 0;
-      // Use wrapText to determine which side text flows on (same as rectsToFloatingZones in paintPage.ts)
-      const wt = img.wrapText ?? 'bothSides';
-      if (wt === 'right') {
-        // Text flows on RIGHT only -> image nodes the left side
-        leftMargin = rectRight;
-      } else if (wt === 'left') {
-        // Text flows on LEFT only -> image nodes the right side
-        rightMargin = contentWidth - (img.x - img.distLeft);
-      } else {
-        // bothSides / largest: use image position to determine which side it nodes
-        if (img.side === 'left') {
-          leftMargin = rectRight;
-        } else {
-          rightMargin = contentWidth - (img.x - img.distLeft);
-        }
-      }
-      return { leftMargin, rightMargin, topY: rectTop, bottomY: rectBottom };
-    });
-
-    const behindFloatingImages = cellFloatingImages.filter(floatingImageIsBehindDoc);
-    if (behindFloatingImages.length > 0) {
-      contentEl.appendChild(
-        paintFloatingImagesLayer(behindFloatingImages, doc, {
-          layerClass: 'layout-cell-floating-images-layer',
-          itemClass: 'layout-cell-floating-image',
-          sizing: 'fullSize',
-          layerMode: 'behind',
-        })
-      );
-    }
-  }
-
-  let cumulativeY = 0;
-  let previousParagraphAfter = 0;
-  const sdtExtents: SdtBoundaryExtent[] = [];
-  for (let i = 0; i < cell.nodes.length; i++) {
-    const block = cell.nodes[i];
-    const measure = cellMetrics.metrics[i];
-
-    if (block?.kind === 'paragraph' && measure?.kind === 'paragraph') {
-      const paragraphBlock = block as ParagraphBlock;
-      let paragraphMetrics = measure as ParagraphMetrics;
-      const spacing = paragraphBlock.attrs?.spacing;
-      // Match body pageComposer: max-collapse adjacent paragraph spacing.
-      const effectiveSpaceBefore = Math.max(previousParagraphAfter, spacing?.before ?? 0);
-      cumulativeY += effectiveSpaceBefore;
-
-      // Re-measure with floating zones if floating images exist in this cell
-      if (floatingZones && floatingZones.length > 0) {
-        paragraphMetrics = paragraphLayout(paragraphBlock, contentWidth, {
-          floatingZones,
-          paragraphYOffset: cumulativeY,
-        });
-      }
-
-      // Create synthetic fragment for the paragraph
-      const syntheticFragment: ParagraphFragment = {
-        kind: 'paragraph',
-        nodeId: paragraphBlock.id,
-        x: 0,
-        y: 0,
-        width: contentWidth,
-        height: paragraphMetrics.totalHeight,
-        fromLine: 0,
-        toLine: paragraphMetrics.lines.length,
-        docFrom: paragraphBlock.docFrom,
-        docTo: paragraphBlock.docTo,
-      };
-
-      const cellContext = { ...context, insideTableCell: true as const };
-      const fragEl = paintParagraphFragment(
-        syntheticFragment,
-        paragraphBlock,
-        paragraphMetrics,
-        cellContext,
-        { document: doc }
-      );
-
-      fragEl.style.position = 'relative';
-      if (effectiveSpaceBefore > 0) {
-        fragEl.style.marginTop = `${effectiveSpaceBefore}px`;
-      }
-      tagSdtCellBlock(
-        fragEl,
-        sdtExtents,
-        paragraphBlock.sdtGroups,
-        cumulativeY,
-        cumulativeY + paragraphMetrics.totalHeight
-      );
-      contentEl.appendChild(fragEl);
-      cumulativeY += paragraphMetrics.totalHeight;
-      previousParagraphAfter = spacing?.after ?? 0;
-    } else if (block?.kind === 'table' && measure?.kind === 'table') {
-      // Nested table - render in normal document flow.
-      // Avoid cumulative marginTop offsets here: cell content already flows vertically,
-      // and compounding offsets can produce enormous heights on deeply nested tables.
-      const tableBlock = block as TableBlock;
-      const tableMeasure = measure as TableMetrics;
-      const effectiveSpaceBefore = previousParagraphAfter;
-
-      const nestedTableEl = renderNestedTable(tableBlock, tableMeasure, context, doc);
-      nestedTableEl.style.position = 'relative';
-      if (effectiveSpaceBefore > 0) {
-        nestedTableEl.style.marginTop = `${effectiveSpaceBefore}px`;
-      }
-      tagSdtCellBlock(
-        nestedTableEl,
-        sdtExtents,
-        tableBlock.sdtGroups,
-        cumulativeY + effectiveSpaceBefore,
-        cumulativeY + effectiveSpaceBefore + tableMeasure.totalHeight
-      );
-      contentEl.appendChild(nestedTableEl);
-      cumulativeY += effectiveSpaceBefore + ((measure as TableMetrics).totalHeight ?? 0);
-      previousParagraphAfter = 0;
-    }
-  }
-
-  if (previousParagraphAfter > 0) {
-    contentEl.style.paddingBottom = `${previousParagraphAfter}px`;
-  }
-
-  const frontFloatingImages = cellFloatingImages.filter((img) => !floatingImageIsBehindDoc(img));
-  if (frontFloatingImages.length > 0) {
-    contentEl.appendChild(
-      paintFloatingImagesLayer(frontFloatingImages, doc, {
-        layerClass: 'layout-cell-floating-images-layer',
-        itemClass: 'layout-cell-floating-image',
-        sizing: 'fullSize',
-        layerMode: 'front',
-      })
-    );
-  }
-
-  renderSdtBoundaryBoxesForExtents(contentEl, contentWidth, sdtExtents, doc);
-
-  return contentEl;
-}
-
-/**
- * Render a nested table (within a cell)
- */
-function renderNestedTable(
-  block: TableBlock,
-  measure: TableMetrics,
-  context: RenderContext,
-  doc: Document
-): HTMLElement {
-  const tableEl = doc.createElement('div');
-  tableEl.className = `${TABLE_CLASS_NAMES.table} layout-nested-table`;
-
-  // Positioning (relative, not absolute)
-  tableEl.style.position = 'relative';
-  tableEl.style.width = `${measure.totalWidth}px`;
-  tableEl.style.display = 'block';
-
-  if (block.justification === 'center') {
-    tableEl.style.marginLeft = 'auto';
-    tableEl.style.marginRight = 'auto';
-  } else if (block.justification === 'right') {
-    tableEl.style.marginLeft = 'auto';
-  } else if (block.indent) {
-    tableEl.style.marginLeft = `${block.indent}px`;
-  }
-
-  // Store metadata
-  tableEl.dataset.blockId = String(block.id);
-
-  if (block.docFrom !== undefined) {
-    tableEl.dataset.docFrom = String(block.docFrom);
-  }
-  if (block.docTo !== undefined) {
-    tableEl.dataset.docTo = String(block.docTo);
-  }
-
-  // Whole-table tracked insertion / deletion — every row carries a
-  // tracked marker from the SAME (author, date). The revision ids
-  // need not match (foreign editors mint a fresh id per row), so the
-  // (author, date) tuple is the right fingerprint. Paint ONE tall bar
-  // on the table and tell paintTableRow to skip the per-row bar.
-  const firstRow = block.rows[0];
-  const sharedTrIns = firstRow?.trackedIns;
-  const sharedTrDel = firstRow?.trackedDel;
-  const sameBurst = (a: RevisionInfo | undefined, b: RevisionInfo | undefined): boolean =>
-    !!a && !!b && (a.author ?? '') === (b.author ?? '') && (a.date ?? null) === (b.date ?? null);
-  const wholeTableTracked =
-    block.rows.length > 0 &&
-    block.rows.every((r) => {
-      if (sharedTrIns) return sameBurst(r.trackedIns, sharedTrIns);
-      if (sharedTrDel) return sameBurst(r.trackedDel, sharedTrDel);
-      return false;
-    });
-  if (wholeTableTracked) {
-    const tableRev = (sharedTrIns ?? sharedTrDel) as RevisionInfo;
-    const kind = sharedTrIns ? 'ins' : 'del';
-    tableEl.classList.add('ep-revision-table', `ep-revision-${kind}`);
-    tableEl.dataset.revisionId = String(tableRev.revisionId);
-    tableEl.dataset.revisionAuthor = tableRev.author;
-    if (tableRev.date) tableEl.dataset.revisionDate = tableRev.date;
-  }
-
-  const rowYPositions = buildRowYPositions(measure.rows);
-
-  // RTL nested table (`w:bidiVisual`): mirror column geometry, same as the
-  // top-level renderer.
-  const bidi = block.bidi === true;
-  const tableWidth = measure.columnWidths.reduce((w, cw) => w + (cw ?? 0), 0);
-
-  // Track spanning cells across rows
-  const spanningCells = new Map<string, SpanningCell>();
-
-  // Render all rows
-  for (let rowIndex = 0; rowIndex < block.rows.length; rowIndex++) {
-    const row = block.rows[rowIndex];
-    const rowMeasure = measure.rows[rowIndex];
-
-    if (!row || !rowMeasure) continue;
-
-    const rowEl = paintTableRow(
-      row,
-      rowMeasure,
-      rowIndex,
-      rowYPositions[rowIndex] ?? 0,
-      measure.columnWidths,
-      block.rows.length,
-      context,
-      doc,
-      spanningCells,
-      rowYPositions,
-      undefined,
-      wholeTableTracked,
-      bidi,
-      tableWidth
-    );
-    tableEl.appendChild(rowEl);
-  }
-
-  // Match the rounded row stack so the outer box and the rows agree to the px.
-  tableEl.style.height = `${rowYPositions[block.rows.length] ?? 0}px`;
-
-  return tableEl;
+  revisionBars?: {
+    collector: RevisionBarCollector;
+    /** Table fragment top in the owning collector's coordinate space. */
+    originTop: number;
+  };
 }
 
 /**
@@ -351,7 +82,8 @@ function paintTableCell(
    * marker shares this id, the row visual already covers it — suppress
    * the per-cell border / background to avoid stacking 2-3 green visuals
    * on the same cell. */
-  parentRowRevisionId?: number
+  parentRowRevisionId?: number,
+  revisionContext?: Omit<CellFloatRevisionContext, 'contentTop' | 'contentHeight'>
 ): HTMLElement {
   const cellEl = doc.createElement('div');
   cellEl.className = TABLE_CLASS_NAMES.cell;
@@ -410,25 +142,27 @@ function paintTableCell(
   // rows), Word top-anchors it — vAlign only positions the leftover slack.
   // Forcing top here also keeps the painted lines aligned with the break
   // offsets the pageComposer computed (which assume top-anchored content).
-  const contentFillsBox = (cellMetrics.height ?? 0) >= rowHeight - 0.5;
-  if (cell.verticalAlign && !contentFillsBox) {
+  const contentBox = resolveCellContentBox(cell, cellMetrics, rowHeight, borderFlags);
+  if (contentBox.justifyContent) {
     cellEl.style.display = 'flex';
     cellEl.style.flexDirection = 'column';
-    switch (cell.verticalAlign) {
-      case 'top':
-        cellEl.style.justifyContent = 'flex-start';
-        break;
-      case 'center':
-        cellEl.style.justifyContent = 'center';
-        break;
-      case 'bottom':
-        cellEl.style.justifyContent = 'flex-end';
-        break;
-    }
+    cellEl.style.justifyContent = contentBox.justifyContent;
   }
 
   // Render cell content
-  const contentEl = renderCellContent(cell, cellMetrics, context, doc);
+  const contentEl = renderCellContent(
+    cell,
+    cellMetrics,
+    context,
+    doc,
+    revisionContext
+      ? {
+          ...revisionContext,
+          contentTop: contentBox.top,
+          contentHeight: contentBox.height,
+        }
+      : undefined
+  );
   cellEl.appendChild(contentEl);
 
   // Store PM positions for selection
@@ -449,7 +183,7 @@ function paintTableCell(
 /**
  * Track cells that span multiple rows
  */
-type SpanningCell = {
+export type SpanningCell = {
   cell: TableCell;
   cellMetrics: TableCellMetrics;
   columnIndex: number;
@@ -503,7 +237,7 @@ function computeCellGrid(block: TableBlock, columnWidths: number[]): GridCell[] 
 /**
  * Render a table row with rowSpan support
  */
-function paintTableRow(
+export function paintTableRow(
   row: TableBlock['rows'][number],
   rowMeasure: TableMetrics['rows'][number],
   rowIndex: number,
@@ -521,7 +255,8 @@ function paintTableRow(
   /** RTL table (`w:bidiVisual`): mirror cell x and swap first/last column. */
   bidi = false,
   /** Sum of `columnWidths`, used to mirror x when `bidi`. */
-  tableWidth = 0
+  tableWidth = 0,
+  revisionContext?: Omit<CellFloatRevisionContext, 'rowHeight' | 'contentTop' | 'contentHeight'>
 ): HTMLElement {
   const rowEl = doc.createElement('div');
   rowEl.className = TABLE_CLASS_NAMES.row;
@@ -622,7 +357,13 @@ function paintTableRow(
       { isFirstRow, isLastRow, isFirstCol, isLastCol },
       context,
       doc,
-      row.trackedIns?.revisionId ?? row.trackedDel?.revisionId
+      row.trackedIns?.revisionId ?? row.trackedDel?.revisionId,
+      revisionContext
+        ? {
+            ...revisionContext,
+            rowHeight: cellHeight,
+          }
+        : undefined
     );
     cellEl.dataset.cellIndex = String(cellIndex);
     cellEl.dataset.columnIndex = String(columnIndex);
@@ -712,36 +453,13 @@ export function paintTableFragment(
     tableEl.dataset.docTo = String(fragment.docTo);
   }
 
-  // Whole-table tracked insertion / deletion — every row carries a
-  // tracked marker from the same (author, date) burst. Foreign editors
-  // mint a fresh revisionId per row, so the (author, date) tuple is the
-  // right fingerprint here; matching on id alone would miss the case.
-  const firstFragRow = block.rows[0];
-  const sharedFragIns = firstFragRow?.trackedIns;
-  const sharedFragDel = firstFragRow?.trackedDel;
-  const sameBurstFrag = (a: RevisionInfo | undefined, b: RevisionInfo | undefined): boolean =>
-    !!a && !!b && (a.author ?? '') === (b.author ?? '') && (a.date ?? null) === (b.date ?? null);
-  const fragWholeTableTracked =
-    block.rows.length > 0 &&
-    block.rows.every((r) => {
-      if (sharedFragIns) return sameBurstFrag(r.trackedIns, sharedFragIns);
-      if (sharedFragDel) return sameBurstFrag(r.trackedDel, sharedFragDel);
-      return false;
-    });
-  if (fragWholeTableTracked) {
-    const tableRev = (sharedFragIns ?? sharedFragDel) as RevisionInfo;
-    const kind = sharedFragIns ? 'ins' : 'del';
-    tableEl.classList.add('ep-revision-table', `ep-revision-${kind}`);
-    tableEl.dataset.revisionId = String(tableRev.revisionId);
-    tableEl.dataset.revisionAuthor = tableRev.author;
-    if (tableRev.date) tableEl.dataset.revisionDate = tableRev.date;
-    // The bar belongs in the document margin (matches paragraph change
-    // bar visual), so let the ::before pseudo at left:-10px extend past the
-    // table's left edge into the page padding. Only widen the X axis — the
-    // window relies on vertical clipping to hide off-window rows / a row that
-    // broke mid-content, so overflow-y must stay hidden.
-    tableEl.style.overflowX = 'visible';
-    tableEl.style.overflowY = 'hidden';
+  // Whole-table tracked insertion / deletion — keep the class + metadata for
+  // local cues and sidebar grouping, but the page-margin bar is painted by the
+  // owning revision collector.
+  const wholeTableRevision = getWholeTableRevisionMetadata(block.rows);
+  const fragWholeTableTracked = wholeTableRevision != null;
+  if (wholeTableRevision) {
+    applyWholeTableRevisionDom(tableEl, wholeTableRevision);
   }
 
   // RTL table mirror axis (see computeCellGrid), reused by the handles below.
@@ -799,7 +517,15 @@ export function paintTableFragment(
         hdrIdx === 0, // first header row draws top border
         fragWholeTableTracked,
         bidi,
-        tableWidth
+        tableWidth,
+        config.revisionBars
+          ? {
+              ...config.revisionBars,
+              rowTop: headerHeight,
+              clipTop: headerHeight,
+              clipBottom: headerHeight + hdrRowMeasure.height,
+            }
+          : undefined
       );
       rowEl.dataset.repeatedHeader = 'true';
       tableEl.appendChild(rowEl);
@@ -888,7 +614,17 @@ export function paintTableFragment(
       spanHeight,
       { isFirstRow: false, isLastRow, isFirstCol, isLastCol },
       context,
-      doc
+      doc,
+      undefined,
+      config.revisionBars
+        ? {
+            ...config.revisionBars,
+            rowTop: toFragmentY(rowYPositions[g.rowIndex] ?? 0),
+            rowHeight: spanHeight,
+            clipTop: headerHeight,
+            clipBottom: visibleHeight,
+          }
+        : undefined
     );
     cellEl.style.top = `${toBodyY(rowYPositions[g.rowIndex] ?? 0)}px`;
     cellEl.dataset.columnIndex = String(g.columnIndex);
@@ -928,7 +664,15 @@ export function paintTableFragment(
       isFirstRowInFragment,
       fragWholeTableTracked,
       bidi,
-      tableWidth
+      tableWidth,
+      config.revisionBars
+        ? {
+            ...config.revisionBars,
+            rowTop: toFragmentY(rowYPositions[rowIndex] ?? 0),
+            clipTop: headerHeight,
+            clipBottom: visibleHeight,
+          }
+        : undefined
     );
 
     bodyParent.appendChild(rowEl);

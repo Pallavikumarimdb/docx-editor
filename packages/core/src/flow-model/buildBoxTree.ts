@@ -41,6 +41,7 @@ import {
   isStructuralPageBreakParagraph,
   suppressDeletedListMarkerRun,
 } from './buildBoxTree/revisionLayout';
+import { extractImageRevision } from './buildBoxTree/imageRevision';
 
 export type { BuildBoxTreeOptions } from './buildBoxTree/shared';
 export { resetBoxIds } from './buildBoxTree/shared';
@@ -49,7 +50,6 @@ export { resolveListTemplate } from './buildBoxTree/listMarkers';
 
 const DEFAULT_FONT = 'Calibri';
 const DEFAULT_SIZE = 11; // points (Word 2007+ default)
-
 /**
  * Convert PM paragraph attrs to layout engine paragraph attrs.
  */
@@ -673,6 +673,7 @@ function convertTable(node: PMNode, startPos: number, config: BuildBoxTreeOption
 function convertImage(node: PMNode, startPos: number, pageContentHeight?: number): ImageBlock {
   const attrs = node.attrs;
   const wrapType = attrs.wrapType as string | undefined;
+  const revision = extractImageRevision(node);
 
   // Only anchor images with 'behind' or 'inFront' wrap types
   // Other wrap types (square, tight, through, topAndBottom) need text wrapping
@@ -693,6 +694,7 @@ function convertImage(node: PMNode, startPos: number, pageContentHeight?: number
     height: constrained.height,
     alt: attrs.alt as string | undefined,
     transform: attrs.transform as string | undefined,
+    ...revision,
     anchor: shouldAnchor
       ? {
           isAnchored: true,

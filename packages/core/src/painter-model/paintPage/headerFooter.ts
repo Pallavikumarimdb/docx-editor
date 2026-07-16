@@ -21,9 +21,9 @@ import type {
 } from '../../pagination-model/types';
 import { assertExhaustiveContentNode } from '../../pagination-model/types';
 import { isFloatingTextBoxBlock } from '../../pagination-model/textBoxFlow';
-import { paintParagraphFragment } from '../renderParagraph';
-import { paintTableFragment } from '../renderTable';
-import { paintImageFragment } from '../renderImage';
+import { getParagraphRevisionMetadata, paintParagraphFragment } from '../renderParagraph';
+import { getTableRevisionBarSpans, paintTableFragment } from '../renderTable';
+import { applyImageRevisionAttrs, getImageRevisionData, paintImageFragment } from '../renderImage';
 import { paintTextBoxFragment } from '../renderTextBox';
 import { sanitizeImageSrc } from '../../utils/sanitizeImageSrc';
 import type { RenderContext, RenderPageOptions } from '../paintPage';
@@ -32,6 +32,7 @@ import {
   resolveAnchoredObjectPosition,
   type AnchoredObjectPositionInput,
 } from '../anchoredObjectPosition';
+import { RevisionBarCollector } from '../revisionIndicators';
 
 /**
  * Header/footer content for rendering
@@ -212,7 +213,7 @@ export function resolveHeaderFooterFloatLeft(
 }
 
 function applyHeaderFooterFloatHorizontalPosition(
-  img: HTMLImageElement,
+  img: HTMLElement,
   floatImg: {
     width: number;
     position: {
@@ -283,6 +284,11 @@ export function renderHeaderFooterContent(
     width: number;
     height: number;
     alt?: string;
+    isInsertion?: boolean;
+    isDeletion?: boolean;
+    changeAuthor?: string;
+    changeDate?: string;
+    changeRevisionId?: number;
     paragraphY: number; // Y position of the containing paragraph
     position: {
       horizontal?: {
@@ -299,6 +305,7 @@ export function renderHeaderFooterContent(
       };
     };
   }> = [];
+  const revisionBars = new RevisionBarCollector();
 
   let cursorY = 0;
 
@@ -346,6 +353,11 @@ export function renderHeaderFooterContent(
             width: imgRun.width,
             height: imgRun.height,
             alt: imgRun.alt,
+            isInsertion: (run as { isInsertion?: boolean }).isInsertion,
+            isDeletion: (run as { isDeletion?: boolean }).isDeletion,
+            changeAuthor: (run as { changeAuthor?: string }).changeAuthor,
+            changeDate: (run as { changeDate?: string }).changeDate,
+            changeRevisionId: (run as { changeRevisionId?: number }).changeRevisionId,
             paragraphY: paragraphStartY, // Store where this paragraph starts
             position: imgRun.position,
           });
@@ -390,8 +402,25 @@ export function renderHeaderFooterContent(
         inlineBlock,
         paragraphMetrics,
         { ...context, positioning: 'absolute' },
-        { document: doc }
+        {
+          document: doc,
+          inlineImageRevisionBars: {
+            collector: revisionBars,
+            originTop: syntheticFragment.y,
+            clipTop: syntheticFragment.y,
+            clipBottom: syntheticFragment.y + syntheticFragment.height,
+          },
+        }
       );
+      const paragraphRevision = getParagraphRevisionMetadata(paragraphBlock);
+      if (paragraphRevision) {
+        revisionBars.register({
+          top: syntheticFragment.y,
+          height: syntheticFragment.height,
+          kind: paragraphRevision.kind,
+          ...paragraphRevision.metadata,
+        });
+      }
 
       fragEl.style.top = `${cursorY + blockSpacingRulesBefore}px`;
       fragEl.style.left = '0';
@@ -414,22 +443,38 @@ export function renderHeaderFooterContent(
         docFrom: block.docFrom,
         docTo: block.docTo,
       };
+      const floatingPosition = block.floating
+        ? resolveHeaderFooterFloatingTablePosition(block.floating, layout)
+        : null;
       const fragEl = paintTableFragment(
         syntheticFragment,
         block,
         measure,
         { ...context, positioning: 'absolute' },
-        { document: doc }
+        {
+          document: doc,
+          revisionBars: {
+            collector: revisionBars,
+            originTop: floatingPosition?.top ?? syntheticFragment.y,
+          },
+        }
       );
+      for (const span of getTableRevisionBarSpans(
+        syntheticFragment,
+        block,
+        measure,
+        floatingPosition?.top ?? syntheticFragment.y
+      )) {
+        revisionBars.register(span);
+      }
 
       // Floating tables (`<w:tblpPr>`) opt out of the cursorY flow. They
       // anchor at (tblpX, tblpY) relative to the page/margin/column per
       // ECMA-376 §17.4.57 and don't advance cursorY (#382). Inline tables
       // keep their cursorY-based stacking.
-      if (block.floating) {
-        const { left, top } = resolveHeaderFooterFloatingTablePosition(block.floating, layout);
-        fragEl.style.top = `${top}px`;
-        fragEl.style.left = `${left}px`;
+      if (floatingPosition) {
+        fragEl.style.top = `${floatingPosition.top}px`;
+        fragEl.style.left = `${floatingPosition.left}px`;
         containerEl.appendChild(fragEl);
         // Floating tables do NOT advance cursorY — surrounding HF nodes
         // flow as if the table weren't there. Word renders text behind
@@ -464,6 +509,15 @@ export function renderHeaderFooterContent(
       fragEl.style.top = `${cursorY}px`;
       fragEl.style.left = '0';
       containerEl.appendChild(fragEl);
+      const imageRevision = getImageRevisionData(block);
+      if (imageRevision) {
+        revisionBars.register({
+          top: cursorY,
+          height: measure.height,
+          kind: imageRevision.kind,
+          ...imageRevision.metadata,
+        });
+      }
       cursorY += measure.height;
     } else if (block.kind === 'textBox') {
       if (measure.kind !== 'textBox') continue;
@@ -535,6 +589,11 @@ export function renderHeaderFooterContent(
 
   // Render floating images with absolute positioning
   for (const floatImg of floatingImages) {
+    const wrapper = doc.createElement('div');
+    wrapper.className = 'layout-header-footer-floating-image';
+    // Keep a semantic metadata wrapper without introducing a containing block:
+    // the painted <img> itself owns the historical absolute-position contract.
+    wrapper.style.display = 'contents';
     const img = doc.createElement('img');
     const imageSrc = sanitizeImageSrc(floatImg.src);
     if (imageSrc) img.src = imageSrc;
@@ -544,6 +603,7 @@ export function renderHeaderFooterContent(
 
     img.style.position = 'absolute';
     img.style.display = 'block';
+    img.style.pointerEvents = 'auto';
     // Header/footer images can intentionally extend beyond the text area.
     // Override global img resets (for example max-width: 100%) so the DOCX
     // anchor extent is honored instead of shrinking to the header/footer box.
@@ -553,9 +613,31 @@ export function renderHeaderFooterContent(
     img.style.maxHeight = 'none';
 
     applyHeaderFooterFloatHorizontalPosition(img, floatImg, layout);
-    img.style.top = `${resolveHeaderFooterFloatTop(floatImg, layout)}px`;
+    const top = resolveHeaderFooterFloatTop(floatImg, layout);
+    img.style.top = `${top}px`;
+    const imageRevision = getImageRevisionData(floatImg);
+    if (imageRevision) {
+      // The display:contents wrapper retains only the class needed by the
+      // descendant outline CSS. Sidebar identity belongs to the positioned
+      // image, whose rect is meaningful; duplicate wrapper metadata would win
+      // query order and then be deduped despite its zero-sized rect.
+      wrapper.classList.add(imageRevision.kind === 'ins' ? 'docx-insertion' : 'docx-deletion');
+      applyImageRevisionAttrs(img, floatImg);
+      revisionBars.register({
+        top,
+        height: floatImg.height,
+        kind: imageRevision.kind,
+        ...imageRevision.metadata,
+      });
+    }
 
-    containerEl.appendChild(img);
+    wrapper.appendChild(img);
+    containerEl.appendChild(wrapper);
+  }
+
+  const revisionOverlay = revisionBars.paint(doc);
+  if (revisionOverlay) {
+    containerEl.appendChild(revisionOverlay);
   }
 
   return containerEl;

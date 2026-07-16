@@ -230,7 +230,16 @@ function runKey(run: Run): string {
     case 'lineBreak':
       return 'n';
     case 'image':
-      return `i:${run.src}:${round(run.width)}x${round(run.height)}:${run.displayMode ?? ''}:${run.wrapType ?? ''}`;
+      return [
+        'i',
+        run.src,
+        `${round(run.width)}x${round(run.height)}`,
+        run.displayMode ?? '',
+        run.wrapType ?? '',
+        run.transform ?? '',
+        round(run.distTop ?? 0),
+        round(run.distBottom ?? 0),
+      ].join(':');
   }
 }
 

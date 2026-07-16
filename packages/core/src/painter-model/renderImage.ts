@@ -9,6 +9,11 @@
 
 import type { ImageFragment, ImageBlock, ImageMetrics } from '../pagination-model/types';
 import type { RenderContext } from './paintPage';
+import {
+  applyRevisionMetadata,
+  type RevisionIndicatorKind,
+  type RevisionMetadata,
+} from './revisionIndicators';
 import { sanitizeHref } from '../utils/sanitizeHref';
 import { sanitizeImageSrc } from '../utils/sanitizeImageSrc';
 
@@ -39,6 +44,52 @@ export interface ImageVisualAttrs {
   cropBottom?: number;
   cropLeft?: number;
   opacity?: number;
+}
+
+export interface ImageRevisionAttrs {
+  isInsertion?: boolean;
+  isDeletion?: boolean;
+  changeAuthor?: string;
+  changeDate?: string;
+  changeRevisionId?: number;
+}
+
+export function getImageRevisionData(image: ImageRevisionAttrs): {
+  kind: RevisionIndicatorKind;
+  metadata: RevisionMetadata;
+} | null {
+  if (image.isDeletion) {
+    return {
+      kind: 'del',
+      metadata: {
+        revisionId: image.changeRevisionId,
+        author: image.changeAuthor,
+        date: image.changeDate ?? null,
+      },
+    };
+  }
+  if (image.isInsertion) {
+    return {
+      kind: 'ins',
+      metadata: {
+        revisionId: image.changeRevisionId,
+        author: image.changeAuthor,
+        date: image.changeDate ?? null,
+      },
+    };
+  }
+  return null;
+}
+
+export function applyImageRevisionAttrs(element: HTMLElement, image: ImageRevisionAttrs): void {
+  const revision = getImageRevisionData(image);
+  if (!revision) return;
+  applyRevisionMetadata(
+    element,
+    revision.kind === 'ins' ? 'docx-insertion' : 'docx-deletion',
+    revision.kind,
+    revision.metadata
+  );
 }
 
 /**
@@ -169,6 +220,7 @@ export function paintImageFragment(
   if (fragment.docTo !== undefined) {
     containerEl.dataset.docTo = String(fragment.docTo);
   }
+  applyImageRevisionAttrs(containerEl, block);
 
   // Create the actual image element. Constrain the source to known-safe
   // schemes — image bytes come from the (untrusted) document as data: URLs, so
@@ -188,6 +240,7 @@ export function paintImageFragment(
   if (block.transform) {
     imgEl.style.transform = block.transform;
   }
+  applyImageRevisionAttrs(imgEl, block);
 
   // Prevent dragging
   imgEl.draggable = false;
