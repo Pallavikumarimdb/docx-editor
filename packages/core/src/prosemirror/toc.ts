@@ -1,6 +1,5 @@
 import { Fragment, type Node as PMNode, type Schema } from 'prosemirror-model';
 import type { EditorState, Transaction } from 'prosemirror-state';
-import { findPageIndexContainingPmPos } from '../pagination-model/findPageIndexContainingPmPos';
 import type { PageLayout } from '../pagination-model/types';
 import type {
   Paragraph,
@@ -13,6 +12,16 @@ import { serializeParagraph } from '../docx/serializer/paragraphSerializer';
 import { synthesizeSdtPr } from '../docx/serializer/paragraphSerializer/content';
 import { escapeXml } from '../docx/serializer/xmlUtils';
 import { preserveTextFingerprint } from './conversion/preserveText';
+import {
+  buildPageLayoutLookup,
+  collectDocumentBookmarkRegistry,
+  desiredTocEntrySignatures,
+  extractCurrentTocContent,
+  resolvePageNumber,
+  tocEntrySignaturesMatch,
+  type BookmarkRegistry,
+  type PageLayoutLookup,
+} from './tocSupport';
 
 export interface TocInstruction {
   type: 'TOC';
@@ -43,7 +52,13 @@ export interface UpdateTableOfContentsOptions {
   position?: number | null;
   /** Current layout for resolving heading page numbers. */
   layout?: PageLayout | null;
+  /** Regenerate even when advisory stale detection reports the TOC is current. */
+  force?: boolean;
 }
+
+type CollectedTocHeading = TocHeading & {
+  bookmarkId: number;
+};
 
 const DEFAULT_INSTRUCTION = 'TOC \\h \\o "1-5"';
 const INSERTED_TOC_RAW_XML = [
@@ -102,7 +117,7 @@ export function findTableOfContentsBlocks(doc: PMNode): TocBlockInfo[] {
   doc.descendants((node, pos) => {
     if (node.type.name !== 'blockSdt') return true;
     const instruction = getTocInstruction(node);
-    if (!instruction) return false;
+    if (!instruction) return true;
     blocks.push({ pos, node, instruction, needsUpdate: tocNeedsUpdate(node) });
     return false;
   });
@@ -111,6 +126,51 @@ export function findTableOfContentsBlocks(doc: PMNode): TocBlockInfo[] {
 
 export function hasTableOfContentsNeedingUpdate(doc: PMNode): boolean {
   return findTableOfContentsBlocks(doc).some((block) => block.needsUpdate);
+}
+
+/**
+ * Return TOC blocks whose normalized generated result differs from the live document.
+ * @public
+ */
+export function findStaleTableOfContentsBlocks(
+  doc: PMNode,
+  layout?: PageLayout | null
+): TocBlockInfo[] {
+  const resolvedLayout = layout ?? null;
+  const blocks = findTableOfContentsBlocks(doc);
+  if (blocks.length === 0) return [];
+
+  const pageLookup = buildPageLayoutLookup(resolvedLayout);
+  const bookmarkRegistry = collectDocumentBookmarkRegistry(doc);
+  const headings = collectTocHeadings(doc, blocks, resolvedLayout, bookmarkRegistry, pageLookup);
+  const stale: TocBlockInfo[] = [];
+
+  for (const block of blocks) {
+    if (tocFieldNeedsImmediateUpdate(block.node)) {
+      stale.push(block);
+      continue;
+    }
+
+    const scopedHeadings = headings.filter((heading) => {
+      const displayLevel = heading.level + 1;
+      return (
+        displayLevel >= block.instruction.outlineStart &&
+        displayLevel <= block.instruction.outlineEnd
+      );
+    });
+
+    const desired = desiredTocEntrySignatures(block.instruction, scopedHeadings);
+    const current = extractCurrentTocContent(block.node, block.instruction);
+    if (
+      current.hasUnexpectedVisibleContent ||
+      current.hyperlinkMismatch ||
+      !tocEntrySignaturesMatch(current.entries, desired, resolvedLayout)
+    ) {
+      stale.push(block);
+    }
+  }
+
+  return stale;
 }
 
 export function isPositionInsideTableOfContents(doc: PMNode, position: number): boolean {
@@ -151,25 +211,64 @@ export function updateTableOfContents(
   });
   if (tocBlocks.length === 0) return false;
 
-  const tr = state.tr;
-  const headings = collectTocHeadings(state.doc, tocBlocks, options.layout ?? null);
-  if (headings.length === 0) return false;
+  const blocksToUpdate = options.force
+    ? tocBlocks
+    : findStaleTableOfContentsBlocks(state.doc, options.layout ?? null).filter((block) =>
+        tocBlocks.some((candidate) => candidate.pos === block.pos)
+      );
+  if (blocksToUpdate.length === 0) return false;
   if (!dispatch) return true;
 
+  const tr = state.tr;
+  const pageLookup = buildPageLayoutLookup(options.layout ?? null);
+  const bookmarkRegistry = collectDocumentBookmarkRegistry(state.doc);
+  const headings = collectTocHeadings(
+    state.doc,
+    blocksToUpdate,
+    options.layout ?? null,
+    bookmarkRegistry,
+    pageLookup
+  );
+  const updatePositions = new Set(blocksToUpdate.map((block) => block.pos));
+  const bookmarkHeadingPositions = new Set<number>();
+  for (const block of blocksToUpdate) {
+    if (!block.instruction.hyperlink) continue;
+    for (const heading of headings) {
+      const displayLevel = heading.level + 1;
+      if (
+        displayLevel >= block.instruction.outlineStart &&
+        displayLevel <= block.instruction.outlineEnd
+      ) {
+        bookmarkHeadingPositions.add(heading.pmPos);
+      }
+    }
+  }
+
   for (const heading of headings) {
+    if (!bookmarkHeadingPositions.has(heading.pmPos)) continue;
     const mappedPos = tr.mapping.map(heading.pmPos);
     const paragraph = tr.doc.nodeAt(mappedPos);
     if (!paragraph || paragraph.type.name !== 'paragraph') continue;
     const existing = (
       (paragraph.attrs.bookmarks as Array<{ id: number; name: string }> | null) ?? []
     ).filter((bookmark) => !bookmark.name.startsWith('_Toc'));
-    tr.setNodeMarkup(mappedPos, undefined, {
-      ...paragraph.attrs,
-      bookmarks: [...existing, { id: bookmarkIdFor(heading), name: heading.bookmark }],
-    });
+    const bookmarks = [
+      ...existing,
+      {
+        id: heading.bookmarkId,
+        name: heading.bookmark,
+      },
+    ];
+    if (!bookmarksEqual(paragraph.attrs.bookmarks, bookmarks)) {
+      tr.setNodeMarkup(mappedPos, undefined, {
+        ...paragraph.attrs,
+        bookmarks,
+      });
+    }
   }
 
   for (const block of [...tocBlocks].sort((a, b) => b.pos - a.pos)) {
+    if (!updatePositions.has(block.pos)) continue;
     const mappedPos = tr.mapping.map(block.pos);
     const current = tr.doc.nodeAt(mappedPos);
     if (!current || current.type.name !== 'blockSdt') continue;
@@ -178,23 +277,22 @@ export function updateTableOfContents(
       return level >= block.instruction.outlineStart && level <= block.instruction.outlineEnd;
     });
     const generated = generateTocResult(current.type.schema, block.instruction, scopedHeadings);
-    if (generated.pmNodes.length === 0) continue;
+    const resultNodes = generated.pmNodes;
 
     const rawPreserveXml = buildTocRawXml(current, block.instruction, generated.documentParagraphs);
-    const rawPreserveText = generated.pmNodes.map((node) => preserveTextFingerprint(node)).join('');
+    const rawPreserveText =
+      generated.pmNodes.length === 0
+        ? ''
+        : generated.pmNodes.map((node) => preserveTextFingerprint(node)).join('');
     tr.setNodeMarkup(mappedPos, undefined, {
       ...current.attrs,
       rawPreserveXml,
       rawPreserveText,
     });
-    tr.replaceWith(
-      mappedPos + 1,
-      mappedPos + current.nodeSize - 1,
-      Fragment.from(generated.pmNodes)
-    );
+    tr.replaceWith(mappedPos + 1, mappedPos + current.nodeSize - 1, Fragment.from(resultNodes));
   }
 
-  if (!tr.docChanged) return false;
+  if (!tr.docChanged) return options.force ? true : false;
   dispatch(tr.scrollIntoView());
   return true;
 }
@@ -238,9 +336,10 @@ function getTocInstruction(node: PMNode): TocInstruction | null {
 
 function extractTocInstructionFromXml(xml: string): string | null {
   if (!xml) return null;
-  const begin = xml.search(/<w:fldChar\b[^>]*w:fldCharType=(["'])begin\1/);
+  const ownedXml = extractOwnedSdtContentXml(xml);
+  const begin = ownedXml.search(/<w:fldChar\b[^>]*w:fldCharType=(["'])begin\1/);
   if (begin < 0) return null;
-  const afterBegin = xml.slice(begin);
+  const afterBegin = ownedXml.slice(begin);
   const separate = afterBegin.search(/<w:fldChar\b[^>]*w:fldCharType=(["'])separate\1/);
   const end = afterBegin.search(/<w:fldChar\b[^>]*w:fldCharType=(["'])end\1/);
   const instructionXml =
@@ -255,14 +354,33 @@ function extractTocInstructionFromXml(xml: string): string | null {
   return /\bTOC\b/i.test(parts) ? parts.trim() : null;
 }
 
+function extractOwnedSdtContentXml(xml: string): string {
+  const contentMatch = xml.match(/<w:sdtContent\b[^>]*>([\s\S]*)<\/w:sdtContent>/);
+  if (!contentMatch) return xml;
+  return contentMatch[1].replace(/<w:sdt\b[^>]*>[\s\S]*?<\/w:sdt>/g, '');
+}
+
 function extractTocInstructionFromNode(node: PMNode): string | null {
   let instruction: string | null = null;
-  node.descendants((child) => {
+  node.forEach((child) => {
+    if (instruction) return;
+    if (child.type.name === 'blockSdt') return;
     if (child.type.name === 'field' && String(child.attrs.fieldType).toUpperCase() === 'TOC') {
       instruction = String(child.attrs.instruction ?? DEFAULT_INSTRUCTION);
-      return false;
+      return;
     }
-    return true;
+    if (child.type.name === 'paragraph') {
+      child.descendants((grandchild) => {
+        if (
+          grandchild.type.name === 'field' &&
+          String(grandchild.attrs.fieldType).toUpperCase() === 'TOC'
+        ) {
+          instruction = String(grandchild.attrs.instruction ?? DEFAULT_INSTRUCTION);
+          return false;
+        }
+        return true;
+      });
+    }
   });
   return instruction;
 }
@@ -279,8 +397,17 @@ function tocNeedsUpdate(node: PMNode): boolean {
     return true;
   });
   if (dirtyField) return true;
+  if (hasRegeneratedEmptyTocResult(node)) return false;
   if (rawXml && hasEmptyTocResultXml(rawXml)) return true;
   return node.textContent.trim().length === 0;
+}
+
+function hasRegeneratedEmptyTocResult(node: PMNode): boolean {
+  if (node.childCount !== 1) return false;
+  const result = node.child(0);
+  return (
+    result.type.name === 'paragraph' && result.attrs.styleId === 'TOC1' && result.content.size === 0
+  );
 }
 
 function hasEmptyTocResultXml(xml: string): boolean {
@@ -294,12 +421,31 @@ function hasEmptyTocResultXml(xml: string): boolean {
   return resultText.trim().length === 0;
 }
 
+function tocFieldNeedsImmediateUpdate(node: PMNode): boolean {
+  const rawXml = typeof node.attrs.rawPreserveXml === 'string' ? node.attrs.rawPreserveXml : '';
+  if (/w:dirty=(["'])(?:true|1)\1/.test(rawXml)) return true;
+  let dirtyField = false;
+  node.descendants((child) => {
+    if (child.type.name === 'field' && child.attrs.dirty) {
+      dirtyField = true;
+      return false;
+    }
+    return true;
+  });
+  if (dirtyField) return true;
+  if (!rawXml && node.textContent.trim().length === 0) return true;
+  return false;
+}
+
 function collectTocHeadings(
   doc: PMNode,
   tocBlocks: TocBlockInfo[],
-  layout: PageLayout | null
-): TocHeading[] {
-  const headings: TocHeading[] = [];
+  layout: PageLayout | null,
+  bookmarkRegistry: BookmarkRegistry,
+  pageLookup: PageLayoutLookup | null
+): CollectedTocHeading[] {
+  const headings: CollectedTocHeading[] = [];
+  const claimedBookmarks = new Set<string>();
   doc.descendants((node, pos) => {
     if (node.type.name !== 'paragraph') return true;
     if (tocBlocks.some((toc) => pos > toc.pos && pos < toc.pos + toc.node.nodeSize)) return false;
@@ -307,12 +453,14 @@ function collectTocHeadings(
     if (level == null) return false;
     const text = node.textContent.trim();
     if (!text) return false;
+    const bookmark = allocateHeadingBookmark(node, text, pos, claimedBookmarks, bookmarkRegistry);
     headings.push({
       text,
       level,
       pmPos: pos,
-      bookmark: bookmarkNameFor(text, pos),
-      pageNumber: resolvePageNumber(doc, pos, node, layout),
+      bookmark: bookmark.name,
+      bookmarkId: bookmark.id,
+      pageNumber: resolvePageNumber(doc, pos, node, layout, pageLookup),
     });
     return false;
   });
@@ -326,50 +474,6 @@ function getHeadingLevel(node: PMNode): number | null {
   const match = styleId.match(/^[Hh]eading(\d)$/);
   if (!match) return null;
   return clampTocLevel(Number(match[1])) - 1;
-}
-
-function resolvePageNumber(
-  doc: PMNode,
-  pmPos: number,
-  node: PMNode,
-  layout: PageLayout | null
-): number | null {
-  if (!layout) return null;
-  const pageIndex = findPageIndexContainingPmPos(layout, pmPos);
-  if (pageIndex != null) {
-    return layout.pages[pageIndex].number;
-  }
-  // Fallback when fragments lack doc ranges (e.g. page-break-before stubs in tests).
-  const blockIndex = topLevelBlockIndexAt(doc, pmPos);
-  if (blockIndex == null) return null;
-  const candidates = layout.pages.filter((page) =>
-    page.fragments.some((fragment) => String(fragment.nodeId) === String(blockIndex))
-  );
-  if (candidates.length === 0) return null;
-  if (startsAfterPageBreak(node)) {
-    return candidates[candidates.length - 1].number;
-  }
-  return candidates[0].number;
-}
-
-function startsAfterPageBreak(node: PMNode): boolean {
-  return Boolean(
-    node.attrs.pageBreakBefore ||
-    node.attrs.sourceLeadingPageBreak ||
-    node.attrs.renderedPageBreakBefore
-  );
-}
-
-function topLevelBlockIndexAt(doc: PMNode, pmPos: number): number | null {
-  let index = 0;
-  let found: number | null = null;
-  doc.forEach((child, offset) => {
-    const start = offset;
-    const end = offset + child.nodeSize;
-    if (pmPos >= start && pmPos <= end) found = index;
-    index++;
-  });
-  return found;
 }
 
 function generateTocResult(schema: Schema, instruction: TocInstruction, headings: TocHeading[]) {
@@ -399,6 +503,11 @@ function generateTocResult(schema: Schema, instruction: TocInstruction, headings
     documentParagraphs.push(
       createTocParagraph(formatting, heading, pageText, instruction.hyperlink)
     );
+  }
+  if (pmNodes.length === 0) {
+    const formatting = createTocParagraphFormatting('TOC1', 1);
+    pmNodes.push(schema.node('paragraph', formatting, []));
+    documentParagraphs.push({ type: 'paragraph', formatting, content: [] });
   }
   return { pmNodes, documentParagraphs };
 }
@@ -469,8 +578,84 @@ function bookmarkNameFor(text: string, pos: number): string {
   return `_Toc${Math.abs(hashString(`${pos}:${text}`))}`;
 }
 
-function bookmarkIdFor(heading: TocHeading): number {
-  return Math.abs(hashString(heading.bookmark)) % 2147483647;
+function allocateHeadingBookmark(
+  node: PMNode,
+  text: string,
+  pos: number,
+  claimed: Set<string>,
+  registry: BookmarkRegistry
+): { name: string; id: number } {
+  const bookmarks = (node.attrs.bookmarks as Array<{ id: number; name: string }> | null) ?? [];
+  releaseHeadingTocBookmarkIds(bookmarks, registry);
+  const existing = bookmarks.find(
+    (bookmark) =>
+      typeof bookmark.name === 'string' &&
+      bookmark.name.startsWith('_Toc') &&
+      !claimed.has(bookmark.name) &&
+      (registry.tocNameUsage.get(bookmark.name) ?? 0) <= 1
+  );
+  if (existing) {
+    claimed.add(existing.name);
+    registry.claimedNames.add(existing.name);
+    return {
+      name: existing.name,
+      id: allocateBookmarkId(existing.name, registry.claimedIds, existing.id),
+    };
+  }
+
+  const base = bookmarkNameFor(text, pos);
+  let candidate = base;
+  let suffix = 2;
+  while (claimed.has(candidate) || registry.claimedNames.has(candidate)) {
+    candidate = `${base}_${suffix}`;
+    suffix++;
+  }
+  claimed.add(candidate);
+  registry.claimedNames.add(candidate);
+  return {
+    name: candidate,
+    id: allocateBookmarkId(candidate, registry.claimedIds),
+  };
+}
+
+function releaseHeadingTocBookmarkIds(
+  bookmarks: Array<{ id: number; name: string }>,
+  registry: BookmarkRegistry
+): void {
+  for (const bookmark of bookmarks) {
+    if (!bookmark.name.startsWith('_Toc') || typeof bookmark.id !== 'number') continue;
+    const remainingOwners = (registry.claimedIdCounts.get(bookmark.id) ?? 0) - 1;
+    if (remainingOwners <= 0) {
+      registry.claimedIdCounts.delete(bookmark.id);
+      registry.claimedIds.delete(bookmark.id);
+    } else {
+      registry.claimedIdCounts.set(bookmark.id, remainingOwners);
+    }
+  }
+}
+
+function allocateBookmarkId(
+  bookmark: string,
+  claimedIds: Set<number>,
+  preferredId?: number
+): number {
+  let id =
+    typeof preferredId === 'number' ? preferredId : Math.abs(hashString(bookmark)) % 2147483647;
+  if (id === 0) id = 1;
+  while (claimedIds.has(id)) {
+    id = (id + 1) % 2147483647;
+    if (id === 0) id = 1;
+  }
+  claimedIds.add(id);
+  return id;
+}
+
+function bookmarksEqual(current: unknown, desired: Array<{ id: number; name: string }>): boolean {
+  if (!Array.isArray(current) || current.length !== desired.length) return false;
+  return desired.every((bookmark, index) => {
+    const existing = current[index] as { id?: unknown; name?: unknown };
+    return existing.id === bookmark.id && existing.name === bookmark.name;
+  });
 }
 
 function hashString(input: string): number {

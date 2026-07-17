@@ -475,16 +475,15 @@ function parseBlockSdt(
   return block;
 }
 
-function shouldRawPreserveBlockSdt(sdt: XmlElement, sdtContent: XmlElement): boolean {
-  const paragraphs = getChildElements(sdtContent).filter(
-    (el) => getLocalName(el.name ?? '') === 'p'
-  );
-  if (paragraphs.length < 2) return false;
-  const xml = elementToXml(sdt);
+function shouldRawPreserveBlockSdt(_sdt: XmlElement, sdtContent: XmlElement): boolean {
+  const directChildren = getChildElements(sdtContent);
+  const ownedParagraphs = directChildren.filter((el) => getLocalName(el.name ?? '') === 'p');
+  if (ownedParagraphs.length < 2) return false;
+  const ownedXml = ownedParagraphs.map((paragraph) => elementToXml(paragraph)).join('');
   return (
-    /<w:fldChar\b[^>]*w:fldCharType="begin"/.test(xml) &&
-    /<w:fldChar\b[^>]*w:fldCharType="end"/.test(xml) &&
-    /<w:instrText\b[^>]*>[^<]*TOC\b/i.test(xml)
+    /<w:fldChar\b[^>]*w:fldCharType="begin"/.test(ownedXml) &&
+    /<w:fldChar\b[^>]*w:fldCharType="end"/.test(ownedXml) &&
+    /<w:instrText\b[^>]*>[^<]*TOC\b/i.test(ownedXml)
   );
 }
 

@@ -173,13 +173,24 @@ export function widgetKindFor(sdtType: string): 'checkbox' | 'dropdown' | 'date'
  * inside its parent, so nesting reveals both. Listeners live on the freshly
  * built `contentEl`, so they're discarded with it on the next render (no leak).
  */
+export function isPointInsideSdtBoundary(
+  box: HTMLElement,
+  target: EventTarget | null,
+  clientX: number,
+  clientY: number
+): boolean {
+  if (target instanceof Node && box.contains(target)) return true;
+  const rect = box.getBoundingClientRect();
+  return (
+    clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom
+  );
+}
+
 function attachSdtHoverReveal(contentEl: HTMLElement, boxEls: HTMLElement[]): void {
   if (boxEls.length === 0 || typeof contentEl.addEventListener !== 'function') return;
-  const setActive = (clientX: number, clientY: number): void => {
+  const setActive = (target: EventTarget | null, clientX: number, clientY: number): void => {
     for (const b of boxEls) {
-      const r = b.getBoundingClientRect();
-      const inside =
-        clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
+      const inside = isPointInsideSdtBoundary(b, target, clientX, clientY);
       if (inside !== b.classList.contains('is-active')) b.classList.toggle('is-active', inside);
     }
   };
@@ -188,16 +199,18 @@ function attachSdtHoverReveal(contentEl: HTMLElement, boxEls: HTMLElement[]): vo
   const raf =
     typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (cb: () => void) => cb();
   let queued = false;
+  let lastTarget: EventTarget | null = null;
   let lastX = 0;
   let lastY = 0;
   contentEl.addEventListener('mousemove', (e) => {
+    lastTarget = e.target;
     lastX = e.clientX;
     lastY = e.clientY;
     if (queued) return;
     queued = true;
     raf(() => {
       queued = false;
-      setActive(lastX, lastY);
+      setActive(lastTarget, lastX, lastY);
     });
   });
   contentEl.addEventListener('mouseleave', () => {

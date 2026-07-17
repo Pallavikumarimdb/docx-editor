@@ -183,6 +183,7 @@ export {
 
 /** Table-of-contents detection and regeneration helpers. */
 export {
+  findStaleTableOfContentsBlocks,
   findTableOfContentsBlocks,
   hasTableOfContentsNeedingUpdate,
   insertTableOfContents,

@@ -92,6 +92,22 @@ export {
 // Block-level content-control (SDT) focus chrome — keep the boundary box and
 // label visible while the caret is inside the control, shared by both adapters.
 export { enclosingSdtGroupIds, applySdtFocus } from './sdtBoundary';
+export {
+  syncTocRefreshButtons,
+  createTocRefreshSyncCache,
+  shouldSyncTocRefreshButtons,
+  cleanupTocRefreshButtons,
+  applyTocRefreshProxyFocus,
+  getTocRefreshDescriptors,
+  TOC_REFRESH_PROXY_FOCUSED_CLASS,
+} from './tocRefresh';
+export type {
+  PaintedPagesReadyDetail,
+  PaintedPagesReadyEvent,
+  SyncTocRefreshOptions,
+  TocRefreshDescriptor,
+  TocRefreshSyncCache,
+} from './tocRefresh';
 
 // Framework-agnostic image layout helpers shared by React + Vue adapters.
 export {

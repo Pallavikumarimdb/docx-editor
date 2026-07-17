@@ -123,6 +123,35 @@ describe('block SDT parsing', () => {
     expect(inner.content[0].type).toBe('paragraph');
   });
 
+  test('a nested outer SDT does not raw-preserve from an inner TOC field', () => {
+    const doc = body(`
+      <w:sdt>
+        <w:sdtPr><w:tag w:val="outer"/></w:sdtPr>
+        <w:sdtContent>
+          <w:p><w:r><w:t>Sibling before</w:t></w:r></w:p>
+          <w:sdt>
+            <w:sdtPr><w:alias w:val="Table of Contents"/></w:sdtPr>
+            <w:sdtContent>
+              <w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>
+                <w:r><w:instrText>TOC \\o "1-3" \\h</w:instrText></w:r>
+                <w:r><w:fldChar w:fldCharType="separate"/></w:r></w:p>
+              <w:p><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>
+            </w:sdtContent>
+          </w:sdt>
+          <w:p><w:r><w:t>Sibling after</w:t></w:r></w:p>
+        </w:sdtContent>
+      </w:sdt>
+    `);
+
+    const outer = firstBlockSdt(doc);
+    expect(outer.properties.tag).toBe('outer');
+    expect(outer.rawPreserveXml).toBeUndefined();
+    const inner = outer.content[1] as BlockSdt;
+    expect(inner.type).toBe('blockSdt');
+    expect(inner.rawPreserveXml).toBeTruthy();
+    expect(inner.rawPreserveXml).toContain('TOC');
+  });
+
   test('an empty / contentless SDT does not throw and yields an empty wrapper', () => {
     const doc = body(`<w:sdt><w:sdtPr><w:tag w:val="empty"/></w:sdtPr></w:sdt>`);
     const sdt = firstBlockSdt(doc);
