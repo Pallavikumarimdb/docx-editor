@@ -12,6 +12,7 @@ import createDOMPurify from 'dompurify';
 
 import type { Run, TextFormatting, Paragraph, Theme } from '../types/document';
 import { resolveColorToHex } from './colorResolver';
+import { stripXmlDeclarations } from './stripXmlDeclarations';
 
 // dompurify's default export only auto-binds `sanitize` to a `window` that
 // exists at import time (always true in the browser). Bind explicitly to the
@@ -505,8 +506,8 @@ export function cleanWordHtml(html: string): string {
   // Remove Word-specific (and all other) HTML comments
   cleaned = stripHtmlComments(cleaned);
 
-  // Remove XML declarations
-  cleaned = cleaned.replace(/<\?xml[^>]*>/gi, '');
+  // Remove XML declarations (linear scan; see stripXmlDeclarations)
+  cleaned = stripXmlDeclarations(cleaned);
 
   // Remove o: (Office) namespace tags (linear scan; see stripPairedNamespaceTags)
   cleaned = stripPairedNamespaceTags(cleaned, 'o:');

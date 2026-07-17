@@ -34,6 +34,27 @@ describe('cleanWordHtml comment stripping', () => {
   });
 });
 
+describe('cleanWordHtml XML declaration stripping', () => {
+  test('removes complete XML declarations case-insensitively', () => {
+    expect(cleanWordHtml('a<?xml version="1.0"?>b<?XML foo>c')).toBe('abc');
+  });
+
+  test('preserves Unicode text before a case-insensitive declaration', () => {
+    expect(cleanWordHtml('İ<?XML foo>')).toBe('İ');
+  });
+
+  test('preserves an unterminated XML declaration', () => {
+    expect(cleanWordHtml('safe<?xml dangling')).toBe('safe<?xml dangling');
+  });
+
+  test('stays linear on repeated unterminated XML openers', () => {
+    const evil = '<?xml'.repeat(50_000);
+    const start = performance.now();
+    cleanWordHtml(evil);
+    expect(performance.now() - start).toBeLessThan(5_000);
+  });
+});
+
 describe('cleanWordHtml namespace-tag stripping', () => {
   test('removes paired o:/w: namespace blocks and their content', () => {
     expect(cleanWordHtml('a<o:p>junk</o:p>b')).toBe('ab');
