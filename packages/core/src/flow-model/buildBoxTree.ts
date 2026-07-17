@@ -1,7 +1,7 @@
 /**
  * ProseMirror → ContentNode[] for pagination. Tracks docFrom/docTo.
  * Per-domain helpers under ./buildBoxTree/ are re-exported for the public
- * `@eigenpal/.../flow-model/buildBoxTree` deep import.
+ * `@docx-editor.dev/core/flow-model/buildBoxTree` deep import.
  * @packageDocumentation
  * @public
  */

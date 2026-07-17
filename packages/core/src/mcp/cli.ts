@@ -5,7 +5,7 @@
  * and other MCP-compatible clients.
  *
  * Usage:
- *   npx @eigenpal/docx-editor --mcp
+ *   npx -y @docx-editor.dev/core
  *   docx-editor-mcp
  *
  * Claude Desktop configuration:
@@ -14,7 +14,7 @@
  *   "mcpServers": {
  *     "docx-editor": {
  *       "command": "npx",
- *       "args": ["-y", "@eigenpal/docx-editor", "--mcp"]
+ *       "args": ["-y", "@docx-editor.dev/core"]
  *     }
  *   }
  * }
@@ -24,6 +24,7 @@
 import { pluginRegistry } from '../core-plugins/registry';
 import { docxtemplaterPlugin } from '../core-plugins/docxtemplater';
 import { startStdioServer, type McpServerConfig } from './server';
+import { MCP_VERSION } from './version';
 
 // ============================================================================
 // PARSE ARGUMENTS
@@ -84,7 +85,7 @@ CLAUDE DESKTOP CONFIGURATION:
     "mcpServers": {
       "docx-editor": {
         "command": "npx",
-        "args": ["-y", "@eigenpal/docx-editor", "--mcp"]
+        "args": ["-y", "@docx-editor.dev/core"]
       }
     }
   }
@@ -110,7 +111,7 @@ async function main(): Promise<void> {
   }
 
   if (version) {
-    console.log('0.1.0');
+    console.log(MCP_VERSION);
     process.exit(0);
   }
 
@@ -126,7 +127,7 @@ async function main(): Promise<void> {
   // Start server
   const config: McpServerConfig = {
     name: 'docx-editor',
-    version: '0.1.0',
+    version: MCP_VERSION,
     debug,
   };
 

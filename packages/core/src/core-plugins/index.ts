@@ -10,7 +10,7 @@
  *   pluginRegistry,
  *   docxtemplaterPlugin,
  *   type CorePlugin
- * } from '@eigenpal/docx-editor/core-plugins';
+ * } from '@docx-editor.dev/core/core-plugins';
  *
  * // Register the docxtemplater plugin
  * pluginRegistry.register(docxtemplaterPlugin);

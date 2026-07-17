@@ -6,8 +6,8 @@
  *
  * @example
  * ```ts
- * import { createMcpServer, startStdioServer } from '@eigenpal/docx-editor/mcp';
- * import { pluginRegistry, docxtemplaterPlugin } from '@eigenpal/docx-editor/core-plugins';
+ * import { createMcpServer, startStdioServer } from '@docx-editor.dev/core/mcp';
+ * import { pluginRegistry, docxtemplaterPlugin } from '@docx-editor.dev/core/core-plugins';
  *
  * // Register plugins
  * pluginRegistry.register(docxtemplaterPlugin);
@@ -26,6 +26,7 @@ import type {
 } from '../core-plugins/types';
 import { pluginRegistry } from '../core-plugins/registry';
 import { coreMcpTools } from './core-tools';
+import { MCP_VERSION } from './version';
 
 // ============================================================================
 // TYPES
@@ -94,7 +95,7 @@ export interface McpToolInfo {
 export function createMcpServer(config: McpServerConfig = {}): McpServer {
   const {
     name = 'docx-editor',
-    version = '0.1.0',
+    version = MCP_VERSION,
     includeCoreTools = true,
     debug = false,
     additionalTools = [],
