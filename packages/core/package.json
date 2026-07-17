@@ -1,6 +1,6 @@
 {
   "name": "@docx-editor.dev/core",
-  "version": "1.10.0",
+  "version": "0.0.1",
   "sideEffects": false,
   "description": "Framework-agnostic core for DOCX parsing, editing, and rendering",
   "main": "./dist/core.js",
