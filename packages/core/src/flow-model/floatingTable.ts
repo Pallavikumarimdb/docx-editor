@@ -21,6 +21,7 @@
  */
 
 import type { ContentNode, TableBlock } from '../pagination-model/types';
+import { resolveFloatingTableX } from '../pagination-model/floatingTablePosition';
 import { MIN_WRAP_SEGMENT_WIDTH } from './metrics/floatingZones';
 import { resolveTableTotalWidthPx } from './tableWidthUtils';
 
@@ -38,24 +39,9 @@ export function isBlockLikeFloatingTable(block: TableBlock, contentWidth: number
 
   const tableWidth = resolveTableTotalWidthPx(block, contentWidth);
 
-  // Content-relative X of the table's left edge — same resolution order as
-  // `layoutFloatingTable` / `extractFloatingTableZone`.
-  let x = 0;
-  if (floating.tblpX !== undefined) {
-    x = floating.tblpX;
-  } else if (floating.tblpXSpec) {
-    if (floating.tblpXSpec === 'left' || floating.tblpXSpec === 'inside') {
-      x = 0;
-    } else if (floating.tblpXSpec === 'right' || floating.tblpXSpec === 'outside') {
-      x = contentWidth - tableWidth;
-    } else if (floating.tblpXSpec === 'center') {
-      x = (contentWidth - tableWidth) / 2;
-    }
-  } else if (block.justification === 'center') {
-    x = (contentWidth - tableWidth) / 2;
-  } else if (block.justification === 'right') {
-    x = contentWidth - tableWidth;
-  }
+  // Content-relative X of the table's left edge — the same resolver the
+  // composer and the wrap-zone extractor use.
+  const x = resolveFloatingTableX(floating, block.justification, tableWidth, contentWidth);
 
   const leftFromText = floating.leftFromText ?? 0;
   const rightFromText = floating.rightFromText ?? 0;

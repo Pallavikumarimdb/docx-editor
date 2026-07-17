@@ -50,6 +50,12 @@ describe('default tab grid (720 twips)', () => {
     expect(penAfterTab(GRID_PX * 3)).toBe(GRID_PX * 4);
   });
 
+  test('a negative pen (negative w:ind) still lands on the 0tw grid stop', () => {
+    // No authored stops: the grid must not be floored at 0 as if a custom stop
+    // lived there — the first multiple past the pen is position 0 itself.
+    expect(penAfterTab(-30)).toBe(0);
+  });
+
   test('the grid interval is configurable — Word writes it as w:defaultTabStop', () => {
     const halfGrid: TabRuler = { leftIndent: 0, defaultStopTwips: 360 };
     expect(penAfterTab(0, halfGrid)).toBe(24);
@@ -64,12 +70,28 @@ describe('explicit stops (w:tabs)', () => {
     expect(penAfterTab(0, ruler)).toBe(20);
   });
 
-  test('the grid keeps running BETWEEN explicit stops', () => {
-    // Word does not let a distant custom stop suppress a nearer default one
-    // (§17.6.13). Pen at 20px: the custom stop at 2880tw (192px) is far away,
-    // so the 48px grid stop is what the tab lands on.
+  test('a custom stop clears the default grid to its left', () => {
+    // [Word/test]: setting a custom stop removes every default stop before it,
+    // so a tab jumps straight to the custom stop — this is how a header's
+    // "title<tab>CONFIDENTIAL" with one right stop at the margin reaches the
+    // margin instead of stopping at the next half-inch.
     const ruler: TabRuler = { leftIndent: 0, explicitStops: [{ val: 'start', pos: 2880 }] };
-    expect(penAfterTab(20, ruler)).toBe(GRID_PX);
+    expect(penAfterTab(20, ruler)).toBe(192);
+  });
+
+  test('the grid resumes AFTER the rightmost custom stop', () => {
+    // Custom stop at 720tw (48px); pen already past it at 60px. The next
+    // landing place is the first grid stop beyond the custom stop: 96px.
+    const ruler: TabRuler = { leftIndent: 0, explicitStops: [{ val: 'start', pos: 720 }] };
+    expect(penAfterTab(60, ruler)).toBe(GRID_PX * 2);
+  });
+
+  test('an end stop the content cannot fit at falls through to the grid past it', () => {
+    // Right stop at 1440tw (96px), pen at 90px with 30px of following content —
+    // anchoring would start the content behind the pen, so the stop is skipped
+    // and the grid past the custom stop is used instead (144px).
+    const ruler: TabRuler = { leftIndent: 0, explicitStops: [{ val: 'end', pos: 1440 }] };
+    expect(penAfterTab(90, ruler, { followingWidth: 30 })).toBe(GRID_PX * 3);
   });
 
   test('`clear` removes a stop rather than being one', () => {

@@ -41,6 +41,7 @@ import {
 } from '../../painter-model/anchoredObjectPosition';
 import { emuToPixels } from '../../utils/units';
 import { constrainWrapMargins } from './paragraphLayout';
+import { resolveFloatingTableX } from '../../pagination-model/floatingTablePosition';
 import { rectsToFloatingZones, type FloatingImageZone } from './floatingZones';
 import { measureTable } from '../measureTable';
 
@@ -738,22 +739,7 @@ function extractFloatingTableZone(
 
   // Tables use OOXML `w:tblpXSpec` / `tblpX` instead of the image-style
   // `align` / `posOffset`, so the common helper above doesn't apply.
-  let x = 0;
-  if (floating.tblpX !== undefined) {
-    x = floating.tblpX;
-  } else if (floating.tblpXSpec) {
-    if (floating.tblpXSpec === 'left' || floating.tblpXSpec === 'inside') {
-      x = 0;
-    } else if (floating.tblpXSpec === 'right' || floating.tblpXSpec === 'outside') {
-      x = contentWidth - tableWidth;
-    } else if (floating.tblpXSpec === 'center') {
-      x = (contentWidth - tableWidth) / 2;
-    }
-  } else if (tableBlock.justification === 'center') {
-    x = (contentWidth - tableWidth) / 2;
-  } else if (tableBlock.justification === 'right') {
-    x = contentWidth - tableWidth;
-  }
+  const x = resolveFloatingTableX(floating, tableBlock.justification, tableWidth, contentWidth);
 
   let leftMargin = 0;
   let rightMargin = 0;
@@ -774,6 +760,11 @@ function extractFloatingTableZone(
     topY: topY - distTop,
     bottomY: bottomY + distBottom,
     anchorNodeIndex: nodeIndex,
+    // `vertAnchor="text"`: tblpY counts from the table's flow position, so the
+    // zone activates at the anchor block's cumulative Y — same mechanism as
+    // paragraph-relative floating images. `margin`/`page` stay content-box
+    // absolute (page approximated by the margin box, as at paint time).
+    isParagraphRelative: floating.vertAnchor === 'text',
   });
 }
 

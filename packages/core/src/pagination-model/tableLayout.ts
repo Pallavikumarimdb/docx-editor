@@ -18,6 +18,7 @@
 import type { TableBlock, TableMetrics } from './types';
 import { buildTableRowBreakInfo, snapRowBreak, type TableRowBreakInfo } from './tableRowBreak';
 import { collapsedGap } from './blockSpacingRules';
+import { resolveFloatingTableX } from './floatingTablePosition';
 import type { LayoutCursor, FlowContext, ColumnRegion } from './layoutCursor';
 import {
   FIT_TOLERANCE_PX,
@@ -248,8 +249,15 @@ function placeFloatingTable(
   const region = currentRegion(ctx, cursor);
   const anchor = node.floating!;
 
-  const x = region.left + (anchor.tblpX ?? tableOffsetX(node, metrics, region));
-  const y = anchor.tblpY != null ? region.top + anchor.tblpY : cursor.y;
+  const x =
+    region.left +
+    resolveFloatingTableX(anchor, node.justification, metrics.totalWidth, region.width);
+  // `vertAnchor="text"` measures tblpY from the table's own flow position (the
+  // pen), not from the top of the content box — the latter pins a mid-document
+  // table to the top of whatever page it lands on. `margin`/`page` anchors keep
+  // the region-top base (page-anchor is approximated by the margin box).
+  const flowAnchored = anchor.vertAnchor === 'text';
+  const y = anchor.tblpY != null ? (flowAnchored ? cursor.y : region.top) + anchor.tblpY : cursor.y;
 
   ctx.pages[cursor.pageIndex].fragments.push({
     kind: 'table',

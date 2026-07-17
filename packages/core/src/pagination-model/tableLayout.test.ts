@@ -78,3 +78,76 @@ describe('table pagination', () => {
     expect(fragments[1].topClip).toBeUndefined();
   });
 });
+
+describe('positioned table placement (w:tblpPr)', () => {
+  const CONTENT = 624;
+  const TABLE = 333;
+  const CONFIG = {
+    pageSize: { w: CONTENT + 192, h: 1056 },
+    margins: { top: 96, right: 96, bottom: 96, left: 96 },
+  };
+
+  function floatingTable(floating: TableBlock['floating']): {
+    block: TableBlock;
+    metrics: TableMetrics;
+  } {
+    const block: TableBlock = {
+      kind: 'table',
+      id: 'float',
+      columnWidths: [TABLE],
+      rows: [{ id: 'r', cells: [{ id: 'c', nodes: [paragraph('cell')] }] }],
+      floating,
+    };
+    const metrics: TableMetrics = {
+      kind: 'table',
+      columnWidths: [TABLE],
+      totalWidth: TABLE,
+      totalHeight: LINE,
+      rows: [
+        { height: LINE, cells: [{ metrics: [paragraphMetrics(1)], width: TABLE, height: LINE }] },
+      ],
+    };
+    return { block, metrics };
+  }
+
+  function placedTable(floating: TableBlock['floating']): TableFragment {
+    const { block, metrics } = floatingTable(floating);
+    const layout = layOutPages([paragraph('intro'), block], [paragraphMetrics(2), metrics], CONFIG);
+    return layout.pages[0].fragments.find(
+      (f): f is TableFragment => f.kind === 'table'
+    ) as TableFragment;
+  }
+
+  test('tblpXSpec="center" centers the fragment in the content box', () => {
+    const frag = placedTable({
+      horzAnchor: 'margin',
+      vertAnchor: 'text',
+      tblpXSpec: 'center',
+      tblpY: 13,
+    });
+    // region.left (96) + centered offset within the 624px content box
+    expect(frag.x).toBe(96 + (CONTENT - TABLE) / 2);
+  });
+
+  test('vertAnchor="text" measures tblpY from the table\'s flow position, not the page top', () => {
+    const frag = placedTable({
+      horzAnchor: 'margin',
+      vertAnchor: 'text',
+      tblpXSpec: 'center',
+      tblpY: 13,
+    });
+    // Below the 2-line intro paragraph (top margin 96 + 40) plus the 13px offset.
+    expect(frag.y).toBe(96 + 2 * LINE + 13);
+  });
+
+  test('vertAnchor="margin" keeps tblpY relative to the content-box top', () => {
+    const frag = placedTable({
+      horzAnchor: 'margin',
+      vertAnchor: 'margin',
+      tblpXSpec: 'right',
+      tblpY: 50,
+    });
+    expect(frag.y).toBe(96 + 50);
+    expect(frag.x).toBe(96 + CONTENT - TABLE);
+  });
+});

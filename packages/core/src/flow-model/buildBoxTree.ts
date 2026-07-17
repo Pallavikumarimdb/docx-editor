@@ -35,6 +35,10 @@ import { AUTO_PARAGRAPH_SPACING_PX } from '../utils/units';
 import type { BuildBoxTreeOptions } from './buildBoxTree/shared';
 import { paragraphToRuns } from './buildBoxTree/runs';
 import { convertBorderSpecToLayout, readBorderAttrs } from './buildBoxTree/borders';
+import {
+  hasAuthoredVisualContent,
+  suppressStructuralEmptyParagraphsAfterTables,
+} from './buildBoxTree/structuralParagraphs';
 import { computeListMarker } from './buildBoxTree/listMarkers';
 import {
   hasAuthoredNonRevisionVisualContent,
@@ -368,41 +372,6 @@ function convertParagraph(
     docFrom: startPos,
     docTo: startPos + node.nodeSize,
   };
-}
-
-function hasAuthoredVisualContent(block: ContentNode): boolean {
-  if (block.kind !== 'paragraph') return false;
-  const attrs = block.attrs;
-  if (!attrs) return false;
-  if (attrs.shading) return true;
-  if (attrs.borders && Object.values(attrs.borders).some(Boolean)) return true;
-  if (attrs.spacingOverrides?.before || attrs.spacingOverrides?.after) return true;
-  if (attrs.pPrIns || attrs.pPrDel) return true;
-  return false;
-}
-
-function suppressStructuralEmptyParagraphsAfterTables(blocks: ContentNode[]): ContentNode[] {
-  const trailingEmptyAfterTable = new Set<number>();
-  for (let i = 1; i < blocks.length; i++) {
-    const prev = blocks[i - 1];
-    const cur = blocks[i];
-    if (prev.kind !== 'table') continue;
-    if (cur.kind !== 'paragraph') continue;
-    if (cur.runs.length > 0) continue;
-    if (hasAuthoredVisualContent(cur)) continue;
-    trailingEmptyAfterTable.add(i);
-  }
-
-  return blocks.map((block, index) => {
-    if (!trailingEmptyAfterTable.has(index) || block.kind !== 'paragraph') {
-      return block;
-    }
-
-    return {
-      ...block,
-      attrs: { ...(block.attrs ?? {}), suppressEmptyParagraphHeight: true },
-    };
-  });
 }
 
 function sdtGroupFromNode(node: PMNode, pos: number): SdtGroup {

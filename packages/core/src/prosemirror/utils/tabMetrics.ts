@@ -153,18 +153,20 @@ export function calculatePositionalTabWidth(
 /**
  * The stops past the pen, nearest first.
  *
- * Word does not let a distant explicit stop suppress a nearer default-grid one:
- * the grid keeps running *between* custom stops (§17.6.13). So both sets are
- * candidates and we merge them in position order, rather than preferring one
- * source over the other.
+ * Setting a custom stop removes every default-grid stop to its left (Word's
+ * ruler behavior; the grid described by `w:defaultTabStop` §17.15.1.25 only
+ * resumes *after* the rightmost custom stop). A tab between two custom stops
+ * therefore jumps to the next custom stop, never to an intervening grid
+ * position — this is what makes `"text<tab>text"` with a single right stop at
+ * the margin land at the margin instead of the next half-inch.
  *
- * `clear` stops are removals, not stops. `bar` stops draw a vertical rule
- * without advancing the pen, so they are not landing places either.
+ * `clear` stops are removals, not stops. `bar` stops "do not result in a
+ * custom tab stop" (§17.18.84) — they draw a vertical rule without advancing
+ * the pen — so they are neither landing places nor grid suppressors.
  */
 function* candidateStops(penTwips: number, ruler: TabRuler, gridTwips: number): Generator<TabMark> {
-  const explicit = (ruler.explicitStops ?? [])
-    .filter((s) => s.val !== 'clear' && s.val !== 'bar' && s.pos > penTwips)
-    .sort((a, b) => a.pos - b.pos);
+  const authored = (ruler.explicitStops ?? []).filter((s) => s.val !== 'clear' && s.val !== 'bar');
+  const explicit = authored.filter((s) => s.pos > penTwips).sort((a, b) => a.pos - b.pos);
 
   // A hanging indent puts an implicit stop at the left indent — the column the
   // paragraph body hangs at. It only applies while the pen is still left of it,
@@ -174,9 +176,15 @@ function* candidateStops(penTwips: number, ruler: TabRuler, gridTwips: number): 
 
   const fixed = [...implicit, ...explicit].sort((a, b) => a.pos - b.pos);
 
-  // Walk the merged sequence lazily: emit every fixed stop in order, and fill
-  // the gaps with grid stops. Bounded by the grid, so this always terminates.
-  let gridPos = gridTwips > 0 ? (Math.floor(penTwips / gridTwips) + 1) * gridTwips : Infinity;
+  // Walk the merged sequence lazily: emit every fixed stop in order, then
+  // resume the default grid past the rightmost authored stop. Bounded by the
+  // grid, so this always terminates.
+  // Seed with -Infinity: an empty authored set must not fabricate a phantom
+  // stop at 0 — with a negative pen (negative w:ind) the grid's 0tw stop is a
+  // real landing place.
+  const lastAuthoredPos = authored.reduce((max, s) => Math.max(max, s.pos), -Infinity);
+  const gridFloor = Math.max(penTwips, lastAuthoredPos);
+  let gridPos = gridTwips > 0 ? (Math.floor(gridFloor / gridTwips) + 1) * gridTwips : Infinity;
   let i = 0;
 
   // Cap the walk: the caller only ever needs a handful of candidates, and a

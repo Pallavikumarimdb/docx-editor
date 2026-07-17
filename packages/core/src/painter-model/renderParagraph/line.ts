@@ -496,10 +496,12 @@ export function paintLine(
         // text-indent applies per flex item (not to the group), so a hanging
         // indent would pull every text-containing item left, including the
         // page number. Strip it here and re-apply as margin-left on the first
-        // child. white-space: nowrap stops trailing items wrapping mid-line.
+        // child. white-space: pre stops trailing items wrapping mid-line AND
+        // keeps authored spaces inside them — nowrap collapses a trailing
+        // space at a flex-item edge, fusing "Page " + "2" into "Page2".
         lineEl.style.display = 'flex';
         lineEl.style.alignItems = 'baseline';
-        lineEl.style.whiteSpace = 'nowrap';
+        lineEl.style.whiteSpace = 'pre';
         lineEl.style.textIndent = '0';
         lineEl.dataset.flexLine = 'true';
         if (

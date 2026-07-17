@@ -14,7 +14,7 @@
  * @packageDocumentation
  */
 
-import type { ContentNode, ParagraphBlock } from './types';
+import type { BorderKind, ContentNode, ParagraphBlock, ParagraphBorders } from './types';
 
 /**
  * Space a content node asks for above itself, px.
@@ -49,9 +49,88 @@ export function spaceAfter(node: ContentNode): number {
 export function collapsedGap(prev: ContentNode | null, next: ContentNode): number {
   if (!prev) return spaceBefore(next);
 
-  if (isContextuallySuppressed(prev, next)) return 0;
+  const spacing = isContextuallySuppressed(prev, next)
+    ? 0
+    : Math.max(spaceAfter(prev), spaceBefore(next));
 
-  return Math.max(spaceAfter(prev), spaceBefore(next));
+  // A paragraph border occupies flow height: Word draws the rule `w:space`
+  // points away from the text and the following content starts below the rule,
+  // not below the text (§17.3.1.24 — the border is part of the paragraph's
+  // extent). Without this, two adjacent boxed callouts paint their borders
+  // into the spacing gap and visually touch. Inside a border *group* (identical
+  // pBdr) the boundary borders are not drawn, so no extent applies there —
+  // mirroring what the painter renders via the same `bordersFormGroup`.
+  return spacing + borderGapExtent(prev, next);
+}
+
+/**
+ * Flow height consumed by the borders drawn at the boundary between `prev`
+ * and `next`: `prev`'s bottom rule + its `w:space` inset, and `next`'s top
+ * rule + inset. Zero when the two group into one box. Additive on top of the
+ * collapsed spacing — exported so the column-balance planner budgets the same
+ * gap the composer places.
+ */
+export function borderGapExtent(prev: ContentNode, next: ContentNode): number {
+  const prevBorders = prev.kind === 'paragraph' ? prev.attrs?.borders : undefined;
+  const nextBorders = next.kind === 'paragraph' ? next.attrs?.borders : undefined;
+  if (!prevBorders?.bottom && !nextBorders?.top) return 0;
+  // Inside a group the boundary uses the `between` rule, whose `w:space` "is
+  // ignored — this border is always located at the bottom of each paragraph"
+  // (§17.3.1.5): it consumes no flow height.
+  //
+  // Known approximation: pagination groups by FLOW adjacency while the painter
+  // groups per page fragment, so at a page/column break a split group draws
+  // closing/opening rules pagination did not reserve, and a hard break can
+  // carry prev's bottom extent onto the next page's first gap. Both are a
+  // few px and only at region boundaries.
+  if (bordersFormGroup(prevBorders, nextBorders)) return 0;
+  return borderExtent(prevBorders?.bottom) + borderExtent(nextBorders?.top);
+}
+
+/** Vertical px a drawn border edge adds to the paragraph: rule width + `w:space` inset. */
+function borderExtent(border: BorderKind | undefined): number {
+  if (!border) return 0;
+  // The painter renders `double` rules at a 3px minimum (borderToCss); reserve
+  // the same height or the rule paints beyond the budgeted extent.
+  const width = border.style === 'double' ? Math.max(border.width ?? 1, 3) : (border.width ?? 1);
+  return width + (border.space ?? 0);
+}
+
+/**
+ * Check if two individual border definitions are equal. `w:space` is part of
+ * the identity: §17.3.1.5's own example splits two otherwise-identical
+ * paragraphs into separate boxes because only their space values differ.
+ */
+function bordersEqual(a?: BorderKind, b?: BorderKind): boolean {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return (
+    a.style === b.style &&
+    a.width === b.width &&
+    a.color === b.color &&
+    (a.space ?? 0) === (b.space ?? 0) &&
+    (a.shadow ?? false) === (b.shadow ?? false)
+  );
+}
+
+/**
+ * Check if two ParagraphBorders form a group (ECMA-376 §17.3.1.24).
+ * Adjacent paragraphs with identical border definitions belong to the same
+ * group: one box, with `between` rules at interior boundaries. The painter
+ * decides which rules to draw with this same predicate, so pagination and
+ * paint agree on where a border consumes flow height.
+ */
+export function bordersFormGroup(a?: ParagraphBorders, b?: ParagraphBorders): boolean {
+  if (!a && !b) return false; // no borders = no group
+  if (!a || !b) return false;
+  return (
+    bordersEqual(a.top, b.top) &&
+    bordersEqual(a.bottom, b.bottom) &&
+    bordersEqual(a.left, b.left) &&
+    bordersEqual(a.right, b.right) &&
+    bordersEqual(a.between, b.between) &&
+    bordersEqual(a.bar, b.bar)
+  );
 }
 
 /**

@@ -21,6 +21,7 @@ import type {
   ImageRun,
 } from '../pagination-model/types';
 import type { RenderContext } from './paintPage';
+import { bordersFormGroup } from '../pagination-model/blockSpacingRules';
 import { resolveFontFamily } from '../utils/fontResolver';
 import { PARAGRAPH_CLASS_NAMES, isTextRun } from './renderParagraph/shared';
 import { applyPmPositions } from './renderParagraph/runs';
@@ -81,30 +82,9 @@ export function getParagraphRevisionMetadata(block: ParagraphBlock): {
   };
 }
 
-/**
- * Check if two individual border definitions are equal (same style, width, color).
- */
-function bordersEqual(a?: BorderKind, b?: BorderKind): boolean {
-  if (!a && !b) return true;
-  if (!a || !b) return false;
-  return a.style === b.style && a.width === b.width && a.color === b.color;
-}
-
-/**
- * Check if two ParagraphBorders form a group (ECMA-376 §17.3.1.24).
- * Adjacent paragraphs with identical border definitions belong to the same group.
- */
-function bordersFormGroup(a?: ParagraphBorders, b?: ParagraphBorders): boolean {
-  if (!a && !b) return false; // no borders = no group
-  if (!a || !b) return false;
-  return (
-    bordersEqual(a.top, b.top) &&
-    bordersEqual(a.bottom, b.bottom) &&
-    bordersEqual(a.left, b.left) &&
-    bordersEqual(a.right, b.right) &&
-    bordersEqual(a.between, b.between)
-  );
-}
+// Border grouping (§17.3.1.24) is shared with pagination: the composer adds
+// border flow-height at exactly the boundaries where the painter draws a rule,
+// so the predicate must be the same one. See blockSpacingRules.bordersFormGroup.
 
 // First strong-directional character classes (subset of the Unicode Bidi
 // character types L vs R/AL) used for base-direction detection.
@@ -322,7 +302,13 @@ export function paintParagraphFragment(
     const groupedWithPrev = bordersFormGroup(config.prevBorders, borders);
     const groupedWithNext = bordersFormGroup(borders, config.nextBorders);
 
-    const renderedTopBorder = groupedWithPrev ? borders.between : borders.top;
+    // `between` ignores its `w:space` — "this border is always located at the
+    // bottom of each paragraph" (§17.3.1.5) — so draw it AT the boundary, not
+    // `space` px above it (which would overpaint the previous paragraph's
+    // descenders in the unreserved gap).
+    const renderedTopBorder = groupedWithPrev
+      ? borders.between && { ...borders.between, space: 0 }
+      : borders.top;
     const renderedBottomBorder = !groupedWithNext ? borders.bottom : undefined;
 
     borderBox = doc.createElement('div');

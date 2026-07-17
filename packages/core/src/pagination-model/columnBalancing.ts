@@ -21,7 +21,7 @@
  */
 
 import type { ColumnLayout, ContentNode, LayoutMetrics } from './types';
-import { collapsedGap, spaceAfter, spaceBefore } from './blockSpacingRules';
+import { borderGapExtent, collapsedGap, spaceAfter, spaceBefore } from './blockSpacingRules';
 
 /**
  * The region a balanced multi-column stretch flows into.
@@ -225,23 +225,33 @@ function getBalanceUnits(
 ): BalanceUnit[] | null {
   const units: BalanceUnit[] = [];
 
+  // Border extents are ADDITIVE on the collapsed gap (see borderGapExtent),
+  // which the max-collapse spacing model here can't express — fold them into
+  // the block's first unit height instead, so the planned column heights match
+  // what the composer actually places.
+  let prevContent: ContentNode | null = null;
+
   for (let i = start; i < end; i++) {
     const node = nodes[i];
     const nodeMetrics = metrics[i];
     if (node.kind === 'sectionBreak') continue;
+    const boundaryExtent = prevContent ? borderGapExtent(prevContent, node) : 0;
 
     if (node.kind === 'paragraph' && nodeMetrics?.kind === 'paragraph') {
       for (let line = 0; line < nodeMetrics.lines.length; line++) {
         if (units.length >= MAX_BALANCE_UNITS) return null;
         units.push({
           height:
-            nodeMetrics.lines[line].lineHeight + (nodeMetrics.lines[line].floatSkipBefore ?? 0),
+            nodeMetrics.lines[line].lineHeight +
+            (nodeMetrics.lines[line].floatSkipBefore ?? 0) +
+            (line === 0 ? boundaryExtent : 0),
           blockIndex: i,
           startsBlock: line === 0,
           spaceBefore: line === 0 ? spaceBefore(node) : undefined,
           spaceAfter: line === nodeMetrics.lines.length - 1 ? spaceAfter(node) : undefined,
         });
       }
+      prevContent = node;
       continue;
     }
 
@@ -249,12 +259,13 @@ function getBalanceUnits(
       for (let row = 0; row < nodeMetrics.rows.length; row++) {
         if (units.length >= MAX_BALANCE_UNITS) return null;
         units.push({
-          height: nodeMetrics.rows[row].height,
+          height: nodeMetrics.rows[row].height + (row === 0 ? boundaryExtent : 0),
           blockIndex: i,
           startsBlock: row === 0,
           consumesTrailingSpacing: row === 0,
         });
       }
+      prevContent = node;
       continue;
     }
 
