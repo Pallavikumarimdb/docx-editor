@@ -244,7 +244,7 @@ export const ImageExtension = createNodeExtension({
               ? Number(element.dataset.borderWidth)
               : undefined,
             borderColor: element.dataset.borderColor || undefined,
-            borderKind: element.dataset.borderKind || undefined,
+            borderKind: element.dataset.borderKind || element.dataset.borderStyle || undefined,
           };
         },
       },
@@ -266,7 +266,10 @@ export const ImageExtension = createNodeExtension({
       if (attrs.transform) domAttrs['data-transform'] = attrs.transform;
       if (attrs.borderWidth) domAttrs['data-border-width'] = String(attrs.borderWidth);
       if (attrs.borderColor) domAttrs['data-border-color'] = attrs.borderColor;
-      if (attrs.borderKind) domAttrs['data-border-style'] = attrs.borderKind;
+      if (attrs.borderKind) {
+        domAttrs['data-border-kind'] = attrs.borderKind;
+        domAttrs['data-border-style'] = attrs.borderKind;
+      }
 
       const styles: string[] = [];
 

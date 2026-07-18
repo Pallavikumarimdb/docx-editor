@@ -22,6 +22,7 @@ import {
   applyImageRevisionAttrs,
   applyImageVisualAttrs,
   hasImageVisualAttrs,
+  applyImageBorder,
 } from '../renderImage';
 import { resolveFontFamily } from '../../utils/fontResolver';
 import { sanitizeHref } from '../../utils/sanitizeHref';
@@ -494,6 +495,7 @@ function renderInlineImageRun(
     img.style.transformOrigin = 'center center';
   }
   if (hasImageVisualAttrs(run)) applyImageVisualAttrs(img, run);
+  applyImageBorder(img, run);
 
   if (
     geometry.boxWidth !== geometry.contentWidth ||
@@ -586,6 +588,7 @@ function renderBlockImage(run: ImageRun, doc: Document): HTMLElement {
     img.style.transformOrigin = 'center center';
   }
   if (hasImageVisualAttrs(run)) applyImageVisualAttrs(img, run);
+  applyImageBorder(img, run);
 
   // Reserve the rotated bbox height so the rotated image doesn't bleed into
   // adjacent paragraphs. The container height matches the bbox; the inner

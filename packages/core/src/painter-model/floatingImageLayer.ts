@@ -27,6 +27,9 @@ export interface FloatingImagePaintRecord extends ImageRevisionAttrs {
   cropLeft?: number;
   /** a:alphaModFix -> CSS opacity. */
   opacity?: number;
+  borderWidth?: number;
+  borderColor?: string;
+  borderKind?: string;
 }
 
 export interface FloatingImagesLayerOptions {

@@ -128,6 +128,18 @@ export function applyImageVisualAttrs(img: HTMLImageElement, v: ImageVisualAttrs
   applyImageCrop(img, v);
 }
 
+export function applyImageBorder(
+  img: HTMLImageElement,
+  border: { borderWidth?: number; borderKind?: string; borderColor?: string }
+): void {
+  if (border.borderWidth && border.borderWidth > 0) {
+    const bStyle = border.borderKind || 'solid';
+    const bColor = border.borderColor || '#000000';
+    img.style.border = `${border.borderWidth}px ${bStyle} ${bColor}`;
+    img.style.boxSizing = 'border-box';
+  }
+}
+
 /**
  * Render an OOXML `srcRect` crop on the `<img>` itself, keeping its element box
  * at the display size so selection/resize overlays (which measure the `<img>`'s
@@ -241,6 +253,7 @@ export function paintImageFragment(
     imgEl.style.transform = block.transform;
   }
   applyImageRevisionAttrs(imgEl, block);
+  applyImageBorder(imgEl, block);
 
   // Prevent dragging
   imgEl.draggable = false;

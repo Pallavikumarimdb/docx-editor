@@ -329,6 +329,9 @@ export interface ImageRun extends DocRange, TrackedChangeMetadata {
   cropLeft?: number;
   opacity?: number;
   hlinkHref?: string;
+  borderWidth?: number;
+  borderColor?: string;
+  borderKind?: string;
 }
 
 /**
@@ -542,6 +545,9 @@ export interface ImageBlock extends ContentNodeBase, TrackedChangeMetadata {
     behindDoc?: boolean;
   };
   hlinkHref?: string;
+  borderWidth?: number;
+  borderColor?: string;
+  borderKind?: string;
 }
 
 /**

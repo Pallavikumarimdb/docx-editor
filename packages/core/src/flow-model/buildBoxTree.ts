@@ -673,6 +673,9 @@ function convertImage(node: PMNode, startPos: number, pageContentHeight?: number
         }
       : undefined,
     hlinkHref: sanitizeHref(attrs.hlinkHref as string | undefined),
+    borderWidth: attrs.borderWidth as number | undefined,
+    borderColor: attrs.borderColor as string | undefined,
+    borderKind: attrs.borderKind as string | undefined,
     docFrom: startPos,
     docTo: startPos + node.nodeSize,
   };
