@@ -735,6 +735,35 @@ function execCommand(name: string, ...args: any[]) {
   const v = props.view;
   if (!v) return;
   const cmds = props.getCommands();
+
+  if (name === 'indent') {
+    const increaseListLevelCmd = cmds['increaseListLevel']?.();
+    const increaseIndentCmd = cmds['increaseIndent']?.(...args);
+    if (increaseListLevelCmd && increaseListLevelCmd(v.state, (tr: any) => v.dispatch(tr), v)) {
+      if (!v.hasFocus()) v.focus();
+      return;
+    }
+    if (increaseIndentCmd && increaseIndentCmd(v.state, (tr: any) => v.dispatch(tr), v)) {
+      if (!v.hasFocus()) v.focus();
+      return;
+    }
+    return;
+  }
+
+  if (name === 'outdent') {
+    const decreaseListLevelCmd = cmds['decreaseListLevel']?.();
+    const decreaseIndentCmd = cmds['decreaseIndent']?.(...args);
+    if (decreaseListLevelCmd && decreaseListLevelCmd(v.state, (tr: any) => v.dispatch(tr), v)) {
+      if (!v.hasFocus()) v.focus();
+      return;
+    }
+    if (decreaseIndentCmd && decreaseIndentCmd(v.state, (tr: any) => v.dispatch(tr), v)) {
+      if (!v.hasFocus()) v.focus();
+      return;
+    }
+    return;
+  }
+
   const cmdFactory = cmds[name];
   if (!cmdFactory) {
     console.warn('[Toolbar] command not found:', name);
