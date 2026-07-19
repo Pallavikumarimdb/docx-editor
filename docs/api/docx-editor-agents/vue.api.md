@@ -21,7 +21,7 @@ import { PublicProps } from 'vue';
 import { Ref } from 'vue';
 
 // @public (undocumented)
-export const AgentChatLog: typeof __VLS_export_2;
+export const AgentChatLog: __VLS_WithSlots_2<typeof __VLS_component_2, __VLS_Slots_2>;
 
 // @public (undocumented)
 export interface AgentChatLogProps {
@@ -50,7 +50,7 @@ export interface AgentChatLogProps {
 }
 
 // @public (undocumented)
-export const AgentComposer: typeof __VLS_export_3;
+export const AgentComposer: __VLS_WithSlots_3<typeof __VLS_component_3, __VLS_Slots_3>;
 
 // @public (undocumented)
 export interface AgentComposerProps {
@@ -69,7 +69,7 @@ export interface AgentComposerProps {
 export { AgentMessage }
 
 // @public (undocumented)
-export const AgentPanel: typeof __VLS_export;
+export const AgentPanel: __VLS_WithSlots<typeof __VLS_component, __VLS_Slots>;
 
 // @public (undocumented)
 export interface AgentPanelProps {
@@ -95,7 +95,11 @@ export interface AgentPanelProps {
 }
 
 // @public (undocumented)
-export const AgentSuggestionChip: typeof __VLS_export_4;
+export const AgentSuggestionChip: DefineComponent<AgentSuggestionChipProps, {}, {}, {}, {}, ComponentOptionsMixin, ComponentOptionsMixin, {} & {
+click: () => any;
+}, string, PublicProps, Readonly<AgentSuggestionChipProps> & Readonly<{
+onClick?: (() => any) | undefined;
+}>, {}, {}, {}, {}, string, ComponentProvideOptions, false, {}, any>;
 
 // @public (undocumented)
 export interface AgentSuggestionChipProps {
@@ -106,7 +110,14 @@ export interface AgentSuggestionChipProps {
 }
 
 // @public (undocumented)
-export const AgentTimeline: typeof __VLS_export_5;
+export const AgentTimeline: DefineComponent<AgentTimelineProps, {}, {}, {}, {}, ComponentOptionsMixin, ComponentOptionsMixin, {}, string, PublicProps, Readonly<AgentTimelineProps> & Readonly<{}>, {
+streaming: boolean;
+maxVisibleCalls: number;
+humanizeName: (name: string) => string;
+workingLabel: (count: number) => string;
+summaryLabel: (count: number) => string;
+earlierLabel: (count: number) => string;
+}, {}, {}, {}, string, ComponentProvideOptions, false, {}, any>;
 
 // @public (undocumented)
 export interface AgentTimelineProps {
@@ -133,7 +144,16 @@ export { AgentToolDefinition }
 export { AgentToolResult }
 
 // @public (undocumented)
-export const AIContextMenu: typeof __VLS_export_6;
+export const AIContextMenu: DefineComponent<AIContextMenuProps, {}, {}, {}, {}, ComponentOptionsMixin, ComponentOptionsMixin, {} & {
+close: () => any;
+action: (action: string, customPrompt?: string | undefined) => any;
+}, string, PublicProps, Readonly<AIContextMenuProps> & Readonly<{
+onClose?: (() => any) | undefined;
+onAction?: ((action: string, customPrompt?: string | undefined) => any) | undefined;
+}>, {
+showCustomPrompt: boolean;
+labels: AIContextMenuLabels;
+}, {}, {}, {}, string, ComponentProvideOptions, false, {}, any>;
 
 // @public (undocumented)
 export interface AIContextMenuProps {
@@ -153,7 +173,21 @@ export interface AIContextMenuProps {
 }
 
 // @public (undocumented)
-export const AIResponsePreview: typeof __VLS_export_7;
+export const AIResponsePreview: DefineComponent<AIResponsePreviewProps, {}, {}, {}, {}, ComponentOptionsMixin, ComponentOptionsMixin, {} & {
+accept: (text: string) => any;
+reject: () => any;
+retry: () => any;
+}, string, PublicProps, Readonly<AIResponsePreviewProps> & Readonly<{
+onAccept?: ((text: string) => any) | undefined;
+onReject?: (() => any) | undefined;
+onRetry?: (() => any) | undefined;
+}>, {
+error: string;
+labels: AIResponsePreviewLabels;
+allowEdit: boolean;
+showDiff: boolean;
+showRetry: boolean;
+}, {}, {}, {}, string, ComponentProvideOptions, false, {}, any>;
 
 // @public (undocumented)
 export interface AIResponsePreviewProps {
