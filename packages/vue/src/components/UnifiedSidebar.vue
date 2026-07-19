@@ -232,6 +232,11 @@ function computePositions() {
     const id = el.dataset.revisionId;
     if (id && !deletionEls.has(id)) deletionEls.set(id, el);
   }
+  const formatChangeEls = new Map<string, HTMLElement>();
+  for (const el of container.querySelectorAll<HTMLElement>('.docx-format-change[data-revision-id]')) {
+    const id = el.dataset.revisionId;
+    if (id && !formatChangeEls.has(id)) formatChangeEls.set(id, el);
+  }
   // Structural tracked changes (whole-table / row / cell insert+delete +
   // tracked paragraph marks) live on the painted table/row/cell or on
   // paragraph-fragment elements, not on `.docx-insertion` text spans —
@@ -269,10 +274,13 @@ function computePositions() {
       anchor = commentEls.get(String(item.comment!.id));
     } else if (item.kind === 'tracked-change') {
       const change = item.change!;
-      anchor =
-        change.type === 'deletion'
-          ? deletionEls.get(String(change.revisionId))
-          : insertionEls.get(String(change.insertionRevisionId ?? change.revisionId));
+      if (change.type === 'deletion') {
+        anchor = deletionEls.get(String(change.revisionId));
+      } else if (change.type === 'formatChange') {
+        anchor = formatChangeEls.get(String(change.revisionId));
+      } else {
+        anchor = insertionEls.get(String(change.insertionRevisionId ?? change.revisionId));
+      }
     }
     if (anchor) anchorPositions.set(item.anchorKey, anchorY(anchor));
   }
@@ -343,6 +351,7 @@ const expandedHighlightCss = computed(() => {
     return `
       .paged-editor__pages .docx-insertion[data-revision-id="${insRev}"] { background-color: rgba(52, 168, 83, 0.2) !important; border-bottom: 2px solid #2e7d32 !important; }
       .paged-editor__pages .docx-deletion[data-revision-id="${revId}"] { background-color: rgba(211, 47, 47, 0.2) !important; text-decoration-thickness: 2px !important; }
+      .paged-editor__pages .docx-format-change[data-revision-id="${revId}"] { background-color: rgba(230, 81, 0, 0.2) !important; border-bottom: 2px solid #e65100 !important; }
     `;
   }
   return '';

@@ -1,14 +1,4 @@
-/**
- * PM paragraph → Document Paragraph conversion.
- *
- * Owns `extractParagraphContent` — the run-coalescing state machine that
- * walks each child node, dispatching to the run/hyperlink/field/sdt
- * factories and tracking the current run + current hyperlink so adjacent
- * text with the same mark set gets folded into a single Run. Tracked-change
- * marks (insertion/deletion/moveFrom/moveTo) split the run and emit their
- * own wrapper content. `createInlineSdtFromNode` lives here (not in
- * ./runs.ts) because it recurses back through this walker.
- */
+/** PM paragraph → Document Paragraph conversion. */
 
 import type { Node as PMNode } from 'prosemirror-model';
 import type {
@@ -40,6 +30,7 @@ import {
   createSymbolRun,
   textToRunContent,
 } from './runs';
+import { attachFormatChangeAndFlush } from './formatChangeHelpers';
 
 /**
  * Convert a ProseMirror paragraph node to our Paragraph type
@@ -714,8 +705,6 @@ function paragraphAttrsToFormatting(attrs: ParagraphAttrs): ParagraphFormatting 
  */
 function extractParagraphContent(paragraph: PMNode): ParagraphContent[] {
   const content: ParagraphContent[] = [];
-
-  // Track current run being built
   let currentRun: Run | null = null;
   let currentMarksKey: string | null = null;
   let currentHyperlink: Hyperlink | null = null;
@@ -750,7 +739,6 @@ function extractParagraphContent(paragraph: PMNode): ParagraphContent[] {
     const insertionMark = node.marks.find((m) => m.type.name === 'insertion');
     const deletionMark = node.marks.find((m) => m.type.name === 'deletion');
     if (insertionMark || deletionMark) {
-      // Finish any current content
       if (currentRun) {
         content.push(currentRun);
         currentRun = null;
@@ -760,12 +748,8 @@ function extractParagraphContent(paragraph: PMNode): ParagraphContent[] {
         content.push(currentHyperlink);
         currentHyperlink = null;
       }
-
-      const changeMark = (insertionMark || deletionMark)!;
-      // Build the run for whatever this node is — text, image, or shape — so a
-      // tracked picture/shape round-trips inside the `<w:ins>`/`<w:del>` wrapper
-      // instead of collapsing to an empty run (the prior text-only path).
       let run: Run;
+      const changeMark = (insertionMark || deletionMark)!;
       if (node.type.name === 'image') {
         run = createImageRun(node);
       } else if (node.type.name === 'shape') {
@@ -876,9 +860,21 @@ function extractParagraphContent(paragraph: PMNode): ParagraphContent[] {
 
     // Handle node types
     if (node.isText) {
-      const marksKey = getMarksKey(node.marks);
+      // Filter out structural / metadata marks before computing formatting.
+      const nonMetaMarks = node.marks.filter(
+        (m) =>
+          m.type.name !== 'insertion' &&
+          m.type.name !== 'deletion' &&
+          m.type.name !== 'formatChange'
+      );
+      const marksKey = getMarksKey(nonMetaMarks);
 
-      if (currentRun && currentMarksKey === marksKey) {
+      // If this text node carries a formatChange mark it cannot be coalesced
+      // into an adjacent run that may have different tracked-change metadata,
+      // so always start a fresh run for it.
+      const formatChangeMark = node.marks.find((m) => m.type.name === 'formatChange');
+
+      if (currentRun && currentMarksKey === marksKey && !formatChangeMark) {
         // Append to current run
         appendTextToRun(currentRun, node.text || '');
       } else {
@@ -886,8 +882,15 @@ function extractParagraphContent(paragraph: PMNode): ParagraphContent[] {
         if (currentRun) {
           content.push(currentRun);
         }
-        currentRun = createRunFromText(node.text || '', node.marks);
+        currentRun = createRunFromText(node.text || '', nonMetaMarks);
         currentMarksKey = marksKey;
+
+        // Attach format-change property record when the node carries the mark.
+        if (formatChangeMark) {
+          attachFormatChangeAndFlush(formatChangeMark, currentRun, content);
+          currentRun = null;
+          currentMarksKey = null;
+        }
       }
     } else if (node.type.name === 'hardBreak') {
       // Hard break ends current run
@@ -967,11 +970,7 @@ function extractParagraphContent(paragraph: PMNode): ParagraphContent[] {
   return content;
 }
 
-/**
- * Create an InlineSdt from a PM sdt node. Lives here (not in ./runs.ts)
- * because it recurses through `extractParagraphContent` — putting it in
- * runs.ts would create an import cycle.
- */
+/** Create an InlineSdt from a PM sdt node (lives here to avoid import cycle with runs.ts). */
 function createInlineSdtFromNode(node: PMNode): InlineSdt {
   const properties: SdtProperties = sdtAttrsToProps(node.attrs as Record<string, unknown>);
 

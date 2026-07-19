@@ -7,7 +7,7 @@ import { Schema } from 'prosemirror-model';
 import { EditorState, TextSelection, type Transaction } from 'prosemirror-state';
 import { createSuggestionModePlugin, suggestionModeKey, setSuggestionMode } from './index';
 
-// Minimal schema with insertion/deletion marks
+// Minimal schema with insertion/deletion/formatChange/bold marks
 const schema = new Schema({
   nodes: {
     doc: { content: 'block+' },
@@ -30,6 +30,18 @@ const schema = new Schema({
         date: { default: '' },
       },
       toDOM: () => ['del', 0],
+    },
+    formatChange: {
+      attrs: {
+        revisionId: { default: 0 },
+        author: { default: '' },
+        date: { default: '' },
+        previousFormatting: { default: null },
+      },
+      toDOM: () => ['span', 0],
+    },
+    bold: {
+      toDOM: () => ['strong', 0],
     },
   },
 });
@@ -241,6 +253,35 @@ describe('SuggestionMode Plugin', () => {
       const deletions = getMarkedSegments(state, 'deletion');
       expect(deletions.map((segment) => segment.text).join('')).toBe('lo');
       expect(new Set(deletions.map((segment) => segment.revisionId)).size).toBe(1);
+    });
+  });
+
+  describe('formatChange suggestion', () => {
+    test('adding bold mark in suggestion mode appends a formatChange mark', () => {
+      const { state: initialState } = createStateWithPlugin('Hello World', true);
+
+      // Select "Hello" (positions 1-6)
+      const sel = TextSelection.create(initialState.doc, 1, 6);
+      let state = initialState.apply(initialState.tr.setSelection(sel));
+
+      // Apply bold mark
+      const boldType = schema.marks.bold;
+      const tr = state.tr.addMark(1, 6, boldType.create());
+      state = state.apply(tr);
+
+      // Verify bold mark is present
+      const boldMark = state.doc.nodeAt(1)?.marks.find((m) => m.type.name === 'bold');
+      expect(boldMark).toBeDefined();
+
+      // Verify formatChange mark is ALSO present (appended by plugin)
+      const formatChangeMark = state.doc
+        .nodeAt(1)
+        ?.marks.find((m) => m.type.name === 'formatChange');
+      expect(formatChangeMark).toBeDefined();
+      expect(formatChangeMark!.attrs.author).toBe('TestUser');
+
+      // Since it had no formatting initially, the previousFormatting JSON should be empty object "{}"
+      expect(formatChangeMark!.attrs.previousFormatting).toBe('{}');
     });
   });
 });

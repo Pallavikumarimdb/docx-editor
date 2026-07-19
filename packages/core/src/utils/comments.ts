@@ -111,6 +111,7 @@ export interface TrackedChangeEntry {
     | 'insertion'
     | 'deletion'
     | 'replacement'
+    | 'formatChange'
     | 'paragraphMarkInsertion'
     | 'paragraphMarkDeletion'
     | 'paragraphPropertiesChanged'

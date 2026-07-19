@@ -40,6 +40,18 @@ const schema = new Schema({
       attrs: { revisionId: { default: 0 }, author: { default: '' }, date: { default: null } },
       toDOM: () => ['del', 0],
     },
+    formatChange: {
+      attrs: {
+        revisionId: { default: 0 },
+        author: { default: '' },
+        date: { default: null },
+        previousFormatting: { default: null },
+      },
+      toDOM: () => ['span', 0],
+    },
+    bold: {
+      toDOM: () => ['strong', 0],
+    },
     comment: {
       attrs: { commentId: { default: 0 } },
       toDOM: () => ['span', 0],
@@ -205,5 +217,28 @@ describe('extractTrackedChanges: inline revision identity', () => {
     ]);
     const { entries } = extractTrackedChanges(makeState(doc));
     expect(entries).toHaveLength(3);
+  });
+
+  test('extracts formatChange mark as a tracked change card', () => {
+    const doc = schema.nodes.doc.create({}, [
+      schema.nodes.paragraph.create({}, [
+        schema.text('Hello ', [
+          schema.marks.formatChange.create({
+            revisionId: 456,
+            author: AUTHOR,
+            date: DATE,
+            previousFormatting: '{}',
+          }),
+          schema.marks.bold.create(),
+        ]),
+      ]),
+    ]);
+
+    const state = makeState(doc);
+    const { entries } = extractTrackedChanges(state);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.type).toBe('formatChange');
+    expect(entries[0]!.text).toBe('Hello ');
+    expect(entries[0]!.revisionId).toBe(456);
   });
 });

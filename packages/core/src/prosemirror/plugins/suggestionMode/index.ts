@@ -33,6 +33,7 @@ import {
   handleSuggestionEnter,
 } from './handlers/structural';
 import { makeMarkAttrs } from './markAttrs';
+import { hasFormattingMarkSteps, appendFormatChangeMark } from './handlers/formatChange';
 import {
   suggestionModeKey,
   SUGGESTION_BYPASS_META,
@@ -240,10 +241,26 @@ export function createSuggestionModePlugin(initialActive = false, author = 'User
       },
     },
 
-    // Catch-all: mark any unhandled new content (e.g. paste) as insertion
-    appendTransaction(transactions, _oldState, newState) {
+    // Catch-all: mark any unhandled new content (e.g. paste) as insertion,
+    // or track any formatting-mark change as a format-change suggestion.
+    appendTransaction(transactions, oldState, newState) {
       const pluginState = suggestionModeKey.getState(newState);
       if (!pluginState?.active) return null;
+
+      // --- Format-change interception ---
+      // If the transaction only changed marks (no doc structural change),
+      // check whether it touched formatting marks that need to be tracked.
+      // Runs before the insertion catch-all so it doesn't mis-stamp.
+      const formattingTr = transactions.find(
+        (tr) =>
+          !tr.getMeta(SUGGESTION_META) &&
+          !tr.getMeta(SUGGESTION_BYPASS_META) &&
+          !isHistoryTransaction(tr) &&
+          hasFormattingMarkSteps(tr)
+      );
+      if (formattingTr) {
+        return appendFormatChangeMark(transactions, oldState, newState, pluginState);
+      }
 
       // Leave composed text un-marked while an IME composition is in flight.
       // `compositionend` marks the final committed range once, after the IME

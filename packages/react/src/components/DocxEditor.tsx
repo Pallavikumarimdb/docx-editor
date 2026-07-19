@@ -1563,14 +1563,13 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     return ids;
   }, [comments]);
 
-  // PagedEditor onSelectionChange — runs on every selection movement.
-  // Extracts the full selection state for the host callback, then walks the
-  // marks at the cursor to detect comment / tracked-change marks so the
-  // matching sidebar card opens. Comment marks are reported by either
-  // $from.marks() or by storedMarks/nodeBefore/nodeAfter at boundaries; the
-  // four sources get unioned. Resolved comments stay collapsed unless the
-  // user explicitly clicks them, so the sidebar doesn't fill with old
-  // threads as the cursor sweeps through commented text.
+  const commentSidebarItemsRef = useRef(commentSidebarItems);
+  commentSidebarItemsRef.current = commentSidebarItems;
+  const resolvedCommentIdsRef = useRef(resolvedCommentIds);
+  resolvedCommentIdsRef.current = resolvedCommentIds;
+  const revisionIdAliasesRef = useRef(revisionIdAliases);
+  revisionIdAliasesRef.current = revisionIdAliases;
+
   const handlePagedSelectionChange = useCallback(() => {
     const view = pagedEditorRef.current?.getView();
     // View can be briefly null during layout teardown — don't wipe toolbar list/indent state.
@@ -1594,23 +1593,25 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     for (const mark of marks) {
       if (mark.type.name === 'comment' && mark.attrs.commentId != null) {
         const commentId = mark.attrs.commentId as number;
-        if (resolvedCommentIds.has(commentId)) continue;
+        if (resolvedCommentIdsRef.current.has(commentId)) continue;
         cursorSidebarItem = `comment-${commentId}`;
         break;
       }
       if (
-        (mark.type.name === 'insertion' || mark.type.name === 'deletion') &&
+        (mark.type.name === 'insertion' ||
+          mark.type.name === 'deletion' ||
+          mark.type.name === 'formatChange') &&
         mark.attrs.revisionId != null
       ) {
         const revId = String(mark.attrs.revisionId);
         const prefix = `tc-${revId}-`;
-        let match = commentSidebarItems.find((i) => i.id.startsWith(prefix));
+        let match = commentSidebarItemsRef.current.find((i) => i.id.startsWith(prefix));
         // The insertion side of a replacement has a different revisionId;
         // check the alias map to find the correct sidebar card.
-        if (!match && revisionIdAliases) {
-          const aliasedId = revisionIdAliases.get(revId);
+        if (!match && revisionIdAliasesRef.current) {
+          const aliasedId = revisionIdAliasesRef.current.get(revId);
           if (aliasedId) {
-            match = commentSidebarItems.find((i) => i.id === aliasedId);
+            match = commentSidebarItemsRef.current.find((i) => i.id === aliasedId);
           }
         }
         if (match) {
@@ -1623,7 +1624,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
       setShowCommentsSidebar(true);
     }
     setExpandedSidebarItem(cursorSidebarItem);
-  }, [handleSelectionChange, resolvedCommentIds, commentSidebarItems, revisionIdAliases]);
+  }, [handleSelectionChange]);
 
   useEffect(() => {
     if (sidebarAutoOpenedRef.current) return;

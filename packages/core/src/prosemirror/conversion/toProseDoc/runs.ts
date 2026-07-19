@@ -130,6 +130,26 @@ export function convertRun(
   );
   const marks = textFormattingToMarks(mergedFormatting);
 
+  // If the run carries a property change record (`w:rPrChange`), append a
+  // `formatChange` mark so the editor shows the orange underline indicator
+  // and the round-trip serializer can reconstruct `<w:rPrChange>`.
+  if (run.propertyChanges && run.propertyChanges.length > 0) {
+    const change = run.propertyChanges[0];
+    const formatChangeMark = schema.marks.formatChange;
+    if (formatChangeMark) {
+      marks.push(
+        formatChangeMark.create({
+          revisionId: change.info.id,
+          author: change.info.author,
+          date: change.info.date ?? null,
+          previousFormatting: change.previousFormatting
+            ? JSON.stringify(change.previousFormatting)
+            : null,
+        })
+      );
+    }
+  }
+
   for (const content of run.content) {
     const contentNodes = convertRunContent(
       content,

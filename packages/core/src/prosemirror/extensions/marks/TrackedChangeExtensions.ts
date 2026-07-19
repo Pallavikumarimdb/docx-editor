@@ -110,3 +110,63 @@ export const DeletionExtension = createMarkExtension({
     },
   },
 });
+
+/**
+ * Format-change mark — text whose run properties were changed under tracked
+ * changes. Maps to `<w:rPrChange>` in OOXML. The mark carries:
+ *   - Standard revision triple (revisionId / author / date)
+ *   - `previousFormatting` — JSON-serialised `TextFormatting` of the run
+ *     *before* the change so the serialiser can write a correct `<w:rPrChange>`
+ *     and the accept/reject commands can restore the original state.
+ *
+ * The mark is `inclusive: false` (non-spreading) so it does not propagate to
+ * adjacent typed text — only text explicitly covered by the editor's
+ * format-change suggestion gets the mark.
+ *
+ * Renders as a subtle underline indicator matching the visual used for
+ * tracked text changes.
+ */
+export const FormatChangeExtension = createMarkExtension({
+  name: 'formatChange',
+  schemaMarkName: 'formatChange',
+  markSpec: {
+    attrs: {
+      revisionId: { default: 0 },
+      author: { default: '' },
+      date: { default: null },
+      /** JSON-serialised TextFormatting of the run before this change. */
+      previousFormatting: { default: null },
+    },
+    inclusive: false,
+    parseDOM: [
+      {
+        tag: 'span.docx-format-change',
+        getAttrs(dom) {
+          const el = dom as HTMLElement;
+          return {
+            revisionId: parseInt(el.dataset.revisionId || '0', 10),
+            author: el.dataset.author || '',
+            date: el.dataset.date || null,
+            previousFormatting: el.dataset.previousFormatting || null,
+          };
+        },
+      },
+    ],
+    toDOM(mark) {
+      return [
+        'span',
+        {
+          class: 'docx-format-change',
+          'data-revision-id': String(mark.attrs.revisionId),
+          'data-author': mark.attrs.author,
+          ...(mark.attrs.date ? { 'data-date': mark.attrs.date } : {}),
+          ...(mark.attrs.previousFormatting
+            ? { 'data-previous-formatting': mark.attrs.previousFormatting }
+            : {}),
+          style: 'border-bottom: 2px solid #f57c00; padding-bottom: 1px;',
+        },
+        0,
+      ];
+    },
+  },
+});

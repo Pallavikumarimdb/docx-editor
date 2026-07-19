@@ -12,6 +12,7 @@ import {
   findRunPropertyChangeSites,
   restoreRejectedRunPropertyFormatting,
 } from './runPropertyChanges';
+import { TRACKED_FORMATTING_MARKS } from '../plugins/suggestionMode/handlers/formatChange';
 
 /**
  * Add a comment mark to the current selection.
@@ -192,12 +193,13 @@ function collectAllRevisionIds(state: EditorState): number[] {
       const tblPrChange = node.attrs.tblPrChange as Array<{ info: { id: number } }> | null;
       if (Array.isArray(tblPrChange)) for (const e of tblPrChange) add(e.info.id);
     }
-    // Inline insertion/deletion marks (text and inline atoms like images).
+    // Inline insertion/deletion/formatChange marks (text and inline atoms like images).
     if (node.isInline) {
       for (const mark of node.marks) {
         if (
           (insertionType && mark.type === insertionType) ||
-          (deletionType && mark.type === deletionType)
+          (deletionType && mark.type === deletionType) ||
+          (state.schema.marks.formatChange && mark.type === state.schema.marks.formatChange)
         ) {
           add(mark.attrs.revisionId);
         }
@@ -406,14 +408,19 @@ function findParagraphPropertyChangeSites(
   return sites;
 }
 
-/** Find every inline `insertion`/`deletion` mark range with the given id. */
+/** Find every inline `insertion`/`deletion`/`formatChange` mark range with the given id. */
 function findInlineMarkSites(
   state: EditorState,
   revisionId: number
-): Array<{ from: number; to: number; markName: 'insertion' | 'deletion' }> {
-  const sites: Array<{ from: number; to: number; markName: 'insertion' | 'deletion' }> = [];
+): Array<{ from: number; to: number; markName: 'insertion' | 'deletion' | 'formatChange' }> {
+  const sites: Array<{
+    from: number;
+    to: number;
+    markName: 'insertion' | 'deletion' | 'formatChange';
+  }> = [];
   const insertionType = state.schema.marks.insertion;
   const deletionType = state.schema.marks.deletion;
+  const formatChangeType = state.schema.marks.formatChange;
   state.doc.descendants((node, pos) => {
     // Text AND inline atoms (image, shape) can carry tracked-change marks, so
     // rejecting an inserted picture removes it just like inserted text.
@@ -421,11 +428,16 @@ function findInlineMarkSites(
     for (const mark of node.marks) {
       if (
         (insertionType && mark.type === insertionType) ||
-        (deletionType && mark.type === deletionType)
+        (deletionType && mark.type === deletionType) ||
+        (formatChangeType && mark.type === formatChangeType)
       ) {
         if (mark.attrs.revisionId === revisionId) {
-          const markName: 'insertion' | 'deletion' =
-            mark.type === insertionType ? 'insertion' : 'deletion';
+          const markName: 'insertion' | 'deletion' | 'formatChange' =
+            mark.type === insertionType
+              ? 'insertion'
+              : mark.type === deletionType
+                ? 'deletion'
+                : 'formatChange';
           // Coalesce contiguous siblings sharing the same id.
           const last = sites[sites.length - 1];
           if (last && last.markName === markName && last.to === pos) {
@@ -674,15 +686,62 @@ function resolveById(revisionId: number, mode: 'accept' | 'reject'): Command {
     // reverse order so deletions don't shift earlier positions.
     const insertionType = state.schema.marks.insertion;
     const deletionType = state.schema.marks.deletion;
+    const formatChangeType = state.schema.marks.formatChange;
     const sortedInline = [...inlineSites].sort((a, b) => b.from - a.from);
     for (const site of sortedInline) {
-      const isInsertion = site.markName === 'insertion';
-      const removeText = (mode === 'accept' && !isInsertion) || (mode === 'reject' && isInsertion);
-      if (removeText) {
-        tr.delete(site.from, site.to);
+      if (site.markName === 'formatChange') {
+        if (formatChangeType) {
+          tr.removeMark(site.from, site.to, formatChangeType);
+        }
+        if (mode === 'reject') {
+          // Revert formatting!
+          // 1. Find the formatChange mark instance on the original state to get its previousFormatting
+          let previousFormattingJson = '{}';
+          state.doc.nodesBetween(site.from, site.to, (node) => {
+            if (node.isText) {
+              const mark = node.marks.find(
+                (m) => m.type === formatChangeType && m.attrs.revisionId === revisionId
+              );
+              if (mark) {
+                previousFormattingJson = mark.attrs.previousFormatting || '{}';
+                return false;
+              }
+            }
+          });
+
+          // 2. Remove all formatting marks in this range (uses the same set
+          // as the suggestion-mode handler so the two never drift apart).
+          for (const name of TRACKED_FORMATTING_MARKS) {
+            const markType = state.schema.marks[name];
+            if (markType) {
+              tr.removeMark(site.from, site.to, markType);
+            }
+          }
+
+          // 3. Apply the previous formatting marks
+          try {
+            const parsed = JSON.parse(previousFormattingJson) as Record<string, unknown>;
+            for (const [name, val] of Object.entries(parsed)) {
+              const markType = state.schema.marks[name];
+              if (markType) {
+                const attrs = val === true ? null : (val as Record<string, unknown>);
+                tr.addMark(site.from, site.to, markType.create(attrs));
+              }
+            }
+          } catch (e) {
+            console.error('Failed to parse previous formatting JSON', e);
+          }
+        }
       } else {
-        const markType = isInsertion ? insertionType : deletionType;
-        if (markType) tr.removeMark(site.from, site.to, markType);
+        const isInsertion = site.markName === 'insertion';
+        const removeText =
+          (mode === 'accept' && !isInsertion) || (mode === 'reject' && isInsertion);
+        if (removeText) {
+          tr.delete(site.from, site.to);
+        } else {
+          const markType = isInsertion ? insertionType : deletionType;
+          if (markType) tr.removeMark(site.from, site.to, markType);
+        }
       }
     }
 

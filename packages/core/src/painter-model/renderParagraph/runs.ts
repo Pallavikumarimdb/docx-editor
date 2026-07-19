@@ -239,6 +239,20 @@ function styleRunElement(
     if (run.changeRevisionId != null) element.dataset.revisionId = String(run.changeRevisionId);
   }
 
+  // Tracked format-change styling — subtle amber background + solid orange
+  // bottom border, mirroring the toDOM indicator on the PM view side.
+  // Does NOT change font/color (the new formatting is already applied);
+  // the border is the only visual signal.
+  if (run.isFormatChange) {
+    element.style.backgroundColor = 'rgba(245, 124, 0, 0.06)';
+    element.style.borderBottom = '2px solid #f57c00';
+    element.style.paddingBottom = '1px';
+    element.classList.add('docx-format-change');
+    if (run.changeAuthor) element.dataset.changeAuthor = run.changeAuthor;
+    if (run.changeDate) element.dataset.changeDate = run.changeDate;
+    if (run.changeRevisionId != null) element.dataset.revisionId = String(run.changeRevisionId);
+  }
+
   if (decorations.length > 0) {
     element.style.textDecorationLine = decorations.join(' ');
   }

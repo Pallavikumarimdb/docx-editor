@@ -37,7 +37,8 @@ export function computeAnchorPositions(
   const commentType = schema.marks.comment;
   const insertionType = schema.marks.insertion;
   const deletionType = schema.marks.deletion;
-  if (!commentType && !insertionType && !deletionType) return positions;
+  const formatChangeType = schema.marks.formatChange;
+  if (!commentType && !insertionType && !deletionType && !formatChangeType) return positions;
 
   const seen = new Set<string>();
   // Offset from layout coords to scroll-container coords:
@@ -54,13 +55,13 @@ export function computeAnchorPositions(
 
   const registerKey = (key: string, pos: number) => {
     if (seen.has(key)) return;
-    seen.add(key);
 
     // Try exact position (paragraphs/images)
     const caret = getCaretPosition(pageLayout, nodes, metrics, pos, pageHint);
     if (caret) {
       pageHint = caret.pageIndex;
       positions.set(key, caret.y + contentOffset);
+      seen.add(key);
       return;
     }
 
@@ -75,6 +76,7 @@ export function computeAnchorPositions(
         const rowOffsetY = frag.kind === 'table' ? getTableRowOffset(nodes, metrics, frag, pos) : 0;
         pageHint = pi;
         positions.set(key, frag.y + rowOffsetY + pageTopOffset(pageLayout, pi) + contentOffset);
+        seen.add(key);
         return;
       }
     }
@@ -126,7 +128,8 @@ export function computeAnchorPositions(
         key = `comment-${mark.attrs.commentId}`;
       } else if (
         (insertionType && mark.type === insertionType) ||
-        (deletionType && mark.type === deletionType)
+        (deletionType && mark.type === deletionType) ||
+        (formatChangeType && mark.type === formatChangeType)
       ) {
         key = `revision-${mark.attrs.revisionId}`;
       }

@@ -265,6 +265,13 @@ function extractRunFormatting(marks: readonly Mark[], theme?: Theme | null): Run
         formatting.changeDate = mark.attrs.date as string;
         formatting.changeRevisionId = mark.attrs.revisionId as number;
         break;
+
+      case 'formatChange':
+        formatting.isFormatChange = true;
+        formatting.changeAuthor = mark.attrs.author as string;
+        formatting.changeDate = mark.attrs.date as string;
+        formatting.changeRevisionId = mark.attrs.revisionId as number;
+        break;
     }
   }
 

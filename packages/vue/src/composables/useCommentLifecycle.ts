@@ -189,7 +189,9 @@ export function useCommentLifecycle(opts: UseCommentLifecycleOptions) {
         break;
       }
       if (
-        (mark.type.name === 'insertion' || mark.type.name === 'deletion') &&
+        (mark.type.name === 'insertion' ||
+          mark.type.name === 'deletion' ||
+          mark.type.name === 'formatChange') &&
         mark.attrs.revisionId != null
       ) {
         const revId = String(mark.attrs.revisionId);

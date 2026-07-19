@@ -216,6 +216,18 @@ export function TrackedChangeCard({
           <span style={{ color: 'var(--doc-error)', fontWeight: 500 }}>
             {t('revisions.tableDeleted')}
           </span>
+        ) : change.type === 'formatChange' ? (
+          <>
+            {t('revisions.formatChanged') || 'Formatted'}{' '}
+            <span
+              style={{
+                color: '#e65100',
+                fontWeight: 500,
+              }}
+            >
+              &quot;{truncateText(change.text)}&quot;
+            </span>
+          </>
         ) : (
           <>
             {change.type === 'insertion' ? t('trackedChanges.added') : t('trackedChanges.deleted')}{' '}

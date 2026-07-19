@@ -235,6 +235,8 @@ export interface RunFormatting extends TrackedChangeMetadata {
   footnoteRefId?: number;
   endnoteRefId?: number;
   commentIds?: number[];
+  /** Render this run as a tracked format change (`w:rPrChange`). */
+  isFormatChange?: boolean;
 }
 
 /**

@@ -102,6 +102,10 @@
       <template v-else-if="change.type === 'tableDeleted'">
         <span class="tc-card__deleted">{{ t('revisions.tableDeleted') }}</span>
       </template>
+      <template v-else-if="change.type === 'formatChange'">
+        {{ t('revisions.formatChanged') || 'Formatted' }}
+        <span class="tc-card__formatted">&quot;{{ truncateText(change.text) }}&quot;</span>
+      </template>
       <template v-else>
         {{ change.type === 'insertion' ? t('trackedChanges.added') : t('trackedChanges.deleted') }}
         <span :class="change.type === 'insertion' ? 'tc-card__inserted' : 'tc-card__deleted'">
@@ -243,6 +247,10 @@ function onReject() {
 }
 .tc-card__changed {
   color: var(--doc-text-muted);
+  font-weight: 500;
+}
+.tc-card__formatted {
+  color: #e65100;
   font-weight: 500;
 }
 </style>

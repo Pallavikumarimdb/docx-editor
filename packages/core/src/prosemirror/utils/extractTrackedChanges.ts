@@ -68,7 +68,9 @@ export function extractTrackedChanges(state: EditorState | null): TrackedChanges
   const { doc, schema } = state;
   const insertionType = schema.marks.insertion;
   const deletionType = schema.marks.deletion;
+  const formatChangeType = schema.marks.formatChange;
   const commentType = schema.marks.comment;
+  if (!insertionType && !deletionType && !formatChangeType) return EMPTY_RESULT;
 
   const raw: TrackedChangeEntry[] = [];
   const commentToRevision = new Map<number, number>();
@@ -390,6 +392,17 @@ export function extractTrackedChanges(state: EditorState | null): TrackedChanges
           revisionId: mark.attrs.revisionId as number,
         });
         tcMark = mark;
+      } else if (formatChangeType && mark.type === formatChangeType) {
+        raw.push({
+          type: 'formatChange',
+          text: inlineText,
+          author: (mark.attrs.author as string) || '',
+          date: mark.attrs.date as string | undefined,
+          from: pos,
+          to: pos + node.nodeSize,
+          revisionId: mark.attrs.revisionId as number,
+        });
+        tcMark = mark;
       }
     }
     if (commentType) {
@@ -492,7 +505,8 @@ export function extractTrackedChanges(state: EditorState | null): TrackedChanges
   const inlineGroups = new Map<string, TrackedChangeEntry>();
   const merged: TrackedChangeEntry[] = [];
   for (const entry of ordered) {
-    const isInlineType = entry.type === 'insertion' || entry.type === 'deletion';
+    const isInlineType =
+      entry.type === 'insertion' || entry.type === 'deletion' || entry.type === 'formatChange';
     if (!isInlineType) {
       merged.push({ ...entry });
       continue;
@@ -551,8 +565,13 @@ export function extractTrackedChanges(state: EditorState | null): TrackedChanges
   // the surviving inline entry so one Accept still clears every site.
   const inlineByKey = new Map<string, TrackedChangeEntry>();
   for (const e of final) {
-    if (e.type === 'insertion' || e.type === 'deletion' || e.type === 'replacement') {
-      const k = String(e.revisionId);
+    if (
+      e.type === 'insertion' ||
+      e.type === 'deletion' ||
+      e.type === 'replacement' ||
+      e.type === 'formatChange'
+    ) {
+      const k = `${e.author}|${e.date ?? ''}`;
       if (!inlineByKey.has(k)) inlineByKey.set(k, e);
     }
   }
@@ -652,7 +671,12 @@ export function extractTrackedChanges(state: EditorState | null): TrackedChanges
     if (e.type === 'paragraphPropertiesChanged') {
       return !foldedPropChanges.has(e);
     }
-    if (e.type === 'insertion' || e.type === 'deletion' || e.type === 'replacement') {
+    if (
+      e.type === 'insertion' ||
+      e.type === 'deletion' ||
+      e.type === 'replacement' ||
+      e.type === 'formatChange'
+    ) {
       return !tableByKey.has(key);
     }
     return true;
