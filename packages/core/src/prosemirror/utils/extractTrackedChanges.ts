@@ -571,7 +571,7 @@ export function extractTrackedChanges(state: EditorState | null): TrackedChanges
       e.type === 'replacement' ||
       e.type === 'formatChange'
     ) {
-      const k = `${e.author}|${e.date ?? ''}`;
+      const k = String(e.revisionId);
       if (!inlineByKey.has(k)) inlineByKey.set(k, e);
     }
   }
